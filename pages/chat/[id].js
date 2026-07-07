@@ -74,8 +74,20 @@ export default function Chat() {
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col max-w-lg mx-auto">
-      <div className="p-4 border-b border-gray-800 font-bold text-lg">
-        {character.name}
+      <div className="p-4 border-b border-gray-800 flex items-center justify-between">
+        <button
+          onClick={() => router.push('/')}
+          className="text-gray-400 hover:text-white text-sm"
+        >
+          ← Back
+        </button>
+        <span className="font-bold text-lg">{character.name}</span>
+        <button
+          onClick={() => router.push(`/edit/${id}`)}
+          className="text-gray-400 hover:text-white text-sm"
+        >
+          Edit
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
