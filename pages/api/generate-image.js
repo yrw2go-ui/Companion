@@ -13,8 +13,16 @@ export default async function handler(req, res) {
   const BASE_URL = 'https://api.atlascloud.ai/api/v1'
   const MODEL = 'black-forest-labs/flux-kontext-dev-lora/text-to-image'
 
+  const safeJson = async (response) => {
+    const text = await response.text()
+    try {
+      return { ok: true, data: JSON.parse(text) }
+    } catch {
+      return { ok: false, raw: text }
+    }
+  }
+
   try {
-    // submit generation request
     const submitRes = await fetch(`${BASE_URL}/model/prediction`, {
       method: 'POST',
       headers: {
@@ -31,40 +39,49 @@ export default async function handler(req, res) {
       }),
     })
 
-    const submitData = await submitRes.json()
+    const submitParsed = await safeJson(submitRes)
+    if (!submitParsed.ok) {
+      return res.status(500).json({
+        error: 'Atlas returned non-JSON',
+        status: submitRes.status,
+        raw: submitParsed.raw?.slice(0, 300),
+      })
+    }
+
+    const submitData = submitParsed.data
 
     if (!submitRes.ok) {
-      return res.status(500).json({ error: submitData.error || submitData.message || 'Submit failed' })
+      return res.status(500).json({ error: submitData.error || submitData.message || 'Submit failed', detail: submitData })
     }
 
     const predictionId = submitData.id || submitData.prediction_id
     if (!predictionId) {
-      // some responses return the image directly
       const directUrl = submitData.output?.[0] || submitData.image_url || submitData.url
       if (directUrl) return res.status(200).json({ imageUrl: directUrl })
-      return res.status(500).json({ error: 'No prediction ID returned' })
+      return res.status(500).json({ error: 'No prediction ID', detail: submitData })
     }
 
-    // poll for result
     for (let i = 0; i < 30; i++) {
       await new Promise(r => setTimeout(r, 1500))
 
       const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
         headers: { 'Authorization': `Bearer ${process.env.ATLAS_API_KEY}` },
       })
-      const pollData = await pollRes.json()
+      const pollParsed = await safeJson(pollRes)
+      if (!pollParsed.ok) continue
 
+      const pollData = pollParsed.data
       const status = pollData.status
       if (status === 'succeeded' || status === 'completed') {
         const imageUrl = pollData.output?.[0] || pollData.image_url || pollData.url || pollData.output
         return res.status(200).json({ imageUrl })
       }
       if (status === 'failed' || status === 'error') {
-        return res.status(500).json({ error: 'Generation failed' })
+        return res.status(500).json({ error: 'Generation failed', detail: pollData })
       }
     }
 
-    return res.status(500).json({ error: 'Timed out waiting for image' })
+    return res.status(500).json({ error: 'Timed out' })
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
