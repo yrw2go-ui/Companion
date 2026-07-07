@@ -10,8 +10,10 @@ export default function EditCharacter() {
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({
     name: '', age: '', appearance: '', personality: '',
-    speaking_style: '', backstory: '', relationship: '',
+    speaking_style: '', backstory: '', relationship: '', sample_dialogue: '',
   })
+  const [memories, setMemories] = useState([])
+  const [newMemory, setNewMemory] = useState('')
 
   useEffect(() => {
     if (!id) return
@@ -33,9 +35,20 @@ export default function EditCharacter() {
         speaking_style: data.speaking_style || '',
         backstory: data.backstory || '',
         relationship: data.relationship || '',
+        sample_dialogue: data.sample_dialogue || '',
       })
     }
+    await loadMemories()
     setLoading(false)
+  }
+
+  const loadMemories = async () => {
+    const { data } = await supabase
+      .from('core_memories')
+      .select('*')
+      .eq('character_id', id)
+      .order('created_at', { ascending: true })
+    setMemories(data || [])
   }
 
   const update = (field, value) => setForm({ ...form, [field]: value })
@@ -56,78 +69,8 @@ export default function EditCharacter() {
         speaking_style: form.speaking_style,
         backstory: form.backstory,
         relationship: form.relationship,
+        sample_dialogue: form.sample_dialogue,
       })
       .eq('id', id)
     setSaving(false)
-    if (error) {
-      alert('Error: ' + error.message)
-      return
-    }
-    router.push(`/chat/${id}`)
-  }
-
-  const del = async () => {
-    if (!confirm('Delete this character permanently?')) return
-    await supabase.from('characters').delete().eq('id', id)
-    router.push('/')
-  }
-
-  const field = (label, key, placeholder, multiline = false) => (
-    <div className="mb-4">
-      <label className="block text-sm text-gray-400 mb-1">{label}</label>
-      {multiline ? (
-        <textarea
-          value={form[key]}
-          onChange={e => update(key, e.target.value)}
-          placeholder={placeholder}
-          rows={3}
-          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none"
-        />
-      ) : (
-        <input
-          value={form[key]}
-          onChange={e => update(key, e.target.value)}
-          placeholder={placeholder}
-          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none"
-        />
-      )}
-    </div>
-  )
-
-  if (loading) {
-    return <div className="min-h-screen bg-black text-white flex items-center justify-center">Loading...</div>
-  }
-
-  return (
-    <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <button onClick={() => router.push(`/chat/${id}`)} className="text-gray-400 hover:text-white text-sm">← Back</button>
-        <h1 className="text-xl font-bold">Edit Character</h1>
-        <span className="w-12"></span>
-      </div>
-
-      {field('Name', 'name', 'e.g. Aria')}
-      {field('Age', 'age', 'e.g. 28')}
-      {field('Appearance', 'appearance', 'How they look', true)}
-      {field('Personality', 'personality', 'Witty, warm, sarcastic...', true)}
-      {field('Speaking Style', 'speaking_style', 'Casual, poetic, blunt...', true)}
-      {field('Backstory', 'backstory', 'Their history', true)}
-      {field('Relationship to You', 'relationship', 'Friend, partner, mentor...', true)}
-
-      <button
-        onClick={save}
-        disabled={saving}
-        className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold mt-2"
-      >
-        {saving ? 'Saving...' : 'Save Changes'}
-      </button>
-
-      <button
-        onClick={del}
-        className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-3 font-semibold mt-3"
-      >
-        Delete Character
-      </button>
-    </div>
-  )
-                 }
+    if
