@@ -42,7 +42,7 @@ export default function Home() {
           {characters.map(c => (
             <button
               key={c.id}
-              onClick={() => router.push(`/chat/${c.id}`)}
+              onClick={() => router.push(`/character/${c.id}`)}
               className="w-full text-left bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-xl p-4"
             >
               <div className="font-semibold text-lg">{c.name}</div>
