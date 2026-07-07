@@ -62,7 +62,6 @@ export default function Chat() {
     setInput('')
     setLoading(true)
 
-    // save user message
     await supabase.from('messages').insert([{
       conversation_id: id,
       role: 'user',
@@ -84,7 +83,6 @@ export default function Chat() {
       const replyText = data.reply || '[Error: ' + (data.error || 'no response') + ']'
       setMessages([...newMessages, { role: 'assistant', content: replyText }])
 
-      // save assistant message
       await supabase.from('messages').insert([{
         conversation_id: id,
         role: 'assistant',
@@ -101,7 +99,6 @@ export default function Chat() {
     setEnding(true)
 
     try {
-      // summarize into core memories
       const res = await fetch('/api/summarize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -121,10 +118,24 @@ export default function Chat() {
       // continue even if summary fails
     }
 
-    // delete conversation (messages cascade delete)
     await supabase.from('conversations').delete().eq('id', id)
     setEnding(false)
     router.push(`/character/${character.id}`)
+  }
+
+  // renders *text* as italic grey
+  const renderContent = (text) => {
+    const parts = text.split(/(\*[^*]+\*)/g)
+    return parts.map((part, i) => {
+      if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+        return (
+          <span key={i} className="italic text-gray-400">
+            {part.slice(1, -1)}
+          </span>
+        )
+      }
+      return <span key={i}>{part}</span>
+    })
   }
 
   if (!character || !conversation) {
@@ -165,7 +176,7 @@ export default function Chat() {
                 : 'bg-gray-800 mr-auto'
             }`}
           >
-            {m.content}
+            {renderContent(m.content)}
           </div>
         ))}
         {loading && (
@@ -194,4 +205,4 @@ export default function Chat() {
       </div>
     </div>
   )
-          }
+}
