@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   }
 
   const BASE_URL = 'https://api.atlascloud.ai/api/v1'
-  const MODEL = 'black-forest-labs/flux-kontext-dev-lora/text-to-image'
+  const MODEL = 'black-forest-labs/flux-dev'
 
   const safeJson = async (response) => {
     const text = await response.text()
@@ -32,18 +32,16 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: MODEL,
         prompt: prompt,
-        width: 768,
-        height: 1024,
+        size: '768*1024',
+        num_images: 1,
+        guidance_scale: 3.5,
+        num_inference_steps: 28,
       }),
     })
 
     const submitParsed = await safeJson(submitRes)
     if (!submitParsed.ok) {
-      return res.status(500).json({
-        error: 'Atlas returned non-JSON',
-        status: submitRes.status,
-        raw: submitParsed.raw?.slice(0, 300),
-      })
+      return res.status(500).json({ error: 'Atlas returned non-JSON', status: submitRes.status, raw: submitParsed.raw?.slice(0, 300) })
     }
 
     const submitData = submitParsed.data
@@ -51,7 +49,12 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: submitData.error || submitData.message || 'Submit failed', detail: submitData })
     }
 
-    const predictionId = submitData.data?.id || submitData.id
+    // if output already present (sync), return it
+    if (submitData.output?.[0]) {
+      return res.status(200).json({ imageUrl: submitData.output[0] })
+    }
+
+    const predictionId = submitData.id
     if (!predictionId) {
       return res.status(500).json({ error: 'No prediction ID', detail: submitData })
     }
@@ -65,11 +68,10 @@ export default async function handler(req, res) {
       const pollParsed = await safeJson(pollRes)
       if (!pollParsed.ok) continue
 
-      const pollData = pollParsed.data.data || pollParsed.data
+      const pollData = pollParsed.data
       const status = pollData.status
       if (status === 'completed' || status === 'succeeded') {
-        const imageUrl = pollData.outputs?.[0] || pollData.output?.[0]
-        return res.status(200).json({ imageUrl })
+        return res.status(200).json({ imageUrl: pollData.output?.[0] })
       }
       if (status === 'failed' || status === 'error') {
         return res.status(500).json({ error: pollData.error || 'Generation failed', detail: pollData })
