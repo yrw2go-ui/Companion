@@ -11,6 +11,7 @@ export default function EditCharacter() {
   const [form, setForm] = useState({
     name: '', age: '', appearance: '', personality: '',
     speaking_style: '', backstory: '', relationship: '', sample_dialogue: '',
+    response_rules: '',
   })
   const [memories, setMemories] = useState([])
   const [newMemory, setNewMemory] = useState('')
@@ -36,6 +37,7 @@ export default function EditCharacter() {
         backstory: data.backstory || '',
         relationship: data.relationship || '',
         sample_dialogue: data.sample_dialogue || '',
+        response_rules: data.response_rules || '',
       })
     }
     await loadMemories()
@@ -70,6 +72,7 @@ export default function EditCharacter() {
         backstory: form.backstory,
         relationship: form.relationship,
         sample_dialogue: form.sample_dialogue,
+        response_rules: form.response_rules,
       })
       .eq('id', id)
     setSaving(false)
@@ -144,6 +147,7 @@ export default function EditCharacter() {
       {field('Speaking Style', 'speaking_style', 'Casual, poetic, blunt...', true)}
       {field('Backstory', 'backstory', 'Their history', true)}
       {field('Relationship to You', 'relationship', 'Friend, partner, mentor...', true)}
+      {field('Response Rules', 'response_rules', 'Keep replies to 2 paragraphs or less. Do not repeat yourself. Avoid long monologues.', true)}
 
       <div className="mb-4">
         <label className="block text-sm text-gray-400 mb-1">Sample Conversations</label>
@@ -219,4 +223,4 @@ export default function EditCharacter() {
       </button>
     </div>
   )
-      }
+                         }
