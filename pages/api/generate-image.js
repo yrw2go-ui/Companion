@@ -23,7 +23,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const submitRes = await fetch(`${BASE_URL}/model/prediction`, {
+    const submitRes = await fetch(`${BASE_URL}/model/generateImage`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.ATLAS_API_KEY}`,
@@ -31,11 +31,9 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: MODEL,
-        input: {
-          prompt: prompt,
-          width: 768,
-          height: 1024,
-        },
+        prompt: prompt,
+        width: 768,
+        height: 1024,
       }),
     })
 
@@ -49,19 +47,16 @@ export default async function handler(req, res) {
     }
 
     const submitData = submitParsed.data
-
     if (!submitRes.ok) {
       return res.status(500).json({ error: submitData.error || submitData.message || 'Submit failed', detail: submitData })
     }
 
-    const predictionId = submitData.id || submitData.prediction_id
+    const predictionId = submitData.data?.id || submitData.id
     if (!predictionId) {
-      const directUrl = submitData.output?.[0] || submitData.image_url || submitData.url
-      if (directUrl) return res.status(200).json({ imageUrl: directUrl })
       return res.status(500).json({ error: 'No prediction ID', detail: submitData })
     }
 
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 40; i++) {
       await new Promise(r => setTimeout(r, 1500))
 
       const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
@@ -70,14 +65,14 @@ export default async function handler(req, res) {
       const pollParsed = await safeJson(pollRes)
       if (!pollParsed.ok) continue
 
-      const pollData = pollParsed.data
+      const pollData = pollParsed.data.data || pollParsed.data
       const status = pollData.status
-      if (status === 'succeeded' || status === 'completed') {
-        const imageUrl = pollData.output?.[0] || pollData.image_url || pollData.url || pollData.output
+      if (status === 'completed' || status === 'succeeded') {
+        const imageUrl = pollData.outputs?.[0] || pollData.output?.[0]
         return res.status(200).json({ imageUrl })
       }
       if (status === 'failed' || status === 'error') {
-        return res.status(500).json({ error: 'Generation failed', detail: pollData })
+        return res.status(500).json({ error: pollData.error || 'Generation failed', detail: pollData })
       }
     }
 
