@@ -123,7 +123,6 @@ export default function Chat() {
     router.push(`/character/${character.id}`)
   }
 
-  // renders *text* as italic grey
   const renderContent = (text) => {
     const parts = text.split(/(\*[^*]+\*)/g)
     return parts.map((part, i) => {
@@ -143,8 +142,8 @@ export default function Chat() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col max-w-lg mx-auto">
-      <div className="p-4 border-b border-gray-800 flex items-center justify-between">
+    <div className="h-screen bg-black text-white flex flex-col max-w-lg mx-auto">
+      <div className="p-4 border-b border-gray-800 flex items-center justify-between flex-shrink-0 bg-black">
         <button
           onClick={() => router.push(`/character/${character.id}`)}
           className="text-gray-400 hover:text-white text-sm"
@@ -187,7 +186,7 @@ export default function Chat() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="p-4 border-t border-gray-800 flex gap-2">
+      <div className="p-4 border-t border-gray-800 flex gap-2 flex-shrink-0 bg-black">
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
@@ -205,4 +204,4 @@ export default function Chat() {
       </div>
     </div>
   )
-}
+    }
