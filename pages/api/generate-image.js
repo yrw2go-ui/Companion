@@ -13,15 +13,6 @@ export default async function handler(req, res) {
   const BASE_URL = 'https://api.atlascloud.ai/api/v1'
   const MODEL = 'black-forest-labs/flux-dev'
 
-  const safeJson = async (response) => {
-    const text = await response.text()
-    try {
-      return { ok: true, data: JSON.parse(text) }
-    } catch {
-      return { ok: false, raw: text }
-    }
-  }
-
   try {
     const submitRes = await fetch(`${BASE_URL}/model/generateImage`, {
       method: 'POST',
@@ -39,46 +30,14 @@ export default async function handler(req, res) {
       }),
     })
 
-    const submitParsed = await safeJson(submitRes)
-    if (!submitParsed.ok) {
-      return res.status(500).json({ error: 'Atlas returned non-JSON', status: submitRes.status, raw: submitParsed.raw?.slice(0, 300) })
-    }
+    const rawText = await submitRes.text()
 
-    const submitData = submitParsed.data
-    if (!submitRes.ok) {
-      return res.status(500).json({ error: submitData.error || submitData.message || 'Submit failed', detail: submitData })
-    }
-
-    // if output already present (sync), return it
-    if (submitData.output?.[0]) {
-      return res.status(200).json({ imageUrl: submitData.output[0] })
-    }
-
-    const predictionId = submitData.id
-    if (!predictionId) {
-      return res.status(500).json({ error: 'No prediction ID', detail: submitData })
-    }
-
-    for (let i = 0; i < 40; i++) {
-      await new Promise(r => setTimeout(r, 1500))
-
-      const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
-        headers: { 'Authorization': `Bearer ${process.env.ATLAS_API_KEY}` },
-      })
-      const pollParsed = await safeJson(pollRes)
-      if (!pollParsed.ok) continue
-
-      const pollData = pollParsed.data
-      const status = pollData.status
-      if (status === 'completed' || status === 'succeeded') {
-        return res.status(200).json({ imageUrl: pollData.output?.[0] })
-      }
-      if (status === 'failed' || status === 'error') {
-        return res.status(500).json({ error: pollData.error || 'Generation failed', detail: pollData })
-      }
-    }
-
-    return res.status(500).json({ error: 'Timed out' })
+    // return the entire raw response so we can see the exact structure
+    return res.status(200).json({
+      debug: true,
+      httpStatus: submitRes.status,
+      rawResponse: rawText,
+    })
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
