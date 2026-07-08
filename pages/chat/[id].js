@@ -56,7 +56,6 @@ export default function Chat() {
       .order('created_at', { ascending: true })
     setMessages(msgs || [])
 
-    // resolve user description: per-character override, else global
     if (char?.user_appearance_override) {
       setUserDescription(char.user_appearance_override)
     } else {
@@ -155,6 +154,16 @@ export default function Chat() {
     setImaging(false)
   }
 
+  const deleteImage = async (imageUrl) => {
+    setMessages(prev => prev.filter(m => !(m.role === 'image' && m.content === imageUrl)))
+    await supabase
+      .from('messages')
+      .delete()
+      .eq('conversation_id', id)
+      .eq('role', 'image')
+      .eq('content', imageUrl)
+  }
+
   const endAndSave = async () => {
     if (!confirm('End this conversation? Key moments will be saved to memory, then the conversation will be deleted.')) return
     setEnding(true)
@@ -195,11 +204,11 @@ export default function Chat() {
   }
 
   if (!character || !conversation) {
-    return <div className="min-h-screen bg-black text-white flex items-center justify-center">Loading...</div>
+    return <div className="h-full bg-black text-white flex items-center justify-center">Loading...</div>
   }
 
   return (
-    <div className="h-screen bg-black text-white flex flex-col max-w-lg mx-auto">
+    <div className="h-full bg-black text-white flex flex-col max-w-lg mx-auto">
       <div className="p-4 border-b border-gray-800 flex items-center justify-between flex-shrink-0 bg-black">
         <button onClick={() => router.push(`/character/${character.id}`)} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <span className="font-bold text-lg">{character.name}</span>
@@ -217,7 +226,18 @@ export default function Chat() {
             if (m.content === 'generating') {
               return <div key={i} className="bg-gray-800 mr-auto rounded-2xl px-4 py-2 text-gray-400">Generating image...</div>
             }
-            return <img key={i} src={m.content} alt="scene" className="max-w-[80%] mr-auto rounded-2xl" />
+            return (
+              <div key={i} className="relative max-w-[80%] mr-auto">
+                <img src={m.content} alt="scene" className="w-full rounded-2xl" />
+                <button
+                  onClick={() => deleteImage(m.content)}
+                  className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white rounded-full w-7 h-7 flex items-center justify-center text-sm"
+                  title="Delete image"
+                >
+                  ✕
+                </button>
+              </div>
+            )
           }
           return (
             <div
@@ -270,4 +290,4 @@ export default function Chat() {
       </div>
     </div>
   )
-          }
+              }
