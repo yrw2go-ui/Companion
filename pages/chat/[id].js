@@ -4,6 +4,8 @@ import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabaseClient'
 import { buildImagePrompt } from '../../lib/buildImagePrompt'
 
+const DEFAULT_NEGATIVE = 'blurry, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+
 export default function Chat() {
   const router = useRouter()
   const { id } = router.query
@@ -18,6 +20,7 @@ export default function Chat() {
   const [userDescription, setUserDescription] = useState('')
   const [showPromptModal, setShowPromptModal] = useState(false)
   const [promptText, setPromptText] = useState('')
+  const [negativeText, setNegativeText] = useState(DEFAULT_NEGATIVE)
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -115,6 +118,7 @@ export default function Chat() {
     const sceneContext = recent ? `current scene: ${recent.slice(0, 300)}` : ''
     const prefilled = buildImagePrompt(character, sceneContext, includeUser, userDescription)
     setPromptText(prefilled)
+    setNegativeText(DEFAULT_NEGATIVE)
     setShowPromptModal(true)
   }
 
@@ -130,7 +134,7 @@ export default function Chat() {
       const res = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: promptText }),
+        body: JSON.stringify({ prompt: promptText, negativePrompt: negativeText }),
       })
       const data = await res.json()
       if (data.imageUrl) {
@@ -318,12 +322,23 @@ export default function Chat() {
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
             <h2 className="font-bold text-lg mb-2">Edit Image Prompt</h2>
             <p className="text-xs text-gray-500 mb-3">Tweak the scene, outfit, or details before generating.</p>
+
+            <label className="block text-xs text-gray-400 mb-1">Prompt</label>
             <textarea
               value={promptText}
               onChange={e => setPromptText(e.target.value)}
-              rows={8}
+              rows={7}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3"
+            />
+
+            <label className="block text-xs text-gray-400 mb-1">Negative Prompt (things to avoid)</label>
+            <textarea
+              value={negativeText}
+              onChange={e => setNegativeText(e.target.value)}
+              rows={3}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-4"
             />
+
             <div className="flex gap-2">
               <button
                 onClick={() => setShowPromptModal(false)}
