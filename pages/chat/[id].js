@@ -16,6 +16,8 @@ export default function Chat() {
   const [ending, setEnding] = useState(false)
   const [imaging, setImaging] = useState(false)
   const [userDescription, setUserDescription] = useState('')
+  const [showPromptModal, setShowPromptModal] = useState(false)
+  const [promptText, setPromptText] = useState('')
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -108,13 +110,18 @@ export default function Chat() {
     setLoading(false)
   }
 
-  const generateImage = async (includeUser) => {
-    if (imaging) return
-    setImaging(true)
-
+  const openPromptModal = (includeUser) => {
     const recent = messages.filter(m => m.role !== 'image').slice(-4).map(m => m.content).join(' ')
     const sceneContext = recent ? `current scene: ${recent.slice(0, 300)}` : ''
-    const prompt = buildImagePrompt(character, sceneContext, includeUser, userDescription)
+    const prefilled = buildImagePrompt(character, sceneContext, includeUser, userDescription)
+    setPromptText(prefilled)
+    setShowPromptModal(true)
+  }
+
+  const confirmGenerate = async () => {
+    setShowPromptModal(false)
+    if (imaging) return
+    setImaging(true)
 
     const placeholder = { role: 'image', content: 'generating' }
     setMessages(prev => [...prev, placeholder])
@@ -123,7 +130,7 @@ export default function Chat() {
       const res = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt: promptText }),
       })
       const data = await res.json()
       if (data.imageUrl) {
@@ -161,16 +168,12 @@ export default function Chat() {
 
   const deleteImage = async (imageUrl) => {
     setMessages(prev => prev.filter(m => !(m.role === 'image' && m.content === imageUrl)))
-
-    // remove from database
     await supabase
       .from('messages')
       .delete()
       .eq('conversation_id', id)
       .eq('role', 'image')
       .eq('content', imageUrl)
-
-    // remove file from storage bucket
     const fileName = fileNameFromUrl(imageUrl)
     if (fileName) {
       await supabase.storage.from('character-images').remove([fileName])
@@ -181,7 +184,6 @@ export default function Chat() {
     if (!confirm('End this conversation? Key moments will be saved to memory, then the conversation will be deleted.')) return
     setEnding(true)
 
-    // clean up any images in this conversation from the bucket
     const imageFiles = messages
       .filter(m => m.role === 'image' && m.content !== 'generating')
       .map(m => fileNameFromUrl(m.content))
@@ -280,7 +282,7 @@ export default function Chat() {
 
       <div className="p-4 border-t border-gray-800 flex gap-2 flex-shrink-0 bg-black">
         <button
-          onClick={() => generateImage(false)}
+          onClick={() => openPromptModal(false)}
           disabled={imaging}
           className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 text-lg"
           title="Image of the character"
@@ -288,7 +290,7 @@ export default function Chat() {
           🎨
         </button>
         <button
-          onClick={() => generateImage(true)}
+          onClick={() => openPromptModal(true)}
           disabled={imaging}
           className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 text-lg"
           title="Image of us together"
@@ -310,6 +312,35 @@ export default function Chat() {
           Send
         </button>
       </div>
+
+      {showPromptModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-5 z-50">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
+            <h2 className="font-bold text-lg mb-2">Edit Image Prompt</h2>
+            <p className="text-xs text-gray-500 mb-3">Tweak the scene, outfit, or details before generating.</p>
+            <textarea
+              value={promptText}
+              onChange={e => setPromptText(e.target.value)}
+              rows={8}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-4"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowPromptModal(false)}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmGenerate}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold"
+              >
+                Generate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
-  }
+}
