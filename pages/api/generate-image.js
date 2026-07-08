@@ -11,7 +11,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { prompt } = req.body
+  const { prompt, negativePrompt } = req.body
 
   if (!prompt) {
     return res.status(400).json({ error: 'No prompt provided' })
@@ -30,20 +30,26 @@ export default async function handler(req, res) {
   }
 
   try {
+    const body = {
+      model: MODEL,
+      prompt: prompt,
+      size: '768*1024',
+      num_images: 1,
+      guidance_scale: 3.5,
+      num_inference_steps: 28,
+    }
+
+    if (negativePrompt && negativePrompt.trim()) {
+      body.negative_prompt = negativePrompt.trim()
+    }
+
     const submitRes = await fetch(`${BASE_URL}/model/generateImage`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.ATLAS_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: MODEL,
-        prompt: prompt,
-        size: '768*1024',
-        num_images: 1,
-        guidance_scale: 3.5,
-        num_inference_steps: 28,
-      }),
+      body: JSON.stringify(body),
     })
 
     const submitParsed = await safeJson(submitRes)
@@ -82,11 +88,9 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Timed out' })
     }
 
-    // download image from Atlas
     const imgRes = await fetch(atlasUrl)
     const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
 
-    // upload to Supabase Storage
     const fileName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpeg`
     const { error: uploadError } = await supabaseAdmin.storage
       .from('character-images')
