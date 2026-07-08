@@ -2,10 +2,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabaseClient'
+import { buildImagePrompt } from '../../lib/buildImagePrompt'
 
 export default function Chat() {
   const router = useRouter()
-  const { id } = router.query // this is now a CONVERSATION id
+  const { id } = router.query
   const [conversation, setConversation] = useState(null)
   const [character, setCharacter] = useState(null)
   const [coreMemories, setCoreMemories] = useState([])
@@ -13,6 +14,7 @@ export default function Chat() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [ending, setEnding] = useState(false)
+  const [imaging, setImaging] = useState(false)
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -94,6 +96,54 @@ export default function Chat() {
     setLoading(false)
   }
 
+  const generateImage = async () => {
+    if (imaging) return
+    setImaging(true)
+
+    // build scene context from last few messages
+    const recent = messages.slice(-4).map(m => m.content).join(' ')
+    const sceneContext = recent ? `current scene: ${recent.slice(0, 300)}` : ''
+    const prompt = buildImagePrompt(character, sceneContext)
+
+    // insert a placeholder message
+    const placeholder = { role: 'image', content: 'generating' }
+    setMessages(prev => [...prev, placeholder])
+
+    try {
+      const res = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      })
+      const data = await res.json()
+      if (data.imageUrl) {
+        setMessages(prev => {
+          const copy = [...prev]
+          copy[copy.length - 1] = { role: 'image', content: data.imageUrl }
+          return copy
+        })
+        await supabase.from('messages').insert([{
+          conversation_id: id,
+          role: 'image',
+          content: data.imageUrl,
+        }])
+      } else {
+        setMessages(prev => {
+          const copy = [...prev]
+          copy[copy.length - 1] = { role: 'assistant', content: '[Image error: ' + (data.error || 'failed') + ']' }
+          return copy
+        })
+      }
+    } catch (err) {
+      setMessages(prev => {
+        const copy = [...prev]
+        copy[copy.length - 1] = { role: 'assistant', content: '[Image error: ' + err.message + ']' }
+        return copy
+      })
+    }
+    setImaging(false)
+  }
+
   const endAndSave = async () => {
     if (!confirm('End this conversation? Key moments will be saved to memory, then the conversation will be deleted.')) return
     setEnding(true)
@@ -103,7 +153,7 @@ export default function Chat() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: messages.map(m => ({ role: m.role, content: m.content })),
+          messages: messages.filter(m => m.role !== 'image').map(m => ({ role: m.role, content: m.content })),
           characterName: character.name,
         }),
       })
@@ -115,7 +165,7 @@ export default function Chat() {
         }])
       }
     } catch (err) {
-      // continue even if summary fails
+      // continue
     }
 
     await supabase.from('conversations').delete().eq('id', id)
@@ -127,11 +177,7 @@ export default function Chat() {
     const parts = text.split(/(\*[^*]+\*)/g)
     return parts.map((part, i) => {
       if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
-        return (
-          <span key={i} className="italic text-gray-400">
-            {part.slice(1, -1)}
-          </span>
-        )
+        return <span key={i} className="italic text-gray-400">{part.slice(1, -1)}</span>
       }
       return <span key={i}>{part}</span>
     })
@@ -144,49 +190,50 @@ export default function Chat() {
   return (
     <div className="h-screen bg-black text-white flex flex-col max-w-lg mx-auto">
       <div className="p-4 border-b border-gray-800 flex items-center justify-between flex-shrink-0 bg-black">
-        <button
-          onClick={() => router.push(`/character/${character.id}`)}
-          className="text-gray-400 hover:text-white text-sm"
-        >
-          ← Back
-        </button>
+        <button onClick={() => router.push(`/character/${character.id}`)} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <span className="font-bold text-lg">{character.name}</span>
-        <button
-          onClick={endAndSave}
-          disabled={ending}
-          className="text-gray-400 hover:text-white text-sm"
-        >
+        <button onClick={endAndSave} disabled={ending} className="text-gray-400 hover:text-white text-sm">
           {ending ? 'Saving...' : 'End'}
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
-          <p className="text-gray-600 text-sm text-center mt-8">
-            Say something to start the conversation.
-          </p>
+          <p className="text-gray-600 text-sm text-center mt-8">Say something to start the conversation.</p>
         )}
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`max-w-[80%] rounded-2xl px-4 py-2 whitespace-pre-wrap ${
-              m.role === 'user'
-                ? 'bg-purple-600 ml-auto'
-                : 'bg-gray-800 mr-auto'
-            }`}
-          >
-            {renderContent(m.content)}
-          </div>
-        ))}
+        {messages.map((m, i) => {
+          if (m.role === 'image') {
+            if (m.content === 'generating') {
+              return <div key={i} className="bg-gray-800 mr-auto rounded-2xl px-4 py-2 text-gray-400">Generating image...</div>
+            }
+            return <img key={i} src={m.content} alt="scene" className="max-w-[80%] mr-auto rounded-2xl" />
+          }
+          return (
+            <div
+              key={i}
+              className={`max-w-[80%] rounded-2xl px-4 py-2 whitespace-pre-wrap ${
+                m.role === 'user' ? 'bg-purple-600 ml-auto' : 'bg-gray-800 mr-auto'
+              }`}
+            >
+              {renderContent(m.content)}
+            </div>
+          )
+        })}
         {loading && (
-          <div className="bg-gray-800 mr-auto rounded-2xl px-4 py-2 text-gray-400">
-            {character.name} is typing...
-          </div>
+          <div className="bg-gray-800 mr-auto rounded-2xl px-4 py-2 text-gray-400">{character.name} is typing...</div>
         )}
         <div ref={bottomRef} />
       </div>
 
       <div className="p-4 border-t border-gray-800 flex gap-2 flex-shrink-0 bg-black">
+        <button
+          onClick={generateImage}
+          disabled={imaging}
+          className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 text-lg"
+          title="Generate image of this moment"
+        >
+          🎨
+        </button>
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
@@ -204,4 +251,4 @@ export default function Chat() {
       </div>
     </div>
   )
-    }
+          }
