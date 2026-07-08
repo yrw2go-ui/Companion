@@ -15,6 +15,7 @@ export default function Chat() {
   const [loading, setLoading] = useState(false)
   const [ending, setEnding] = useState(false)
   const [imaging, setImaging] = useState(false)
+  const [userDescription, setUserDescription] = useState('')
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -54,6 +55,18 @@ export default function Chat() {
       .eq('conversation_id', id)
       .order('created_at', { ascending: true })
     setMessages(msgs || [])
+
+    // resolve user description: per-character override, else global
+    if (char?.user_appearance_override) {
+      setUserDescription(char.user_appearance_override)
+    } else {
+      const { data: settings } = await supabase
+        .from('user_settings')
+        .select('my_description')
+        .eq('id', 1)
+        .single()
+      setUserDescription(settings?.my_description || '')
+    }
   }
 
   const send = async () => {
@@ -96,16 +109,14 @@ export default function Chat() {
     setLoading(false)
   }
 
-  const generateImage = async () => {
+  const generateImage = async (includeUser) => {
     if (imaging) return
     setImaging(true)
 
-    // build scene context from last few messages
-    const recent = messages.slice(-4).map(m => m.content).join(' ')
+    const recent = messages.filter(m => m.role !== 'image').slice(-4).map(m => m.content).join(' ')
     const sceneContext = recent ? `current scene: ${recent.slice(0, 300)}` : ''
-    const prompt = buildImagePrompt(character, sceneContext)
+    const prompt = buildImagePrompt(character, sceneContext, includeUser, userDescription)
 
-    // insert a placeholder message
     const placeholder = { role: 'image', content: 'generating' }
     setMessages(prev => [...prev, placeholder])
 
@@ -227,12 +238,20 @@ export default function Chat() {
 
       <div className="p-4 border-t border-gray-800 flex gap-2 flex-shrink-0 bg-black">
         <button
-          onClick={generateImage}
+          onClick={() => generateImage(false)}
           disabled={imaging}
           className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 text-lg"
-          title="Generate image of this moment"
+          title="Image of the character"
         >
           🎨
+        </button>
+        <button
+          onClick={() => generateImage(true)}
+          disabled={imaging}
+          className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 text-lg"
+          title="Image of us together"
+        >
+          👥
         </button>
         <input
           value={input}
