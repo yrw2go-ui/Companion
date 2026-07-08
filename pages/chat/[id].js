@@ -154,19 +154,41 @@ export default function Chat() {
     setImaging(false)
   }
 
+  const fileNameFromUrl = (url) => {
+    const parts = url.split('/character-images/')
+    return parts[1] || null
+  }
+
   const deleteImage = async (imageUrl) => {
     setMessages(prev => prev.filter(m => !(m.role === 'image' && m.content === imageUrl)))
+
+    // remove from database
     await supabase
       .from('messages')
       .delete()
       .eq('conversation_id', id)
       .eq('role', 'image')
       .eq('content', imageUrl)
+
+    // remove file from storage bucket
+    const fileName = fileNameFromUrl(imageUrl)
+    if (fileName) {
+      await supabase.storage.from('character-images').remove([fileName])
+    }
   }
 
   const endAndSave = async () => {
     if (!confirm('End this conversation? Key moments will be saved to memory, then the conversation will be deleted.')) return
     setEnding(true)
+
+    // clean up any images in this conversation from the bucket
+    const imageFiles = messages
+      .filter(m => m.role === 'image' && m.content !== 'generating')
+      .map(m => fileNameFromUrl(m.content))
+      .filter(Boolean)
+    if (imageFiles.length > 0) {
+      await supabase.storage.from('character-images').remove(imageFiles)
+    }
 
     try {
       const res = await fetch('/api/summarize', {
@@ -290,4 +312,4 @@ export default function Chat() {
       </div>
     </div>
   )
-              }
+  }
