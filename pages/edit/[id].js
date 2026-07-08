@@ -11,7 +11,7 @@ export default function EditCharacter() {
   const [form, setForm] = useState({
     name: '', age: '', appearance: '', personality: '',
     speaking_style: '', backstory: '', relationship: '', sample_dialogue: '',
-    response_rules: '',
+    response_rules: '', image_style: '',
   })
   const [memories, setMemories] = useState([])
   const [newMemory, setNewMemory] = useState('')
@@ -38,6 +38,7 @@ export default function EditCharacter() {
         relationship: data.relationship || '',
         sample_dialogue: data.sample_dialogue || '',
         response_rules: data.response_rules || '',
+        image_style: data.image_style || '',
       })
     }
     await loadMemories()
@@ -73,6 +74,7 @@ export default function EditCharacter() {
         relationship: form.relationship,
         sample_dialogue: form.sample_dialogue,
         response_rules: form.response_rules,
+        image_style: form.image_style,
       })
       .eq('id', id)
     setSaving(false)
@@ -80,7 +82,7 @@ export default function EditCharacter() {
       alert('Error: ' + error.message)
       return
     }
-    router.push(`/chat/${id}`)
+    router.push(`/character/${id}`)
   }
 
   const del = async () => {
@@ -135,7 +137,7 @@ export default function EditCharacter() {
   return (
     <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <button onClick={() => router.push(`/chat/${id}`)} className="text-gray-400 hover:text-white text-sm">← Back</button>
+        <button onClick={() => router.push(`/character/${id}`)} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <h1 className="text-xl font-bold">Edit Character</h1>
         <span className="w-12"></span>
       </div>
@@ -147,7 +149,8 @@ export default function EditCharacter() {
       {field('Speaking Style', 'speaking_style', 'Casual, poetic, blunt...', true)}
       {field('Backstory', 'backstory', 'Their history', true)}
       {field('Relationship to You', 'relationship', 'Friend, partner, mentor...', true)}
-      {field('Response Rules', 'response_rules', 'Keep replies to 2 paragraphs or less. Do not repeat yourself. Avoid long monologues.', true)}
+      {field('Response Rules', 'response_rules', 'Keep replies to 2 paragraphs or less. Do not repeat yourself.', true)}
+      {field('Image Style', 'image_style', 'e.g. anime style, soft lighting  OR  photorealistic portrait', true)}
 
       <div className="mb-4">
         <label className="block text-sm text-gray-400 mb-1">Sample Conversations</label>
@@ -223,4 +226,4 @@ export default function EditCharacter() {
       </button>
     </div>
   )
-                         }
+            }
