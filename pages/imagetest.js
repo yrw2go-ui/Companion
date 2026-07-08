@@ -3,14 +3,12 @@ import { useState } from 'react'
 
 export default function ImageTest() {
   const [prompt, setPrompt] = useState('portrait of a young woman with red hair, soft lighting, digital art')
-  const [imageUrl, setImageUrl] = useState('')
+  const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
 
   const generate = async () => {
     setLoading(true)
-    setError('')
-    setImageUrl('')
+    setResult('')
     try {
       const res = await fetch('/api/generate-image', {
         method: 'POST',
@@ -18,20 +16,16 @@ export default function ImageTest() {
         body: JSON.stringify({ prompt }),
       })
       const data = await res.json()
-      if (data.imageUrl) {
-        setImageUrl(data.imageUrl)
-      } else {
-        setError(data.error || 'No image returned')
-      }
+      setResult(JSON.stringify(data, null, 2))
     } catch (err) {
-      setError(err.message)
+      setResult('Error: ' + err.message)
     }
     setLoading(false)
   }
 
   return (
     <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
-      <h1 className="text-xl font-bold mb-4">Image Test</h1>
+      <h1 className="text-xl font-bold mb-4">Image Test (Debug)</h1>
       <textarea
         value={prompt}
         onChange={e => setPrompt(e.target.value)}
@@ -45,8 +39,11 @@ export default function ImageTest() {
       >
         {loading ? 'Generating...' : 'Generate'}
       </button>
-      {error && <p className="text-red-400 mb-4">Error: {error}</p>}
-      {imageUrl && <img src={imageUrl} alt="generated" className="w-full rounded-lg" />}
+      {result && (
+        <pre className="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs whitespace-pre-wrap break-all overflow-auto">
+          {result}
+        </pre>
+      )}
     </div>
   )
-      }
+}
