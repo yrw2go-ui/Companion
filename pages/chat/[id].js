@@ -24,16 +24,6 @@ export default function Chat() {
   const bottomRef = useRef(null)
 
   useEffect(() => {
-    // lock page scroll only while on chat
-    document.documentElement.classList.add('chat-locked')
-    document.body.classList.add('chat-locked')
-    return () => {
-      document.documentElement.classList.remove('chat-locked')
-      document.body.classList.remove('chat-locked')
-    }
-  }, [])
-
-  useEffect(() => {
     if (!id) return
     load()
   }, [id])
@@ -242,11 +232,11 @@ export default function Chat() {
   }
 
   if (!character || !conversation) {
-    return <div className="h-full bg-black text-white flex items-center justify-center">Loading...</div>
+    return <div className="chat-frame bg-black text-white items-center justify-center">Loading...</div>
   }
 
   return (
-    <div className="h-full bg-black text-white flex flex-col max-w-lg mx-auto">
+    <div className="chat-frame bg-black text-white max-w-lg mx-auto">
       <div className="p-4 border-b border-gray-800 flex items-center justify-between flex-shrink-0 bg-black">
         <button onClick={() => router.push(`/character/${character.id}`)} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <span className="font-bold text-lg">{character.name}</span>
