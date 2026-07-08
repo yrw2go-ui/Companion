@@ -24,6 +24,16 @@ export default function Chat() {
   const bottomRef = useRef(null)
 
   useEffect(() => {
+    // lock page scroll only while on chat
+    document.documentElement.classList.add('chat-locked')
+    document.body.classList.add('chat-locked')
+    return () => {
+      document.documentElement.classList.remove('chat-locked')
+      document.body.classList.remove('chat-locked')
+    }
+  }, [])
+
+  useEffect(() => {
     if (!id) return
     load()
   }, [id])
