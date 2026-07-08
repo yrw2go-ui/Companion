@@ -14,12 +14,10 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-/* Lock scrolling only on the chat page, which handles its own internal scrolling */
-body.chat-locked {
-  overflow: hidden;
-  height: 100%;
-}
-
-html.chat-locked {
-  height: 100%;
+/* Chat page uses a fixed full-height frame with its own internal scrolling */
+.chat-frame {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
