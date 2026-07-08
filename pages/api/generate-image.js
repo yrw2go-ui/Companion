@@ -1,4 +1,11 @@
 // pages/api/generate-image.js
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -44,12 +51,12 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Atlas returned non-JSON', raw: submitParsed.raw?.slice(0, 300) })
     }
 
-    const submitBody = submitParsed.data
-    const predictionId = submitBody.data?.id
+    const predictionId = submitParsed.data.data?.id
     if (!predictionId) {
-      return res.status(500).json({ error: 'No prediction ID', detail: submitBody })
+      return res.status(500).json({ error: 'No prediction ID', detail: submitParsed.data })
     }
 
+    let atlasUrl = null
     for (let i = 0; i < 40; i++) {
       await new Promise(r => setTimeout(r, 1500))
 
@@ -63,15 +70,40 @@ export default async function handler(req, res) {
       const status = pollBody.status
 
       if (status === 'completed' || status === 'succeeded') {
-        const imageUrl = pollBody.outputs?.[0]
-        return res.status(200).json({ imageUrl })
+        atlasUrl = pollBody.outputs?.[0]
+        break
       }
       if (status === 'failed' || status === 'error') {
-        return res.status(500).json({ error: pollBody.error || 'Generation failed', detail: pollBody })
+        return res.status(500).json({ error: pollBody.error || 'Generation failed' })
       }
     }
 
-    return res.status(500).json({ error: 'Timed out' })
+    if (!atlasUrl) {
+      return res.status(500).json({ error: 'Timed out' })
+    }
+
+    // download image from Atlas
+    const imgRes = await fetch(atlasUrl)
+    const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
+
+    // upload to Supabase Storage
+    const fileName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpeg`
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('character-images')
+      .upload(fileName, imgBuffer, {
+        contentType: 'image/jpeg',
+        upsert: false,
+      })
+
+    if (uploadError) {
+      return res.status(500).json({ error: 'Upload failed: ' + uploadError.message })
+    }
+
+    const { data: publicData } = supabaseAdmin.storage
+      .from('character-images')
+      .getPublicUrl(fileName)
+
+    return res.status(200).json({ imageUrl: publicData.publicUrl })
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
