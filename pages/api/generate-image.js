@@ -62,4 +62,17 @@ export default async function handler(req, res) {
       const pollBody = pollParsed.data.data || pollParsed.data
       const status = pollBody.status
 
-      if (status === 'completed' || status ===
+      if (status === 'completed' || status === 'succeeded') {
+        const imageUrl = pollBody.outputs?.[0]
+        return res.status(200).json({ imageUrl })
+      }
+      if (status === 'failed' || status === 'error') {
+        return res.status(500).json({ error: pollBody.error || 'Generation failed', detail: pollBody })
+      }
+    }
+
+    return res.status(500).json({ error: 'Timed out' })
+  } catch (err) {
+    return res.status(500).json({ error: err.message })
+  }
+}
