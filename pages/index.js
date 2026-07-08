@@ -25,12 +25,20 @@ export default function Home() {
     <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Companion</h1>
-        <button
-          onClick={() => router.push('/create')}
-          className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold"
-        >
-          + New
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => router.push('/settings')}
+            className="bg-gray-800 hover:bg-gray-700 rounded-full px-4 py-2 text-sm font-semibold"
+          >
+            ⚙️
+          </button>
+          <button
+            onClick={() => router.push('/create')}
+            className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold"
+          >
+            + New
+          </button>
+        </div>
       </div>
 
       {loading ? (
