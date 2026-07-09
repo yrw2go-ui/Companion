@@ -17,8 +17,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'No source image provided' })
   }
 
-  const BASE_URL = 'https://api.atlascloud.ai/api/v1'
-  const MODEL: 'atlascloud/wan-2.2-turbo-spicy/image-to-video',
+  const BASE_URL = 'https://api.atlascloud.ai/api/v1';
+  const MODEL = 'atlascloud/wan-2.2-turbo-spicy/image-to-video';
   
   // add more: wan-2.6-spicy etc.
 
