@@ -18,7 +18,11 @@ export default async function handler(req, res) {
   }
 
   const BASE_URL = 'https://api.atlascloud.ai/api/v1'
-  const MODEL = 'alibaba/wan-2.2-turb-spicy/image-to-video'
+  const SPICY_MODELS = {
+  wanTurbo: 'atlascloud/wan-2.2-turbo-spicy/image-to-video',
+  wanLora: 'atlascloud/wan-2.2-turbo-spicy/image-to-video-lora',
+  seedance: 'bytedance/seedance-v1.5-pro/image-to-video-spicy',
+  // add more: wan-2.6-spicy etc.
 
   const safeJson = async (response) => {
     const t = await response.text()
