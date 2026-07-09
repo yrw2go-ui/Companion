@@ -15,7 +15,7 @@ const MODELS = [
   },
   {
     label: 'seedance-v1.5-pro',
-    value: 'atlascloud/seedance-v1.5-pro/image-to-video',
+    value: 'atlascloud/seedance-v1.5-pro/image-to-video-spicy',
   },
 ]
 
