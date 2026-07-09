@@ -9,7 +9,7 @@ const MODELS = {
 
 export default function VideoTest() {
   const [imageUrl, setImageUrl] = useState('')
-  const [prompt, setPrompt] = useState('gentle natural motion, subtle movement, slight breeze')
+  const [prompt, setPrompt] = useState('gentle natural motion, sexual sway and strong sexual behavior')
   const [modelKey, setModelKey] = useState('wanTurbo')
   const [videoUrl, setVideoUrl] = useState('')
   const [result, setResult] = useState('')
