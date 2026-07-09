@@ -1,4 +1,4 @@
-// pages/videotest.js
+// pages/videotest.js (full updated)
 import { useState } from 'react'
 
 const MODELS = {
@@ -15,6 +15,14 @@ export default function VideoTest() {
   const [videoUrl, setVideoUrl] = useState('')
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const handleUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setImageUrl(url);
+    }
+  };
 
   const generate = async () => {
     setLoading(true)
@@ -46,12 +54,16 @@ export default function VideoTest() {
           <option key={key} value={key}>{label}</option>
         ))}
       </select>
+      
+      <input type="file" accept="image/*" onChange={handleUpload} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3 text-sm" />
+      
       <input
         value={imageUrl}
         onChange={e => setImageUrl(e.target.value)}
-        placeholder="https://...supabase.../character-images/img_xxx.jpeg"
+        placeholder="Or paste image URL"
         className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3 text-sm"
       />
+      
       <textarea
         value={prompt}
         onChange={e => setPrompt(e.target.value)}
@@ -61,10 +73,10 @@ export default function VideoTest() {
       />
       <button
         onClick={generate}
-        disabled={loading}
+        disabled={loading || !imageUrl}
         className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold mb-4"
       >
-        {loading ? 'Generating (can take 1-2 min)...' : 'Generate Video'}
+        {loading ? 'Generating...' : 'Generate Video'}
       </button>
       {videoUrl && (
         <video controls autoPlay loop src={videoUrl} className="w-full rounded-lg mb-4" />
