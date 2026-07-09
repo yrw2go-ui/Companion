@@ -14,8 +14,8 @@ const MODELS = [
     value: 'atlascloud/wan-2.2/image-to-video',
   },
   {
-    label: 'WAN 2.1',
-    value: 'atlascloud/wan-2.1/image-to-video',
+    label: 'seedance-v1.5-pro',
+    value: 'atlascloud/seedance-v1.5-pro/image-to-video',
   },
 ]
 
