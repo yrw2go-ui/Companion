@@ -3,6 +3,14 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabaseClient'
 
+const VOICES = [
+  { id: 'eve', label: 'Eve — female, energetic' },
+  { id: 'ara', label: 'Ara — female, warm' },
+  { id: 'leo', label: 'Leo — male, authoritative' },
+  { id: 'rex', label: 'Rex — male, professional' },
+  { id: 'sal', label: 'Sal — neutral, versatile' },
+]
+
 export default function EditCharacter() {
   const router = useRouter()
   const { id } = router.query
@@ -11,7 +19,7 @@ export default function EditCharacter() {
   const [form, setForm] = useState({
     name: '', age: '', appearance: '', personality: '',
     speaking_style: '', backstory: '', relationship: '', sample_dialogue: '',
-    response_rules: '', image_style: '',
+    response_rules: '', image_style: '', voice_id: 'eve',
   })
   const [memories, setMemories] = useState([])
   const [newMemory, setNewMemory] = useState('')
@@ -39,6 +47,7 @@ export default function EditCharacter() {
         sample_dialogue: data.sample_dialogue || '',
         response_rules: data.response_rules || '',
         image_style: data.image_style || '',
+        voice_id: data.voice_id || 'eve',
       })
     }
     await loadMemories()
@@ -75,6 +84,7 @@ export default function EditCharacter() {
         sample_dialogue: form.sample_dialogue,
         response_rules: form.response_rules,
         image_style: form.image_style,
+        voice_id: form.voice_id,
       })
       .eq('id', id)
     setSaving(false)
@@ -150,7 +160,20 @@ export default function EditCharacter() {
       {field('Backstory', 'backstory', 'Their history', true)}
       {field('Relationship to You', 'relationship', 'Friend, partner, mentor...', true)}
       {field('Response Rules', 'response_rules', 'Keep replies to 2 paragraphs or less. Do not repeat yourself.', true)}
-      {field('Image Style', 'image_style', 'e.g. anime style, soft lighting  OR  photorealistic portrait', true)}
+      {field('Image Style', 'image_style', 'e.g. photorealistic portrait  OR  anime style', true)}
+
+      <div className="mb-4">
+        <label className="block text-sm text-gray-400 mb-1">Voice</label>
+        <select
+          value={form.voice_id}
+          onChange={e => update('voice_id', e.target.value)}
+          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none"
+        >
+          {VOICES.map(v => (
+            <option key={v.id} value={v.id}>{v.label}</option>
+          ))}
+        </select>
+      </div>
 
       <div className="mb-4">
         <label className="block text-sm text-gray-400 mb-1">Sample Conversations</label>
@@ -226,4 +249,4 @@ export default function EditCharacter() {
       </button>
     </div>
   )
-            }
+}
