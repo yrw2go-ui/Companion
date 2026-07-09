@@ -21,6 +21,9 @@ export default function Chat() {
   const [showPromptModal, setShowPromptModal] = useState(false)
   const [promptText, setPromptText] = useState('')
   const [negativeText, setNegativeText] = useState(DEFAULT_NEGATIVE)
+  const [autoPlay, setAutoPlay] = useState(false)
+  const [speakingIdx, setSpeakingIdx] = useState(null)
+  const audioRef = useRef(null)
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -73,6 +76,30 @@ export default function Chat() {
     }
   }
 
+  const speak = async (text, idx) => {
+    if (!character?.voice_id) return
+    // strip asterisk actions so it only reads spoken words
+    const spokenOnly = text.replace(/\*[^*]+\*/g, '').trim()
+    if (!spokenOnly) return
+
+    setSpeakingIdx(idx)
+    try {
+      const res = await fetch('/api/generate-speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: spokenOnly, voiceId: character.voice_id }),
+      })
+      const data = await res.json()
+      if (data.audioUrl && audioRef.current) {
+        audioRef.current.src = data.audioUrl
+        audioRef.current.play()
+      }
+    } catch (err) {
+      // ignore playback errors
+    }
+    setSpeakingIdx(null)
+  }
+
   const send = async () => {
     if (!input.trim() || loading) return
     const userMsg = { role: 'user', content: input }
@@ -100,13 +127,18 @@ export default function Chat() {
       })
       const data = await res.json()
       const replyText = data.reply || '[Error: ' + (data.error || 'no response') + ']'
-      setMessages([...newMessages, { role: 'assistant', content: replyText }])
+      const withReply = [...newMessages, { role: 'assistant', content: replyText }]
+      setMessages(withReply)
 
       await supabase.from('messages').insert([{
         conversation_id: id,
         role: 'assistant',
         content: replyText,
       }])
+
+      if (autoPlay && !replyText.startsWith('[Error')) {
+        speak(replyText, withReply.length - 1)
+      }
     } catch (err) {
       setMessages([...newMessages, { role: 'assistant', content: '[Error: ' + err.message + ']' }])
     }
@@ -237,12 +269,22 @@ export default function Chat() {
 
   return (
     <div className="chat-frame bg-black text-white max-w-lg mx-auto">
+      <audio ref={audioRef} className="hidden" />
       <div className="p-4 border-b border-gray-800 flex items-center justify-between flex-shrink-0 bg-black">
         <button onClick={() => router.push(`/character/${character.id}`)} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <span className="font-bold text-lg">{character.name}</span>
-        <button onClick={endAndSave} disabled={ending} className="text-gray-400 hover:text-white text-sm">
-          {ending ? 'Saving...' : 'End'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setAutoPlay(!autoPlay)}
+            className={`text-sm ${autoPlay ? 'text-purple-400' : 'text-gray-500'}`}
+            title="Toggle auto-play voice"
+          >
+            {autoPlay ? '🔊' : '🔇'}
+          </button>
+          <button onClick={endAndSave} disabled={ending} className="text-gray-400 hover:text-white text-sm">
+            {ending ? 'Saving...' : 'End'}
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -267,6 +309,7 @@ export default function Chat() {
               </div>
             )
           }
+          const isChar = m.role === 'assistant'
           return (
             <div
               key={i}
@@ -275,6 +318,16 @@ export default function Chat() {
               }`}
             >
               {renderContent(m.content)}
+              {isChar && !m.content.startsWith('[') && (
+                <button
+                  onClick={() => speak(m.content, i)}
+                  disabled={speakingIdx === i}
+                  className="ml-2 text-gray-400 hover:text-white text-xs align-middle"
+                  title="Play voice"
+                >
+                  {speakingIdx === i ? '⏳' : '🔊'}
+                </button>
+              )}
             </div>
           )
         })}
