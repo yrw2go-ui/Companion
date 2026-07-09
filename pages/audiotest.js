@@ -3,7 +3,7 @@ import { useState } from 'react'
 
 export default function AudioTest() {
   const [text, setText] = useState('Hello, this is a test of my voice. How do I sound?')
-  const [voice, setVoice] = useState('alloy')
+  const [voiceId, setVoiceId] = useState('eve')
   const [audioUrl, setAudioUrl] = useState('')
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
@@ -16,7 +16,7 @@ export default function AudioTest() {
       const res = await fetch('/api/generate-speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice }),
+        body: JSON.stringify({ text, voiceId }),
       })
       const data = await res.json()
       if (data.audioUrl) {
@@ -40,9 +40,9 @@ export default function AudioTest() {
         className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3"
       />
       <input
-        value={voice}
-        onChange={e => setVoice(e.target.value)}
-        placeholder="voice name"
+        value={voiceId}
+        onChange={e => setVoiceId(e.target.value)}
+        placeholder="voice id (eve, ara, leo, rex, sal)"
         className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3"
       />
       <button
@@ -53,7 +53,7 @@ export default function AudioTest() {
         {loading ? 'Generating...' : 'Generate Speech'}
       </button>
       {audioUrl && (
-        <audio controls src={audioUrl} className="w-full mb-4" />
+        <audio controls autoPlay src={audioUrl} className="w-full mb-4" />
       )}
       {result && (
         <pre className="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs whitespace-pre-wrap break-all">
