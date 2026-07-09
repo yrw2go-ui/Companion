@@ -23,6 +23,10 @@ export default function Chat() {
   const [negativeText, setNegativeText] = useState(DEFAULT_NEGATIVE)
   const [autoPlay, setAutoPlay] = useState(false)
   const [speakingIdx, setSpeakingIdx] = useState(null)
+  const [showVideoModal, setShowVideoModal] = useState(false)
+  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
+  const [videoSourceUrl, setVideoSourceUrl] = useState('')
+  const [videoing, setVideoing] = useState(false)
   const audioRef = useRef(null)
   const bottomRef = useRef(null)
 
@@ -78,10 +82,8 @@ export default function Chat() {
 
   const speak = async (text, idx) => {
     if (!character?.voice_id) return
-    // strip asterisk actions so it only reads spoken words
     const spokenOnly = text.replace(/\*[^*]+\*/g, '').trim()
     if (!spokenOnly) return
-
     setSpeakingIdx(idx)
     try {
       const res = await fetch('/api/generate-speech', {
@@ -95,7 +97,7 @@ export default function Chat() {
         audioRef.current.play()
       }
     } catch (err) {
-      // ignore playback errors
+      // ignore
     }
     setSpeakingIdx(null)
   }
@@ -146,7 +148,7 @@ export default function Chat() {
   }
 
   const openPromptModal = (includeUser) => {
-    const recent = messages.filter(m => m.role !== 'image').slice(-4).map(m => m.content).join(' ')
+    const recent = messages.filter(m => m.role !== 'image' && m.role !== 'video').slice(-4).map(m => m.content).join(' ')
     const sceneContext = recent ? `current scene: ${recent.slice(0, 300)}` : ''
     const prefilled = buildImagePrompt(character, sceneContext, includeUser, userDescription)
     setPromptText(prefilled)
@@ -197,20 +199,69 @@ export default function Chat() {
     setImaging(false)
   }
 
+  const openVideoModal = (imageUrl) => {
+    setVideoSourceUrl(imageUrl)
+    setVideoPrompt('gentle natural motion, subtle movement')
+    setShowVideoModal(true)
+  }
+
+  const confirmVideo = async () => {
+    setShowVideoModal(false)
+    if (videoing) return
+    setVideoing(true)
+
+    const placeholder = { role: 'video', content: 'generating' }
+    setMessages(prev => [...prev, placeholder])
+
+    try {
+      const res = await fetch('/api/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: videoSourceUrl, prompt: videoPrompt }),
+      })
+      const data = await res.json()
+      if (data.videoUrl) {
+        setMessages(prev => {
+          const copy = [...prev]
+          copy[copy.length - 1] = { role: 'video', content: data.videoUrl }
+          return copy
+        })
+        await supabase.from('messages').insert([{
+          conversation_id: id,
+          role: 'video',
+          content: data.videoUrl,
+        }])
+      } else {
+        setMessages(prev => {
+          const copy = [...prev]
+          copy[copy.length - 1] = { role: 'assistant', content: '[Video error: ' + (data.error || 'failed') + ']' }
+          return copy
+        })
+      }
+    } catch (err) {
+      setMessages(prev => {
+        const copy = [...prev]
+        copy[copy.length - 1] = { role: 'assistant', content: '[Video error: ' + err.message + ']' }
+        return copy
+      })
+    }
+    setVideoing(false)
+  }
+
   const fileNameFromUrl = (url) => {
     const parts = url.split('/character-images/')
     return parts[1] || null
   }
 
-  const deleteImage = async (imageUrl) => {
-    setMessages(prev => prev.filter(m => !(m.role === 'image' && m.content === imageUrl)))
+  const deleteMedia = async (mediaUrl, role) => {
+    setMessages(prev => prev.filter(m => !(m.role === role && m.content === mediaUrl)))
     await supabase
       .from('messages')
       .delete()
       .eq('conversation_id', id)
-      .eq('role', 'image')
-      .eq('content', imageUrl)
-    const fileName = fileNameFromUrl(imageUrl)
+      .eq('role', role)
+      .eq('content', mediaUrl)
+    const fileName = fileNameFromUrl(mediaUrl)
     if (fileName) {
       await supabase.storage.from('character-images').remove([fileName])
     }
@@ -220,12 +271,12 @@ export default function Chat() {
     if (!confirm('End this conversation? Key moments will be saved to memory, then the conversation will be deleted.')) return
     setEnding(true)
 
-    const imageFiles = messages
-      .filter(m => m.role === 'image' && m.content !== 'generating')
+    const mediaFiles = messages
+      .filter(m => (m.role === 'image' || m.role === 'video') && m.content !== 'generating')
       .map(m => fileNameFromUrl(m.content))
       .filter(Boolean)
-    if (imageFiles.length > 0) {
-      await supabase.storage.from('character-images').remove(imageFiles)
+    if (mediaFiles.length > 0) {
+      await supabase.storage.from('character-images').remove(mediaFiles)
     }
 
     try {
@@ -233,7 +284,7 @@ export default function Chat() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: messages.filter(m => m.role !== 'image').map(m => ({ role: m.role, content: m.content })),
+          messages: messages.filter(m => m.role !== 'image' && m.role !== 'video').map(m => ({ role: m.role, content: m.content })),
           characterName: character.name,
         }),
       })
@@ -300,9 +351,34 @@ export default function Chat() {
               <div key={i} className="relative max-w-[80%] mr-auto">
                 <img src={m.content} alt="scene" className="w-full rounded-2xl" />
                 <button
-                  onClick={() => deleteImage(m.content)}
+                  onClick={() => deleteMedia(m.content, 'image')}
                   className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white rounded-full w-7 h-7 flex items-center justify-center text-sm"
                   title="Delete image"
+                >
+                  ✕
+                </button>
+                <button
+                  onClick={() => openVideoModal(m.content)}
+                  disabled={videoing}
+                  className="absolute bottom-2 right-2 bg-black/70 hover:bg-black disabled:opacity-50 text-white rounded-full w-8 h-8 flex items-center justify-center"
+                  title="Animate this image"
+                >
+                  🎬
+                </button>
+              </div>
+            )
+          }
+          if (m.role === 'video') {
+            if (m.content === 'generating') {
+              return <div key={i} className="bg-gray-800 mr-auto rounded-2xl px-4 py-2 text-gray-400">Generating video (1-2 min)...</div>
+            }
+            return (
+              <div key={i} className="relative max-w-[80%] mr-auto">
+                <video src={m.content} controls loop className="w-full rounded-2xl" />
+                <button
+                  onClick={() => deleteMedia(m.content, 'video')}
+                  className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white rounded-full w-7 h-7 flex items-center justify-center text-sm"
+                  title="Delete video"
                 >
                   ✕
                 </button>
@@ -404,6 +480,40 @@ export default function Chat() {
                 className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold"
               >
                 Generate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showVideoModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-5 z-50">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
+            <h2 className="font-bold text-lg mb-2">Animate Image</h2>
+            <p className="text-xs text-gray-500 mb-3">Describe the motion. Takes 1-2 minutes and costs more than an image.</p>
+
+            <img src={videoSourceUrl} alt="source" className="w-32 rounded-lg mb-3" />
+
+            <label className="block text-xs text-gray-400 mb-1">Motion Prompt</label>
+            <textarea
+              value={videoPrompt}
+              onChange={e => setVideoPrompt(e.target.value)}
+              rows={3}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-4"
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowVideoModal(false)}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmVideo}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold"
+              >
+                Animate
               </button>
             </div>
           </div>
