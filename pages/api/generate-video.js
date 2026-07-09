@@ -38,12 +38,12 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: MODEL,
-        input: {
-          img_url: imageUrl,
-          prompt: prompt || 'gentle natural motion, subtle movement',
-          resolution: '720P',
-          duration: 5,
-        },
+        image: imageUrl,
+        prompt: prompt || 'gentle natural motion, subtle movement',
+        resolution: '720p',
+        duration: 5,
+        enable_prompt_expansion: true,
+        seed: -1,
       }),
     })
 
