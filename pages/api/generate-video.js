@@ -38,10 +38,12 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: MODEL,
-        image_url: imageUrl,
-        prompt: prompt || 'gentle natural motion, subtle movement',
-        resolution: '720P',
-        duration: 5,
+        input: {
+          img_url: imageUrl,
+          prompt: prompt || 'gentle natural motion, subtle movement',
+          resolution: '720P',
+          duration: 5,
+        },
       }),
     })
 
@@ -56,7 +58,6 @@ export default async function handler(req, res) {
     }
 
     let atlasUrl = null
-    // video takes longer, poll up to ~2.5 min
     for (let i = 0; i < 100; i++) {
       await new Promise(r => setTimeout(r, 1500))
 
