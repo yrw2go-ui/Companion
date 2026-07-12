@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   }
 
   const BASE_URL = 'https://api.atlascloud.ai/api/v1'
-  const MODEL = 'z-image/turbo
+  const MODEL = 'z-image/turbo'
 
   const safeJson = async (response) => {
     const text = await response.text()
