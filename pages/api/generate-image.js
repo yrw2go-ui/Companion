@@ -11,7 +11,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { prompt, negativePrompt, seed } = req.body
+  const { prompt, negativePrompt, seed, size } = req.body
 
   if (!prompt) {
     return res.status(400).json({ error: 'No prompt provided' })
@@ -29,16 +29,17 @@ export default async function handler(req, res) {
     }
   }
 
-  // use provided seed, or make a random one so we can always report it back
   const usedSeed = (seed !== undefined && seed !== null && seed !== '')
     ? parseInt(seed)
     : Math.floor(Math.random() * 2147483647)
+
+  const usedSize = size || '768*1024'
 
   try {
     const body = {
       model: MODEL,
       prompt: prompt,
-      size: '768*1024',
+      size: usedSize,
       num_images: 1,
       guidance_scale: 3.5,
       num_inference_steps: 28,
@@ -113,7 +114,7 @@ export default async function handler(req, res) {
       .from('character-images')
       .getPublicUrl(fileName)
 
-    return res.status(200).json({ imageUrl: publicData.publicUrl, seed: usedSeed })
+    return res.status(200).json({ imageUrl: publicData.publicUrl, seed: usedSeed, size: usedSize })
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
