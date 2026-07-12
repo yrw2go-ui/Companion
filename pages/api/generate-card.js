@@ -19,16 +19,17 @@ Return exactly this shape:
   "name": "character name",
   "title": "a short epithet, e.g. Warden of the Deep",
   "description": "2 sentences describing who they are",
-  "flavor_text": "one evocative italic-style quote or line, max 15 words",
+  "flavor_text": "one evocative quote or line, max 15 words",
   "rarity": "one of: common, uncommon, rare, epic, legendary",
   "hp": number 20-100,
   "attack": number 20-100,
   "defense": number 20-100,
   "speed": number 20-100,
-  "image_prompt": "a vivid visual description for an image generator, describing appearance, pose, setting, mood, art style"
+  "image_prompt": "FRONT art: a vivid portrait description of the character. appearance, pose, setting, mood, art style",
+  "back_image_prompt": "BACK art: the SAME character in a different scene. an action shot or dramatic alternate angle. keep appearance details consistent with the front, but change pose, setting and framing"
 }
 
-Make stats reflect the character concept. Higher rarity should mean stronger stats overall.`
+Make stats reflect the character concept. Higher rarity should mean stronger stats overall. The two image prompts must describe the same character with matching physical features.`
 
   try {
     const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
@@ -41,7 +42,7 @@ Make stats reflect the character concept. Higher rarity should mean stronger sta
         model: 'mistral-small-latest',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.9,
-        max_tokens: 600,
+        max_tokens: 800,
       }),
     })
 
