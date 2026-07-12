@@ -11,6 +11,20 @@ const SIZES = [
   { value: '576*1024', label: 'Tall 9:16' },
 ]
 
+const ART_STYLES = [
+  { value: '', label: 'None (use prompt as-is)' },
+  { value: 'photorealistic, DSLR photo, natural skin texture, soft cinematic lighting, shallow depth of field', label: 'Photorealistic' },
+  { value: 'digital painting, painterly brushwork, rich color, dramatic lighting, fantasy art, artstation quality', label: 'Digital Painting' },
+  { value: 'anime style, cel shaded, clean linework, vibrant colors, detailed eyes', label: 'Anime' },
+  { value: 'oil painting, classical portraiture, renaissance lighting, canvas texture, old master style', label: 'Oil Painting' },
+  { value: 'watercolor illustration, soft washes, delicate linework, pastel palette, dreamy', label: 'Watercolor' },
+  { value: 'comic book art, bold ink outlines, halftone shading, dynamic composition, graphic novel style', label: 'Comic Book' },
+  { value: 'art nouveau, ornate decorative border motifs, flowing organic lines, gold accents, Alphonse Mucha style', label: 'Art Nouveau' },
+  { value: 'dark fantasy, gothic atmosphere, moody chiaroscuro lighting, muted palette, intricate detail', label: 'Dark Fantasy' },
+  { value: 'cyberpunk, neon lighting, chrome and holograms, rain-slick city night, high contrast', label: 'Cyberpunk' },
+  { value: 'ethereal fantasy, glowing rim light, soft bloom, luminous atmosphere, celestial mood', label: 'Ethereal' },
+]
+
 const RARITY_STYLES = {
   common:    { ring: 'border-gray-500',   text: 'text-gray-300',   glow: '',                                        code: 'COM' },
   uncommon:  { ring: 'border-green-500',  text: 'text-green-400',  glow: 'shadow-[0_0_15px_rgba(34,197,94,0.3)]',   code: 'UNC' },
@@ -29,6 +43,7 @@ export default function Cards() {
   const [draft, setDraft] = useState(null)
   const [negative, setNegative] = useState(DEFAULT_NEGATIVE)
   const [size, setSize] = useState('768*1024')
+  const [artStyle, setArtStyle] = useState(ART_STYLES[1].value)
   const [seedInput, setSeedInput] = useState('')
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState('')
@@ -83,12 +98,17 @@ export default function Cards() {
     return `${code}-${String(next).padStart(3, '0')}`
   }
 
+  const withStyle = (basePrompt) => {
+    if (!artStyle) return basePrompt
+    return `${basePrompt}, ${artStyle}`
+  }
+
   const genImage = async (imgPrompt, seedVal) => {
     const res = await fetch('/api/generate-image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        prompt: imgPrompt,
+        prompt: withStyle(imgPrompt),
         negativePrompt: negative,
         seed: seedVal || undefined,
         size,
@@ -132,10 +152,10 @@ export default function Cards() {
         rarity,
         card_number: cardNumber,
         image_url: front.imageUrl,
-        image_prompt: draft.image_prompt,
+        image_prompt: withStyle(draft.image_prompt),
         seed: front.seed,
         back_image_url: back.imageUrl,
-        back_image_prompt: draft.back_image_prompt,
+        back_image_prompt: withStyle(draft.back_image_prompt),
         back_seed: back.seed,
         negative_prompt: negative,
         hp: parseInt(draft.hp) || 50,
@@ -195,7 +215,6 @@ export default function Cards() {
     </div>
   )
 
-  // FRONT: art + name + title + rarity
   const cardFront = (card, style) => (
     <div className={`bg-gray-950 border-2 ${style.ring} ${style.glow} rounded-2xl overflow-hidden`}>
       {card.image_url && (
@@ -213,7 +232,6 @@ export default function Cards() {
     </div>
   )
 
-  // BACK: 2nd art with stats + description overlaid
   const cardBack = (card, style) => (
     <div className={`relative bg-gray-950 border-2 ${style.ring} ${style.glow} rounded-2xl overflow-hidden`}>
       {card.back_image_url ? (
@@ -278,7 +296,6 @@ export default function Cards() {
         </div>
       )}
 
-      {/* Create flow */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-50 overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
@@ -291,7 +308,7 @@ export default function Cards() {
                   value={concept}
                   onChange={e => setConcept(e.target.value)}
                   rows={3}
-                  placeholder="e.g. a storm-wielding desert nomad who speaks to sandworms"
+                  placeholder="e.g. an elegant sorceress in flowing silk, garden of moonflowers"
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500"
                 />
                 <div className="flex gap-2">
@@ -343,6 +360,13 @@ export default function Cards() {
                   ))}
                 </div>
 
+                <label className="block text-xs text-gray-400 mb-1">Art Style</label>
+                <select value={artStyle} onChange={e => setArtStyle(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500">
+                  {ART_STYLES.map(s => <option key={s.label} value={s.value}>{s.label}</option>)}
+                </select>
+                <p className="text-[10px] text-gray-600 mb-3">Appended to both art prompts for a consistent look.</p>
+
                 <label className="block text-xs text-gray-400 mb-1">Front Art Prompt</label>
                 <textarea value={draft.image_prompt || ''} onChange={e => updateDraft('image_prompt', e.target.value)} rows={4}
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
@@ -381,7 +405,6 @@ export default function Cards() {
         </div>
       )}
 
-      {/* Card detail: front and back side by side */}
       {selected && (
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
           <div className="w-full max-w-lg my-6" onClick={e => e.stopPropagation()}>
