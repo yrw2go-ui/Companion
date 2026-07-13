@@ -21,15 +21,19 @@ Return exactly this shape:
   "description": "2 sentences describing who they are",
   "flavor_text": "one evocative quote or line, max 15 words",
   "rarity": "one of: common, uncommon, rare, epic, legendary",
-  "hp": number 20-100,
-  "attack": number 20-100,
-  "defense": number 20-100,
-  "speed": number 20-100,
-  "image_prompt": "FRONT art: a vivid portrait description of the character. appearance, pose, setting, mood, art style",
-  "back_image_prompt": "BACK art: the SAME character in a different scene. an action shot or dramatic alternate angle. keep appearance details consistent with the front, but change pose, setting and framing"
+  "stats": [
+    { "label": "SHORT STAT NAME", "value": number 20-100 },
+    { "label": "SHORT STAT NAME", "value": number 20-100 },
+    { "label": "SHORT STAT NAME", "value": number 20-100 },
+    { "label": "SHORT STAT NAME", "value": number 20-100 }
+  ],
+  "image_prompt": "FRONT art: a vivid portrait description. appearance, pose, setting, mood",
+  "back_image_prompt": "BACK art: the SAME character in a different scene. an alternate pose or dramatic angle. keep appearance details consistent with the front, but change pose, setting and framing"
 }
 
-Make stats reflect the character concept. Higher rarity should mean stronger stats overall. The two image prompts must describe the same character with matching physical features.`
+IMPORTANT about stats: invent 4 stat labels that FIT THIS CHARACTER's nature and theme, not generic RPG combat stats. Keep each label short (1 word if possible, max 2). For example a scholar might have Insight, Memory, Cunning, Resolve. A dancer might have Grace, Poise, Rhythm, Allure. Choose labels that suit the concept.
+
+Higher rarity should mean stronger stat values overall. The two image prompts must describe the same character with matching physical features.`
 
   try {
     const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
@@ -42,7 +46,7 @@ Make stats reflect the character concept. Higher rarity should mean stronger sta
         model: 'mistral-small-latest',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.9,
-        max_tokens: 800,
+        max_tokens: 900,
       }),
     })
 
@@ -60,6 +64,15 @@ Make stats reflect the character concept. Higher rarity should mean stronger sta
       card = JSON.parse(text)
     } catch {
       return res.status(500).json({ error: 'Could not parse card JSON', raw: text.slice(0, 300) })
+    }
+
+    if (!Array.isArray(card.stats) || card.stats.length === 0) {
+      card.stats = [
+        { label: 'Power', value: 50 },
+        { label: 'Skill', value: 50 },
+        { label: 'Spirit', value: 50 },
+        { label: 'Speed', value: 50 },
+      ]
     }
 
     return res.status(200).json({ card })
