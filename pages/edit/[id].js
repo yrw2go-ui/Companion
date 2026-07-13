@@ -12,10 +12,17 @@ const VOICES = [
 ]
 
 const MODELS = [
-  { id: 'deepseek-v3', label: 'DeepSeek V3 — balanced, cheap, big context' },
-  { id: 'qwen/qwen3-max-2026-01-23', label: 'Qwen3 Max — flagship, best reasoning' },
-  { id: 'zai-org/GLM-4.6', label: 'GLM 4.6 — natural dialogue' },
-  { id: 'minimaxai/minimax-m2.7', label: 'MiniMax M2.7 — fast, lightweight' },
+  { id: 'deepseek-ai/deepseek-v4-pro', label: 'DeepSeek V4 Pro — strong all-round (default)' },
+  { id: 'deepseek-ai/deepseek-v4-flash', label: 'DeepSeek V4 Flash — faster, cheaper' },
+  { id: 'deepseek-ai/deepseek-v3.2', label: 'DeepSeek V3.2 — previous gen' },
+  { id: 'qwen/qwen3.7-max', label: 'Qwen 3.7 Max — flagship, best reasoning' },
+  { id: 'qwen/qwen3.5-plus', label: 'Qwen 3.5 Plus — strong, balanced' },
+  { id: 'qwen/qwen3.5-27b', label: 'Qwen 3.5 27B — mid-size, quick' },
+  { id: 'zai-org/glm-5', label: 'GLM 5 — natural dialogue' },
+  { id: 'zai-org/glm-4.7', label: 'GLM 4.7 — natural dialogue, cheaper' },
+  { id: 'minimaxai/minimax-m3', label: 'MiniMax M3 — fast, lightweight' },
+  { id: 'moonshotai/kimi-k2.6', label: 'Kimi K2.6 — long context' },
+  { id: 'xai/grok-4.5', label: 'Grok 4.5 — casual, less filtered' },
 ]
 
 export default function EditCharacter() {
@@ -26,7 +33,7 @@ export default function EditCharacter() {
   const [form, setForm] = useState({
     name: '', age: '', appearance: '', personality: '',
     speaking_style: '', backstory: '', relationship: '', sample_dialogue: '',
-    response_rules: '', image_style: '', voice_id: 'eve', chat_model: 'deepseek-v3',
+    response_rules: '', image_style: '', voice_id: 'eve', chat_model: 'deepseek-ai/deepseek-v4-pro',
     user_appearance_override: '',
   })
   const [memories, setMemories] = useState([])
@@ -52,7 +59,7 @@ export default function EditCharacter() {
         response_rules: data.response_rules || '',
         image_style: data.image_style || '',
         voice_id: data.voice_id || 'eve',
-        chat_model: data.chat_model || 'deepseek-v3',
+        chat_model: data.chat_model || 'deepseek-ai/deepseek-v4-pro',
         user_appearance_override: data.user_appearance_override || '',
       })
     }
