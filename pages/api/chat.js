@@ -6,7 +6,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { character, coreMemories, scenario, messages, spicyMode } = req.body
+  const { character, coreMemories, scenario, messages } = req.body
 
   if (!character || !messages) {
     return res.status(400).json({ error: 'Missing character or messages' })
@@ -15,8 +15,6 @@ export default async function handler(req, res) {
   const systemPrompt = buildSystemPrompt(character, coreMemories || [], scenario || '')
 
   try {
-    const model = spicyMode ? 'qwen/qwen3.5-27b' : 'deepseek-v3'
-
     const response = await fetch('https://api.atlascloud.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -24,12 +22,12 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${process.env.ATLAS_API_KEY}`,
       },
       body: JSON.stringify({
-        model,
+        model: 'deepseek-v3',
         messages: [
           { role: 'system', content: systemPrompt },
           ...messages,
         ],
-        temperature: spicyMode ? 0.9 : 0.85,
+        temperature: 0.85,
         max_tokens: 800,
       }),
     })
