@@ -27,13 +27,16 @@ const ART_STYLES = [
 
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 
-const RARITY_STYLES = {
-  common:    { ring: 'border-gray-500',   text: 'text-gray-300',   glow: '',                                        code: 'COM' },
-  uncommon:  { ring: 'border-green-500',  text: 'text-green-400',  glow: 'shadow-[0_0_15px_rgba(34,197,94,0.3)]',   code: 'UNC' },
-  rare:      { ring: 'border-blue-500',   text: 'text-blue-400',   glow: 'shadow-[0_0_15px_rgba(59,130,246,0.4)]',  code: 'RAR' },
-  epic:      { ring: 'border-purple-500', text: 'text-purple-400', glow: 'shadow-[0_0_20px_rgba(168,85,247,0.5)]',  code: 'EPI' },
-  legendary: { ring: 'border-amber-400',  text: 'text-amber-300',  glow: 'shadow-[0_0_25px_rgba(251,191,36,0.6)]',  code: 'LEG' },
+// visual treatment per rarity
+const TREAT = {
+  common:    { edge: 'edge-common',    glow: '',                badge: 'badge-common',    foil: '',            holo: false, code: 'COM' },
+  uncommon:  { edge: 'edge-uncommon',  glow: 'glow-uncommon',   badge: 'badge-uncommon',  foil: '',            holo: false, code: 'UNC' },
+  rare:      { edge: 'edge-rare',      glow: 'glow-rare',       badge: 'badge-rare',      foil: 'foil',        holo: false, code: 'RAR' },
+  epic:      { edge: 'edge-epic',      glow: 'glow-epic',       badge: 'badge-epic',      foil: 'foil',        holo: true,  code: 'EPI' },
+  legendary: { edge: 'edge-legendary', glow: 'glow-legendary',  badge: 'badge-legendary', foil: 'foil-strong', holo: true,  code: 'LEG' },
 }
+
+const treatOf = (r) => TREAT[r] || TREAT.common
 
 const emptyDraft = () => ({
   name: '',
@@ -52,7 +55,6 @@ export default function Cards() {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
 
-  // create flow
   const [showCreate, setShowCreate] = useState(false)
   const [concept, setConcept] = useState('')
   const [drafting, setDrafting] = useState(false)
@@ -64,7 +66,6 @@ export default function Cards() {
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState('')
 
-  // edit flow
   const [editing, setEditing] = useState(null)
   const [editNegative, setEditNegative] = useState(DEFAULT_NEGATIVE)
   const [editSize, setEditSize] = useState('768*1024')
@@ -72,22 +73,16 @@ export default function Cards() {
   const [saving, setSaving] = useState(false)
   const [regenProgress, setRegenProgress] = useState('')
 
-  useEffect(() => {
-    loadCards()
-  }, [])
+  useEffect(() => { loadCards() }, [])
 
   const loadCards = async () => {
-    const { data } = await supabase
-      .from('cards')
-      .select('*')
-      .order('created_at', { ascending: false })
+    const { data } = await supabase.from('cards').select('*').order('created_at', { ascending: false })
     setCards(data || [])
     setLoading(false)
   }
 
   const normalizeStats = (card) => {
     if (Array.isArray(card.stats) && card.stats.length) return card.stats
-    // fall back to legacy columns if an old card has no stats array
     const legacy = []
     if (card.hp != null) legacy.push({ label: 'HP', value: card.hp })
     if (card.attack != null) legacy.push({ label: 'ATK', value: card.attack })
@@ -96,7 +91,6 @@ export default function Cards() {
     return legacy
   }
 
-  // ---------- create ----------
   const draftCard = async () => {
     if (!concept.trim() || drafting) return
     setDrafting(true)
@@ -108,23 +102,15 @@ export default function Cards() {
         body: JSON.stringify({ concept }),
       })
       const data = await res.json()
-      if (data.card) {
-        setDraft(data.card)
-      } else {
-        alert('Error: ' + (data.error || 'could not draft card'))
-      }
+      if (data.card) setDraft(data.card)
+      else alert('Error: ' + (data.error || 'could not draft card'))
     } catch (err) {
       alert('Error: ' + err.message)
     }
     setDrafting(false)
   }
 
-  const skipToManual = () => setDraft(emptyDraft())
-
-  const withStyle = (basePrompt, style) => {
-    if (!style) return basePrompt
-    return `${basePrompt}, ${style}`
-  }
+  const withStyle = (base, style) => (!style ? base : `${base}, ${style}`)
 
   const genImage = async (imgPrompt, seedVal, neg, sz, style) => {
     const res = await fetch('/api/generate-image', {
@@ -141,38 +127,25 @@ export default function Cards() {
   }
 
   const makeCardNumber = async (rarity) => {
-    const code = (RARITY_STYLES[rarity] || RARITY_STYLES.common).code
-    const { count } = await supabase
-      .from('cards')
-      .select('id', { count: 'exact', head: true })
-      .eq('rarity', rarity)
+    const code = treatOf(rarity).code
+    const { count } = await supabase.from('cards').select('id', { count: 'exact', head: true }).eq('rarity', rarity)
     return `${code}-${String((count || 0) + 1).padStart(3, '0')}`
   }
 
   const createCard = async () => {
     if (!draft || generating) return
-    if (!draft.image_prompt?.trim()) {
-      alert('Front art prompt is required')
-      return
-    }
+    if (!draft.image_prompt?.trim()) { alert('Front art prompt is required'); return }
     setGenerating(true)
-
     try {
       setProgress('Generating front art...')
       const front = await genImage(draft.image_prompt, seedInput, negative, size, artStyle)
-      if (!front.imageUrl) {
-        alert('Front image error: ' + (front.error || 'failed'))
-        setGenerating(false); setProgress(''); return
-      }
+      if (!front.imageUrl) { alert('Front image error: ' + (front.error || 'failed')); setGenerating(false); setProgress(''); return }
 
       let back = { imageUrl: null, seed: null }
       if (draft.back_image_prompt?.trim()) {
         setProgress('Generating back art...')
         back = await genImage(draft.back_image_prompt, '', negative, size, artStyle)
-        if (!back.imageUrl) {
-          alert('Back image error: ' + (back.error || 'failed'))
-          setGenerating(false); setProgress(''); return
-        }
+        if (!back.imageUrl) { alert('Back image error: ' + (back.error || 'failed')); setGenerating(false); setProgress(''); return }
       }
 
       setProgress('Saving...')
@@ -196,30 +169,18 @@ export default function Cards() {
         negative_prompt: negative,
       }])
 
-      if (error) {
-        alert('Save error: ' + error.message)
-        setGenerating(false); setProgress(''); return
-      }
+      if (error) { alert('Save error: ' + error.message); setGenerating(false); setProgress(''); return }
 
-      setShowCreate(false)
-      setDraft(null)
-      setConcept('')
-      setSeedInput('')
-      setNegative(DEFAULT_NEGATIVE)
+      setShowCreate(false); setDraft(null); setConcept(''); setSeedInput(''); setNegative(DEFAULT_NEGATIVE)
       loadCards()
     } catch (err) {
       alert('Error: ' + err.message)
     }
-    setGenerating(false)
-    setProgress('')
+    setGenerating(false); setProgress('')
   }
 
-  // ---------- edit ----------
   const openEdit = (card) => {
-    setEditing({
-      ...card,
-      stats: normalizeStats(card),
-    })
+    setEditing({ ...card, stats: normalizeStats(card) })
     setEditNegative(card.negative_prompt || DEFAULT_NEGATIVE)
     setEditSize('768*1024')
     setEditStyle('')
@@ -229,28 +190,20 @@ export default function Cards() {
   const saveEdit = async () => {
     if (!editing || saving) return
     setSaving(true)
-
-    const { error } = await supabase
-      .from('cards')
-      .update({
-        name: editing.name,
-        title: editing.title,
-        description: editing.description,
-        flavor_text: editing.flavor_text,
-        rarity: (editing.rarity || 'common').toLowerCase(),
-        card_number: editing.card_number,
-        stats: editing.stats,
-        image_prompt: editing.image_prompt,
-        back_image_prompt: editing.back_image_prompt,
-        negative_prompt: editNegative,
-      })
-      .eq('id', editing.id)
-
+    const { error } = await supabase.from('cards').update({
+      name: editing.name,
+      title: editing.title,
+      description: editing.description,
+      flavor_text: editing.flavor_text,
+      rarity: (editing.rarity || 'common').toLowerCase(),
+      card_number: editing.card_number,
+      stats: editing.stats,
+      image_prompt: editing.image_prompt,
+      back_image_prompt: editing.back_image_prompt,
+      negative_prompt: editNegative,
+    }).eq('id', editing.id)
     setSaving(false)
-    if (error) {
-      alert('Save error: ' + error.message)
-      return
-    }
+    if (error) { alert('Save error: ' + error.message); return }
     setEditing(null)
     loadCards()
   }
@@ -258,33 +211,20 @@ export default function Cards() {
   const regenSide = async (side) => {
     if (!editing || regenProgress) return
     const promptText = side === 'front' ? editing.image_prompt : editing.back_image_prompt
-    if (!promptText?.trim()) {
-      alert('Add an art prompt first')
-      return
-    }
+    if (!promptText?.trim()) { alert('Add an art prompt first'); return }
 
     setRegenProgress(`Regenerating ${side}...`)
     const result = await genImage(promptText, '', editNegative, editSize, editStyle)
-    if (!result.imageUrl) {
-      alert('Error: ' + (result.error || 'failed'))
-      setRegenProgress('')
-      return
-    }
+    if (!result.imageUrl) { alert('Error: ' + (result.error || 'failed')); setRegenProgress(''); return }
 
     const oldUrl = side === 'front' ? editing.image_url : editing.back_image_url
-
     const patch = side === 'front'
       ? { image_url: result.imageUrl, seed: result.seed }
       : { back_image_url: result.imageUrl, back_seed: result.seed }
 
     const { error } = await supabase.from('cards').update(patch).eq('id', editing.id)
-    if (error) {
-      alert('Save error: ' + error.message)
-      setRegenProgress('')
-      return
-    }
+    if (error) { alert('Save error: ' + error.message); setRegenProgress(''); return }
 
-    // remove the replaced file from storage
     if (oldUrl) {
       const f = oldUrl.split('/character-images/')[1]
       if (f) await supabase.storage.from('character-images').remove([f])
@@ -306,112 +246,105 @@ export default function Cards() {
       }
     }
     if (files.length) await supabase.storage.from('character-images').remove(files)
-    setSelected(null)
-    setEditing(null)
+    setSelected(null); setEditing(null)
     loadCards()
   }
 
   const copy = (val) => navigator.clipboard?.writeText(String(val))
 
-  // ---------- stat editors ----------
   const statEditor = (statsArr, onChange) => (
     <div className="space-y-2 mb-3">
       {statsArr.map((s, i) => (
         <div key={i} className="flex gap-2 items-center">
-          <input
-            value={s.label}
-            onChange={e => {
-              const copyArr = [...statsArr]
-              copyArr[i] = { ...copyArr[i], label: e.target.value }
-              onChange(copyArr)
-            }}
-            placeholder="Label"
-            className="flex-1 bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500"
-          />
-          <input
-            type="number"
-            value={s.value}
-            onChange={e => {
-              const copyArr = [...statsArr]
-              copyArr[i] = { ...copyArr[i], value: parseInt(e.target.value) || 0 }
-              onChange(copyArr)
-            }}
-            className="w-20 bg-black border border-gray-700 rounded-lg px-2 py-2 text-sm outline-none focus:border-purple-500"
-          />
-          <button
-            onClick={() => onChange(statsArr.filter((_, idx) => idx !== i))}
-            className="text-red-500 hover:text-red-400 px-2 text-sm"
-          >
-            ✕
-          </button>
+          <input value={s.label} placeholder="Label"
+            onChange={e => { const c = [...statsArr]; c[i] = { ...c[i], label: e.target.value }; onChange(c) }}
+            className="flex-1 bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" />
+          <input type="number" value={s.value}
+            onChange={e => { const c = [...statsArr]; c[i] = { ...c[i], value: parseInt(e.target.value) || 0 }; onChange(c) }}
+            className="w-20 bg-black border border-gray-700 rounded-lg px-2 py-2 text-sm outline-none focus:border-purple-500" />
+          <button onClick={() => onChange(statsArr.filter((_, idx) => idx !== i))} className="text-red-500 hover:text-red-400 px-2 text-sm">✕</button>
         </div>
       ))}
-      <button
-        onClick={() => onChange([...statsArr, { label: '', value: 50 }])}
-        className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold"
-      >
+      <button onClick={() => onChange([...statsArr, { label: '', value: 50 }])}
+        className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold">
         + Add Stat
       </button>
     </div>
   )
 
-  // ---------- card rendering ----------
-  const statBar = (label, value, i) => (
-    <div key={i} className="flex items-center gap-2 text-[11px]">
-      <span className="w-14 text-gray-300 truncate">{label}</span>
-      <div className="flex-1 bg-white/20 rounded-full h-1.5">
-        <div className="bg-white h-1.5 rounded-full" style={{ width: `${Math.min(100, value)}%` }} />
+  const statBar = (label, value, i, dense) => (
+    <div key={i} className={`flex items-center gap-2 ${dense ? 'text-[9px]' : 'text-[11px]'}`}>
+      <span className={`${dense ? 'w-10' : 'w-14'} text-gray-200 truncate uppercase tracking-wide`}>{label}</span>
+      <div className="flex-1 bg-white/25 rounded-full h-1">
+        <div className="bg-white h-1 rounded-full" style={{ width: `${Math.min(100, value)}%` }} />
       </div>
-      <span className="w-6 text-right text-gray-200">{value}</span>
+      <span className="w-5 text-right text-gray-100">{value}</span>
     </div>
   )
 
-  const cardFront = (card, style) => (
-    <div className={`bg-gray-950 border-2 ${style.ring} ${style.glow} rounded-2xl overflow-hidden`}>
-      {card.image_url && (
-        <img src={card.image_url} alt={card.name} className="w-full aspect-[3/4] object-cover" />
-      )}
-      <div className="p-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="font-bold leading-tight truncate">{card.name}</div>
-            {card.title && <div className="text-xs text-gray-500 truncate">{card.title}</div>}
+  // FRONT — full-bleed art, glass nameplate, badge, foil
+  const cardFront = (card) => {
+    const t = treatOf(card.rarity)
+    return (
+      <div className={`card-shell ${t.edge} ${t.glow}`}>
+        <div className={`card-inner ${t.foil} ${t.holo ? 'holo' : ''}`}>
+          <div className="relative aspect-[3/4]">
+            {card.image_url ? (
+              <img src={card.image_url} alt={card.name} className="absolute inset-0 w-full h-full object-cover" />
+            ) : (
+              <div className="absolute inset-0 bg-gray-900" />
+            )}
+
+            <span className={`badge ${t.badge}`}>{card.rarity}</span>
+
+            <div className="nameplate">
+              <div className="font-bold text-[15px] leading-tight truncate tracking-wide">{card.name}</div>
+              {card.title && (
+                <div className="text-[10px] text-gray-300 truncate uppercase tracking-[0.12em] mt-0.5">{card.title}</div>
+              )}
+            </div>
           </div>
-          <span className={`text-[10px] uppercase font-bold shrink-0 ${style.text}`}>{card.rarity}</span>
         </div>
       </div>
-    </div>
-  )
+    )
+  }
 
-  const cardBack = (card, style) => {
+  // BACK — second art, stats + lore overlaid, card number
+  const cardBack = (card) => {
+    const t = treatOf(card.rarity)
     const stats = normalizeStats(card)
     return (
-      <div className={`relative bg-gray-950 border-2 ${style.ring} ${style.glow} rounded-2xl overflow-hidden`}>
-        {card.back_image_url ? (
-          <img src={card.back_image_url} alt="" className="w-full aspect-[3/4] object-cover" />
-        ) : (
-          <div className="w-full aspect-[3/4] bg-gray-900 flex items-center justify-center text-gray-700 text-xs">
-            no back art
+      <div className={`card-shell ${t.edge} ${t.glow}`}>
+        <div className={`card-inner ${t.foil} ${t.holo ? 'holo' : ''}`}>
+          <div className="relative aspect-[3/4]">
+            {card.back_image_url ? (
+              <img src={card.back_image_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+            ) : (
+              <div className="absolute inset-0 bg-gray-900 flex items-center justify-center text-gray-700 text-[10px]">
+                no back art
+              </div>
+            )}
+
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/25" />
+
+            <span className={`badge ${t.badge}`}>{card.rarity}</span>
+
+            <div className="absolute inset-0 z-[4] p-3 flex flex-col justify-end">
+              {card.description && (
+                <p className="text-[10px] text-gray-200 leading-snug mb-2">{card.description}</p>
+              )}
+              {card.flavor_text && (
+                <p className="text-[9px] italic text-gray-400 mb-2 leading-snug">"{card.flavor_text}"</p>
+              )}
+              <div className="space-y-1 mb-2">
+                {stats.map((s, i) => statBar(s.label, s.value, i, true))}
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-white/15">
+                <span className="text-[9px] font-mono text-gray-400 tracking-widest">{card.card_number || '—'}</span>
+                <span className="text-[9px] text-gray-500 tracking-widest uppercase">Companion</span>
+              </div>
+            </div>
           </div>
-        )}
-
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-black/20" />
-
-        <div className="absolute inset-0 p-3 flex flex-col justify-end">
-          {card.description && (
-            <p className="text-[11px] text-gray-300 leading-snug mb-2">{card.description}</p>
-          )}
-          {card.flavor_text && (
-            <p className="text-[10px] italic text-gray-400 mb-2">"{card.flavor_text}"</p>
-          )}
-          <div className="space-y-1">
-            {stats.map((s, i) => statBar(s.label, s.value, i))}
-          </div>
-        </div>
-
-        <div className="p-3 pt-2 flex items-center justify-between border-t border-white/10">
-          <span className="text-[10px] font-mono text-gray-500">{card.card_number || '—'}</span>
-          <span className={`text-[10px] uppercase font-bold ${style.text}`}>{card.rarity}</span>
         </div>
       </div>
     )
@@ -434,7 +367,7 @@ export default function Cards() {
     <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
       <div className="flex items-center justify-between mb-6">
         <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
-        <h1 className="text-xl font-bold">Cards</h1>
+        <h1 className="text-xl font-bold tracking-wide">Cards</h1>
         <button onClick={() => setShowCreate(true)} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">
           + New
         </button>
@@ -445,15 +378,12 @@ export default function Cards() {
       ) : cards.length === 0 ? (
         <p className="text-gray-500 text-sm">No cards yet. Tap "+ New" to summon one.</p>
       ) : (
-        <div className="grid grid-cols-2 gap-3">
-          {cards.map(c => {
-            const style = RARITY_STYLES[c.rarity] || RARITY_STYLES.common
-            return (
-              <button key={c.id} onClick={() => setSelected(c)} className="text-left">
-                {cardFront(c, style)}
-              </button>
-            )
-          })}
+        <div className="grid grid-cols-2 gap-4">
+          {cards.map(c => (
+            <button key={c.id} onClick={() => setSelected(c)} className="text-left">
+              {cardFront(c)}
+            </button>
+          ))}
         </div>
       )}
 
@@ -469,13 +399,11 @@ export default function Cards() {
                 <textarea value={concept} onChange={e => setConcept(e.target.value)} rows={3}
                   placeholder="e.g. an elegant sorceress in flowing silk, garden of moonflowers"
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
-                <button onClick={skipToManual} className="text-xs text-gray-500 hover:text-gray-300 mb-4">
+                <button onClick={() => setDraft(emptyDraft())} className="text-xs text-gray-500 hover:text-gray-300 mb-4">
                   or build it manually →
                 </button>
                 <div className="flex gap-2">
-                  <button onClick={() => { setShowCreate(false); setConcept('') }} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">
-                    Cancel
-                  </button>
+                  <button onClick={() => { setShowCreate(false); setConcept('') }} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
                   <button onClick={draftCard} disabled={drafting} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
                     {drafting ? 'Drafting...' : 'Draft Card'}
                   </button>
@@ -522,9 +450,7 @@ export default function Cards() {
                 {progress && <p className="text-xs text-purple-400 mb-3">{progress}</p>}
 
                 <div className="flex gap-2">
-                  <button onClick={() => setDraft(null)} disabled={generating} className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-semibold">
-                    Back
-                  </button>
+                  <button onClick={() => setDraft(null)} disabled={generating} className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-semibold">Back</button>
                   <button onClick={createCard} disabled={generating} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
                     {generating ? 'Summoning...' : 'Create Card'}
                   </button>
@@ -541,9 +467,9 @@ export default function Cards() {
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
             <h2 className="font-bold text-lg mb-3">Edit Card</h2>
 
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {editing.image_url && <img src={editing.image_url} alt="" className="w-full rounded-lg" />}
-              {editing.back_image_url && <img src={editing.back_image_url} alt="" className="w-full rounded-lg" />}
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>{cardFront(editing)}</div>
+              <div>{cardBack(editing)}</div>
             </div>
 
             {inputRow('Name', editing.name, v => setEditing({ ...editing, name: v }))}
@@ -563,7 +489,7 @@ export default function Cards() {
             {statEditor(editing.stats || [], arr => setEditing({ ...editing, stats: arr }))}
 
             <div className="border-t border-gray-800 pt-4 mt-2">
-              <p className="text-xs text-gray-400 mb-2 font-semibold">Regenerate Art (optional)</p>
+              <p className="text-xs text-gray-400 mb-2 font-semibold">Regenerate Art</p>
 
               {inputRow('Front Art Prompt', editing.image_prompt, v => setEditing({ ...editing, image_prompt: v }), true, 3)}
               {inputRow('Back Art Prompt', editing.back_image_prompt, v => setEditing({ ...editing, back_image_prompt: v }), true, 3)}
@@ -585,20 +511,14 @@ export default function Cards() {
 
               <div className="flex gap-2 mb-4">
                 <button onClick={() => regenSide('front')} disabled={!!regenProgress}
-                  className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">
-                  Regenerate Front
-                </button>
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">Regenerate Front</button>
                 <button onClick={() => regenSide('back')} disabled={!!regenProgress}
-                  className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">
-                  Regenerate Back
-                </button>
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">Regenerate Back</button>
               </div>
             </div>
 
             <div className="flex gap-2">
-              <button onClick={() => setEditing(null)} disabled={saving} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">
-                Cancel
-              </button>
+              <button onClick={() => setEditing(null)} disabled={saving} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
               <button onClick={saveEdit} disabled={saving} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
                 {saving ? 'Saving...' : 'Save'}
               </button>
@@ -615,54 +535,41 @@ export default function Cards() {
       {selected && (
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
           <div className="w-full max-w-lg my-6" onClick={e => e.stopPropagation()}>
-            {(() => {
-              const style = RARITY_STYLES[selected.rarity] || RARITY_STYLES.common
-              return (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-[10px] uppercase text-gray-500 mb-1 text-center">Front</p>
-                      {cardFront(selected, style)}
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase text-gray-500 mb-1 text-center">Back</p>
-                      {cardBack(selected, style)}
-                    </div>
-                  </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[10px] uppercase text-gray-500 mb-2 text-center tracking-widest">Front</p>
+                {cardFront(selected)}
+              </div>
+              <div>
+                <p className="text-[10px] uppercase text-gray-500 mb-2 text-center tracking-widest">Back</p>
+                {cardBack(selected)}
+              </div>
+            </div>
 
-                  <div className="mt-4 bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500">Card No.</span>
-                      <span className="font-mono text-gray-300">{selected.card_number || '—'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500">Front seed</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-gray-300">{selected.seed ?? '—'}</span>
-                        {selected.seed && <button onClick={() => copy(selected.seed)} className="text-gray-500 hover:text-white">Copy</button>}
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500">Back seed</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-gray-300">{selected.back_seed ?? '—'}</span>
-                        {selected.back_seed && <button onClick={() => copy(selected.back_seed)} className="text-gray-500 hover:text-white">Copy</button>}
-                      </div>
-                    </div>
-                  </div>
+            <div className="mt-4 bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Card No.</span>
+                <span className="font-mono text-gray-300">{selected.card_number || '—'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Front seed</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-gray-300">{selected.seed ?? '—'}</span>
+                  {selected.seed && <button onClick={() => copy(selected.seed)} className="text-gray-500 hover:text-white">Copy</button>}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Back seed</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-gray-300">{selected.back_seed ?? '—'}</span>
+                  {selected.back_seed && <button onClick={() => copy(selected.back_seed)} className="text-gray-500 hover:text-white">Copy</button>}
+                </div>
+              </div>
+            </div>
 
-                  <button onClick={() => openEdit(selected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-lg py-2 text-sm font-semibold mt-3">
-                    Edit Card
-                  </button>
-                  <button onClick={() => deleteCard(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">
-                    Delete Card
-                  </button>
-                  <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
-                    Close
-                  </button>
-                </>
-              )
-            })()}
+            <button onClick={() => openEdit(selected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-lg py-2 text-sm font-semibold mt-3">Edit Card</button>
+            <button onClick={() => deleteCard(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">Delete Card</button>
+            <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
           </div>
         </div>
       )}
