@@ -2,8 +2,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
+import { downloadCard } from '../lib/renderCard'
 
-const DEFAULT_NEGATIVE = 'blurry, (asian), low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -68,6 +69,7 @@ export default function Cards() {
   const [editStyle, setEditStyle] = useState('')
   const [saving, setSaving] = useState(false)
   const [regenProgress, setRegenProgress] = useState('')
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => { loadCards() }, [])
 
@@ -247,6 +249,17 @@ export default function Cards() {
   }
 
   const copy = (val) => navigator.clipboard?.writeText(String(val))
+
+  const handleDownload = async (card) => {
+    if (downloading) return
+    setDownloading(true)
+    try {
+      await downloadCard(card)
+    } catch (err) {
+      alert('Download failed: ' + err.message)
+    }
+    setDownloading(false)
+  }
 
   const statEditor = (statsArr, onChange) => (
     <div className="space-y-2 mb-3">
@@ -553,7 +566,11 @@ export default function Cards() {
               </div>
             </div>
 
-            <button onClick={() => openEdit(selected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-lg py-2 text-sm font-semibold mt-3">Edit Card</button>
+            <button onClick={() => handleDownload(selected)} disabled={downloading}
+              className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-3">
+              {downloading ? 'Rendering...' : '⬇ Download PNG'}
+            </button>
+            <button onClick={() => openEdit(selected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-lg py-2 text-sm font-semibold mt-2">Edit Card</button>
             <button onClick={() => deleteCard(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">Delete Card</button>
             <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
           </div>
@@ -568,8 +585,12 @@ export default function Cards() {
             <button onClick={() => setExpanded(false)} className="block w-full text-left">
               {side === 'front' ? cardFront(selected, true) : cardBack(selected, true)}
             </button>
+            <button onClick={() => handleDownload(selected)} disabled={downloading}
+              className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-4">
+              {downloading ? 'Rendering...' : '⬇ Download PNG'}
+            </button>
             <button onClick={() => setExpanded(false)}
-              className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-4">
+              className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
               Close
             </button>
           </div>
