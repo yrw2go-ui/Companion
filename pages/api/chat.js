@@ -1,15 +1,30 @@
 // pages/api/chat.js
 import { buildSystemPrompt } from '../../lib/buildSystemPrompt'
 
-// models we allow, so a bad value can't break the call
+// exact Atlas model IDs
 const ALLOWED_MODELS = [
-  'deepseek-v3',
-  'qwen/qwen3-max-2026-01-23',
-  'zai-org/GLM-4.6',
+  // DeepSeek
+  'deepseek-ai/deepseek-v4-pro',
+  'deepseek-ai/deepseek-v4-flash',
+  'deepseek-ai/deepseek-v3.2',
+  // Qwen
+  'qwen/qwen3.5-plus',
+  'qwen/qwen3.7-max',
+  'qwen/qwen3.5-27b',
+  'qwen/qwen3.5-35b-a3b',
+  // GLM
+  'zai-org/glm-5',
+  'zai-org/glm-4.7',
+  // MiniMax
+  'minimaxai/minimax-m3',
   'minimaxai/minimax-m2.7',
+  // Kimi
+  'moonshotai/kimi-k2.6',
+  // Grok
+  'xai/grok-4.5',
 ]
 
-const DEFAULT_MODEL = 'deepseek-v3'
+const DEFAULT_MODEL = 'deepseek-ai/deepseek-v4-pro'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -64,6 +79,7 @@ export default async function handler(req, res) {
         error: data.error?.message || data.message || 'Atlas error',
         httpStatus: response.status,
         model,
+        detail: data,
       })
     }
 
