@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 
-const DEFAULT_NEGATIVE = 'blurry, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, (asian), low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4' },
@@ -31,12 +31,10 @@ export default function Gallery() {
 
   const [showVideo, setShowVideo] = useState(false)
   const [videoSource, setVideoSource] = useState('')
-  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
+  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, sensual movement')
   const [animating, setAnimating] = useState(false)
 
-  useEffect(() => {
-    load()
-  }, [])
+  useEffect(() => { load() }, [])
 
   const load = async () => {
     const { data: msgMedia } = await supabase
@@ -58,8 +56,10 @@ export default function Gallery() {
         source: 'messages',
         type: m.role,
         url: m.content,
-        seed: null,
-        prompt: null,
+        seed: m.seed ?? null,
+        prompt: m.prompt ?? null,
+        negative_prompt: m.negative_prompt ?? null,
+        size: m.size ?? null,
         created_at: m.created_at,
       }))
 
@@ -69,20 +69,38 @@ export default function Gallery() {
       source: 'gallery_media',
       type: g.type,
       url: g.url,
-      seed: g.seed,
-      prompt: g.prompt,
+      seed: g.seed ?? null,
+      prompt: g.prompt ?? null,
+      negative_prompt: g.negative_prompt ?? null,
+      size: g.size ?? null,
       created_at: g.created_at,
     }))
 
-    const all = [...fromChats, ...fromGallery].sort(
-      (a, b) => new Date(b.created_at) - new Date(a.created_at)
-    )
-    setMedia(all)
+    setMedia([...fromChats, ...fromGallery].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)))
 
     const { data: chars } = await supabase.from('characters').select('id, name')
     setCharacters(chars || [])
-
     setLoading(false)
+  }
+
+  const openCreate = () => {
+    setPrompt('')
+    setNegative(DEFAULT_NEGATIVE)
+    setSeed('')
+    setSize('768*1024')
+    setCharId('')
+    setShowCreate(true)
+  }
+
+  // reopen create modal pre-filled from an existing image
+  const openRegenerate = (item, keepSeed) => {
+    setPrompt(item.prompt || '')
+    setNegative(item.negative_prompt || DEFAULT_NEGATIVE)
+    setSeed(keepSeed && item.seed ? String(item.seed) : '')
+    setSize(item.size || '768*1024')
+    setCharId('')
+    setSelected(null)
+    setShowCreate(true)
   }
 
   const createImage = async () => {
@@ -128,7 +146,7 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrompt('gentle natural motion, subtle movement')
+    setVideoPrompt('gentle natural motion, sensual movement')
     setShowVideo(true)
     setSelected(null)
   }
@@ -149,13 +167,11 @@ export default function Gallery() {
         setAnimating(false)
         return
       }
-
       await supabase.from('gallery_media').insert([{
         type: 'video',
         url: data.videoUrl,
         prompt: videoPrompt,
       }])
-
       load()
     } catch (err) {
       alert('Error: ' + err.message)
@@ -167,16 +183,12 @@ export default function Gallery() {
     if (!confirm('Delete this permanently?')) return
     await supabase.from(item.source).delete().eq('id', item.id)
     const fileName = item.url.split('/character-images/')[1]
-    if (fileName) {
-      await supabase.storage.from('character-images').remove([fileName])
-    }
+    if (fileName) await supabase.storage.from('character-images').remove([fileName])
     setSelected(null)
     load()
   }
 
-  const copySeed = (s) => {
-    navigator.clipboard?.writeText(String(s))
-  }
+  const copy = (val) => navigator.clipboard?.writeText(String(val))
 
   const shown = media.filter(m => {
     if (filter === 'all') return true
@@ -186,12 +198,8 @@ export default function Gallery() {
   })
 
   const tab = (key, label) => (
-    <button
-      onClick={() => setFilter(key)}
-      className={`px-4 py-1.5 rounded-full text-sm font-semibold ${
-        filter === key ? 'bg-purple-600 text-white' : 'bg-gray-900 text-gray-400'
-      }`}
-    >
+    <button onClick={() => setFilter(key)}
+      className={`px-4 py-1.5 rounded-full text-sm font-semibold ${filter === key ? 'bg-purple-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
       {label}
     </button>
   )
@@ -201,10 +209,7 @@ export default function Gallery() {
       <div className="flex items-center justify-between mb-4">
         <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <h1 className="text-xl font-bold">Gallery</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold"
-        >
+        <button onClick={openCreate} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">
           + Create
         </button>
       </div>
@@ -228,19 +233,14 @@ export default function Gallery() {
       ) : (
         <div className="grid grid-cols-2 gap-2">
           {shown.map(item => (
-            <button
-              key={item.key}
-              onClick={() => setSelected(item)}
-              className="relative aspect-square rounded-xl overflow-hidden bg-gray-900"
-            >
+            <button key={item.key} onClick={() => setSelected(item)}
+              className="relative aspect-square rounded-xl overflow-hidden bg-gray-900">
               {item.type === 'image' ? (
                 <img src={item.url} alt="" className="w-full h-full object-cover" />
               ) : (
                 <>
                   <video src={item.url} className="w-full h-full object-cover" muted />
-                  <span className="absolute bottom-1.5 right-1.5 bg-black/70 rounded-full px-2 py-0.5 text-[10px]">
-                    ▶ video
-                  </span>
+                  <span className="absolute bottom-1.5 right-1.5 bg-black/70 rounded-full px-2 py-0.5 text-[10px]">▶ video</span>
                 </>
               )}
             </button>
@@ -248,72 +248,41 @@ export default function Gallery() {
         </div>
       )}
 
-      {/* Create modal */}
+      {/* CREATE / REGENERATE */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-50 overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
             <h2 className="font-bold text-lg mb-3">Create Image</h2>
 
             <label className="block text-xs text-gray-400 mb-1">Prompt</label>
-            <textarea
-              value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-              rows={4}
+            <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={5}
               placeholder="describe the image..."
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
-            />
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
 
             <label className="block text-xs text-gray-400 mb-1">Negative Prompt</label>
-            <textarea
-              value={negative}
-              onChange={e => setNegative(e.target.value)}
-              rows={3}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
-            />
+            <textarea value={negative} onChange={e => setNegative(e.target.value)} rows={3}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
 
             <label className="block text-xs text-gray-400 mb-1">Aspect Ratio</label>
-            <select
-              value={size}
-              onChange={e => setSize(e.target.value)}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
-            >
-              {SIZES.map(s => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
+            <select value={size} onChange={e => setSize(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              {SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
 
             <label className="block text-xs text-gray-400 mb-1">Seed (optional)</label>
-            <input
-              value={seed}
-              onChange={e => setSeed(e.target.value)}
-              placeholder="leave blank for random"
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
-            />
+            <input value={seed} onChange={e => setSeed(e.target.value)} placeholder="leave blank for random"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
 
             <label className="block text-xs text-gray-400 mb-1">Tag to Character (optional)</label>
-            <select
-              value={charId}
-              onChange={e => setCharId(e.target.value)}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500"
-            >
+            <select value={charId} onChange={e => setCharId(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500">
               <option value="">None</option>
-              {characters.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
+              {characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
 
             <div className="flex gap-2">
-              <button
-                onClick={() => setShowCreate(false)}
-                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createImage}
-                disabled={creating}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold"
-              >
+              <button onClick={() => setShowCreate(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={createImage} disabled={creating} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
                 {creating ? 'Generating...' : 'Generate'}
               </button>
             </div>
@@ -321,47 +290,27 @@ export default function Gallery() {
         </div>
       )}
 
-      {/* Animate modal */}
+      {/* ANIMATE */}
       {showVideo && (
         <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-5 z-50">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
             <h2 className="font-bold text-lg mb-2">Animate Image</h2>
             <p className="text-xs text-gray-500 mb-3">Takes 1-2 min and costs more than an image.</p>
-
             <img src={videoSource} alt="" className="w-28 rounded-lg mb-3" />
-
             <label className="block text-xs text-gray-400 mb-1">Motion Prompt</label>
-            <textarea
-              value={videoPrompt}
-              onChange={e => setVideoPrompt(e.target.value)}
-              rows={3}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500"
-            />
-
+            <textarea value={videoPrompt} onChange={e => setVideoPrompt(e.target.value)} rows={3}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500" />
             <div className="flex gap-2">
-              <button
-                onClick={() => setShowVideo(false)}
-                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={animate}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold"
-              >
-                Animate
-              </button>
+              <button onClick={() => setShowVideo(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={animate} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Animate</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Detail view */}
+      {/* DETAIL */}
       {selected && (
-        <div
-          className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto"
-          onClick={() => setSelected(null)}
-        >
+        <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
           <div className="w-full max-w-md my-8" onClick={e => e.stopPropagation()}>
             {selected.type === 'image' ? (
               <img src={selected.url} alt="" className="w-full rounded-2xl" />
@@ -369,42 +318,48 @@ export default function Gallery() {
               <video src={selected.url} controls autoPlay loop className="w-full rounded-2xl" />
             )}
 
-            <div className="mt-3 space-y-1 text-xs text-gray-500">
+            <div className="mt-3 bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span>Seed: {selected.seed ?? 'unknown'}</span>
-                {selected.seed && (
-                  <button onClick={() => copySeed(selected.seed)} className="text-gray-400 hover:text-white">
-                    Copy
-                  </button>
-                )}
+                <span className="text-gray-500">Seed</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-gray-300">{selected.seed ?? '—'}</span>
+                  {selected.seed && <button onClick={() => copy(selected.seed)} className="text-gray-500 hover:text-white">Copy</button>}
+                </div>
               </div>
-              <div>{new Date(selected.created_at).toLocaleString()}</div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Created</span>
+                <span className="text-gray-400">{new Date(selected.created_at).toLocaleString()}</span>
+              </div>
               {selected.prompt && (
-                <div className="text-gray-600 pt-1">{selected.prompt}</div>
+                <div className="pt-1 border-t border-gray-800">
+                  <p className="text-gray-500 mb-1">Prompt</p>
+                  <p className="text-gray-400 leading-snug">{selected.prompt}</p>
+                </div>
               )}
             </div>
 
+            {selected.type === 'image' && selected.prompt && (
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => openRegenerate(selected, true)}
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold">
+                  Rerun same seed
+                </button>
+                <button onClick={() => openRegenerate(selected, false)}
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold">
+                  Rerun new seed
+                </button>
+              </div>
+            )}
+
             {selected.type === 'image' && (
-              <button
-                onClick={() => openAnimate(selected.url)}
-                className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-3"
-              >
+              <button onClick={() => openAnimate(selected.url)}
+                className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
                 🎬 Animate
               </button>
             )}
 
-            <button
-              onClick={() => remove(selected)}
-              className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2"
-            >
-              Delete
-            </button>
-            <button
-              onClick={() => setSelected(null)}
-              className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2"
-            >
-              Close
-            </button>
+            <button onClick={() => remove(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">Delete</button>
+            <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
           </div>
         </div>
       )}
