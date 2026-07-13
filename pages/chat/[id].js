@@ -27,6 +27,8 @@ export default function Chat() {
   const [showVideoModal, setShowVideoModal] = useState(false)
   const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
   const [videoSourceUrl, setVideoSourceUrl] = useState('')
+  const [videoDuration, setVideoDuration] = useState(5)
+  const [videoRes, setVideoRes] = useState('720p')
   const [videoing, setVideoing] = useState(false)
   const audioRef = useRef(null)
   const bottomRef = useRef(null)
@@ -185,6 +187,8 @@ export default function Chat() {
   const openVideoModal = (imageUrl) => {
     setVideoSourceUrl(imageUrl)
     setVideoPrompt('gentle natural motion, subtle movement')
+    setVideoDuration(5)
+    setVideoRes('720p')
     setShowVideoModal(true)
   }
 
@@ -199,7 +203,7 @@ export default function Chat() {
       const res = await fetch('/api/generate-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: videoSourceUrl, prompt: videoPrompt }),
+        body: JSON.stringify({ imageUrl: videoSourceUrl, prompt: videoPrompt, duration: videoDuration, resolution: videoRes }),
       })
       const data = await res.json()
       if (data.videoUrl) {
@@ -400,7 +404,23 @@ export default function Chat() {
 
             <label className="block text-xs text-gray-400 mb-1">Motion Prompt</label>
             <textarea value={videoPrompt} onChange={e => setVideoPrompt(e.target.value)} rows={3}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-4" />
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3" />
+
+            <label className="block text-xs text-gray-400 mb-1">Length</label>
+            <select value={videoDuration} onChange={e => setVideoDuration(parseInt(e.target.value))}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3">
+              <option value={5}>5 seconds</option>
+              <option value={8}>8 seconds</option>
+              <option value={10}>10 seconds (2x cost)</option>
+              <option value={15}>15 seconds (3x cost)</option>
+            </select>
+
+            <label className="block text-xs text-gray-400 mb-1">Resolution</label>
+            <select value={videoRes} onChange={e => setVideoRes(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-4">
+              <option value="720p">720p</option>
+              <option value="1080p">1080p (costs more)</option>
+            </select>
 
             <div className="flex gap-2">
               <button onClick={() => setShowVideoModal(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
