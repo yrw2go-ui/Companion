@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 
-const DEFAULT_NEGATIVE = 'blurry, (asian), low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4' },
@@ -31,7 +31,9 @@ export default function Gallery() {
 
   const [showVideo, setShowVideo] = useState(false)
   const [videoSource, setVideoSource] = useState('')
-  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, sensual movement')
+  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
+  const [videoDuration, setVideoDuration] = useState(5)
+  const [videoRes, setVideoRes] = useState('720p')
   const [animating, setAnimating] = useState(false)
 
   useEffect(() => { load() }, [])
@@ -146,7 +148,9 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrompt('gentle natural motion, sensual movement')
+    setVideoPrompt('gentle natural motion, subtle movement')
+    setVideoDuration(5)
+    setVideoRes('720p')
     setShowVideo(true)
     setSelected(null)
   }
@@ -159,7 +163,7 @@ export default function Gallery() {
       const res = await fetch('/api/generate-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: videoSource, prompt: videoPrompt }),
+        body: JSON.stringify({ imageUrl: videoSource, prompt: videoPrompt, duration: videoDuration, resolution: videoRes }),
       })
       const data = await res.json()
       if (!data.videoUrl) {
@@ -299,7 +303,24 @@ export default function Gallery() {
             <img src={videoSource} alt="" className="w-28 rounded-lg mb-3" />
             <label className="block text-xs text-gray-400 mb-1">Motion Prompt</label>
             <textarea value={videoPrompt} onChange={e => setVideoPrompt(e.target.value)} rows={3}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500" />
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+
+            <label className="block text-xs text-gray-400 mb-1">Length</label>
+            <select value={videoDuration} onChange={e => setVideoDuration(parseInt(e.target.value))}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              <option value={5}>5 seconds</option>
+              <option value={8}>8 seconds</option>
+              <option value={10}>10 seconds (2x cost)</option>
+              <option value={15}>15 seconds (3x cost)</option>
+            </select>
+
+            <label className="block text-xs text-gray-400 mb-1">Resolution</label>
+            <select value={videoRes} onChange={e => setVideoRes(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500">
+              <option value="720p">720p</option>
+              <option value="1080p">1080p (costs more)</option>
+            </select>
+
             <div className="flex gap-2">
               <button onClick={() => setShowVideo(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
               <button onClick={animate} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Animate</button>
