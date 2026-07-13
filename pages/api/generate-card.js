@@ -1,81 +1,138 @@
-// pages/api/generate-card.js
+// pages/api/generate-image.js
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
+
+const DEFAULT_GUIDANCE = 3.5
+const DEFAULT_STEPS = 28
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { concept } = req.body
+  const { prompt, negativePrompt, seed, size, guidance, steps } = req.body
 
-  if (!concept || !concept.trim()) {
-    return res.status(400).json({ error: 'No concept provided' })
+  if (!prompt) {
+    return res.status(400).json({ error: 'No prompt provided' })
   }
 
-  const prompt = `You are a trading card designer. Based on this concept, invent a character and return ONLY a JSON object with no markdown, no backticks, no preamble.
+  const BASE_URL = 'https://api.atlascloud.ai/api/v1'
+  const MODEL = 'black-forest-labs/flux-dev'
 
-Concept: ${concept}
+  const safeJson = async (response) => {
+    const text = await response.text()
+    try {
+      return { ok: true, data: JSON.parse(text) }
+    } catch {
+      return { ok: false, raw: text }
+    }
+  }
 
-Return exactly this shape:
-{
-  "name": "character name",
-  "title": "a short epithet, e.g. Warden of the Deep",
-  "description": "2 sentences describing who they are",
-  "flavor_text": "one evocative quote or line, max 15 words",
-  "rarity": "one of: common, uncommon, rare, epic, legendary",
-  "stats": [
-    { "label": "SHORT STAT NAME", "value": number 20-100 },
-    { "label": "SHORT STAT NAME", "value": number 20-100 },
-    { "label": "SHORT STAT NAME", "value": number 20-100 },
-    { "label": "SHORT STAT NAME", "value": number 20-100 }
-  ],
-  "image_prompt": "FRONT art: a vivid portrait description. appearance, pose, setting, mood",
-  "back_image_prompt": "BACK art: the SAME character in a different scene. an alternate pose or dramatic angle. keep appearance details consistent with the front, but change pose, setting and framing"
-}
+  const usedSeed = (seed !== undefined && seed !== null && seed !== '')
+    ? parseInt(seed)
+    : Math.floor(Math.random() * 2147483647)
 
-IMPORTANT about stats: invent 4 stat labels that FIT THIS CHARACTER's nature and theme, not generic RPG combat stats. Keep each label short (1 word if possible, max 2). For example a scholar might have Insight, Memory, Cunning, Resolve. A dancer might have Grace, Poise, Rhythm, Allure. Choose labels that suit the concept.
+  const usedSize = size || '768*1024'
 
-Higher rarity should mean stronger stat values overall. The two image prompts must describe the same character with matching physical features.`
+  // clamp guidance to a sane range
+  let usedGuidance = parseFloat(guidance)
+  if (isNaN(usedGuidance)) usedGuidance = DEFAULT_GUIDANCE
+  if (usedGuidance < 1) usedGuidance = 1
+  if (usedGuidance > 12) usedGuidance = 12
+
+  // clamp steps
+  let usedSteps = parseInt(steps)
+  if (isNaN(usedSteps)) usedSteps = DEFAULT_STEPS
+  if (usedSteps < 10) usedSteps = 10
+  if (usedSteps > 50) usedSteps = 50
 
   try {
-    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+    const body = {
+      model: MODEL,
+      prompt: prompt,
+      size: usedSize,
+      num_images: 1,
+      guidance_scale: usedGuidance,
+      num_inference_steps: usedSteps,
+      seed: usedSeed,
+    }
+
+    if (negativePrompt && negativePrompt.trim()) {
+      body.negative_prompt = negativePrompt.trim()
+    }
+
+    const submitRes = await fetch(`${BASE_URL}/model/generateImage`, {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${process.env.ATLAS_API_KEY}`,
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.MISTRAL_API_KEY}`,
       },
-      body: JSON.stringify({
-        model: 'mistral-small-latest',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.9,
-        max_tokens: 900,
-      }),
+      body: JSON.stringify(body),
     })
 
-    const data = await response.json()
-
-    if (!response.ok) {
-      return res.status(500).json({ error: data.message || 'Mistral error' })
+    const submitParsed = await safeJson(submitRes)
+    if (!submitParsed.ok) {
+      return res.status(500).json({ error: 'Atlas returned non-JSON', raw: submitParsed.raw?.slice(0, 300) })
     }
 
-    let text = data.choices[0].message.content.trim()
-    text = text.replace(/```json/g, '').replace(/```/g, '').trim()
-
-    let card
-    try {
-      card = JSON.parse(text)
-    } catch {
-      return res.status(500).json({ error: 'Could not parse card JSON', raw: text.slice(0, 300) })
+    const predictionId = submitParsed.data.data?.id
+    if (!predictionId) {
+      return res.status(500).json({ error: 'No prediction ID', detail: submitParsed.data })
     }
 
-    if (!Array.isArray(card.stats) || card.stats.length === 0) {
-      card.stats = [
-        { label: 'Power', value: 50 },
-        { label: 'Skill', value: 50 },
-        { label: 'Spirit', value: 50 },
-        { label: 'Speed', value: 50 },
-      ]
+    let atlasUrl = null
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 1500))
+
+      const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
+        headers: { 'Authorization': `Bearer ${process.env.ATLAS_API_KEY}` },
+      })
+      const pollParsed = await safeJson(pollRes)
+      if (!pollParsed.ok) continue
+
+      const pollBody = pollParsed.data.data || pollParsed.data
+      const status = pollBody.status
+
+      if (status === 'completed' || status === 'succeeded') {
+        atlasUrl = pollBody.outputs?.[0]
+        break
+      }
+      if (status === 'failed' || status === 'error') {
+        return res.status(500).json({ error: pollBody.error || 'Generation failed' })
+      }
     }
 
-    return res.status(200).json({ card })
+    if (!atlasUrl) {
+      return res.status(500).json({ error: 'Timed out' })
+    }
+
+    const imgRes = await fetch(atlasUrl)
+    const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
+
+    const fileName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpeg`
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('character-images')
+      .upload(fileName, imgBuffer, { contentType: 'image/jpeg', upsert: false })
+
+    if (uploadError) {
+      return res.status(500).json({ error: 'Upload failed: ' + uploadError.message })
+    }
+
+    const { data: publicData } = supabaseAdmin.storage
+      .from('character-images')
+      .getPublicUrl(fileName)
+
+    return res.status(200).json({
+      imageUrl: publicData.publicUrl,
+      seed: usedSeed,
+      size: usedSize,
+      guidance: usedGuidance,
+      steps: usedSteps,
+    })
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
