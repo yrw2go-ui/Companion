@@ -4,7 +4,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
 
-const DEFAULT_NEGATIVE = 'blurry, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, asian, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -71,6 +71,13 @@ export default function Cards() {
   const [regenProgress, setRegenProgress] = useState('')
   const [downloading, setDownloading] = useState(false)
 
+  const [showAnimate, setShowAnimate] = useState(false)
+  const [animPrompt, setAnimPrompt] = useState('subtle natural motion, gentle breathing, hair and fabric drifting slightly, eyes alive')
+  const [animDuration, setAnimDuration] = useState(5)
+  const [animRes, setAnimRes] = useState('720p')
+  const [animating, setAnimating] = useState(false)
+  const [view, setView] = useState('static')
+
   useEffect(() => { loadCards() }, [])
 
   const loadCards = async () => {
@@ -83,6 +90,7 @@ export default function Cards() {
     setSelected(card)
     setSide('front')
     setExpanded(false)
+    setView('static')
   }
 
   const normalizeStats = (card) => {
@@ -237,7 +245,7 @@ export default function Cards() {
     if (!confirm('Delete this card?')) return
     await supabase.from('cards').delete().eq('id', card.id)
     const files = []
-    for (const u of [card.image_url, card.back_image_url]) {
+    for (const u of [card.image_url, card.back_image_url, card.video_url]) {
       if (u) {
         const f = u.split('/character-images/')[1]
         if (f) files.push(f)
@@ -246,6 +254,65 @@ export default function Cards() {
     if (files.length) await supabase.storage.from('character-images').remove(files)
     setSelected(null); setEditing(null); setExpanded(false)
     loadCards()
+  }
+
+  const openAnimate = () => {
+    if (!selected?.image_url) return
+    setAnimPrompt(selected.video_prompt || 'subtle natural motion, gentle breathing, hair and fabric drifting slightly, eyes alive')
+    setAnimDuration(5)
+    setAnimRes('720p')
+    setShowAnimate(true)
+  }
+
+  const runAnimate = async () => {
+    if (!selected || animating) return
+    setShowAnimate(false)
+    setAnimating(true)
+
+    const oldVideo = selected.video_url
+
+    try {
+      const res = await fetch('/api/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: selected.image_url,
+          prompt: animPrompt,
+          duration: animDuration,
+          resolution: animRes,
+        }),
+      })
+      const data = await res.json()
+      if (!data.videoUrl) {
+        alert('Animation error: ' + (data.error || 'failed'))
+        setAnimating(false)
+        return
+      }
+
+      const { error } = await supabase
+        .from('cards')
+        .update({ video_url: data.videoUrl, video_prompt: animPrompt })
+        .eq('id', selected.id)
+
+      if (error) {
+        alert('Save error: ' + error.message)
+        setAnimating(false)
+        return
+      }
+
+      // remove the replaced clip from storage
+      if (oldVideo) {
+        const f = oldVideo.split('/character-images/')[1]
+        if (f) await supabase.storage.from('character-images').remove([f])
+      }
+
+      setSelected({ ...selected, video_url: data.videoUrl, video_prompt: animPrompt })
+      setView('animated')
+      loadCards()
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+    setAnimating(false)
   }
 
   const copy = (val) => navigator.clipboard?.writeText(String(val))
@@ -289,13 +356,23 @@ export default function Cards() {
     </div>
   )
 
-  const cardFront = (card, big = false) => {
+  const cardFront = (card, big = false, animated = false) => {
     const t = treatOf(card.rarity)
+    const showVideo = animated && card.video_url
     return (
       <div className={`card-shell ${t.edge} ${t.glow}`}>
         <div className={`card-inner ${t.foil} ${t.holo ? 'holo' : ''}`}>
           <div className="relative aspect-[3/4]">
-            {card.image_url ? (
+            {showVideo ? (
+              <video
+                src={card.video_url}
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            ) : card.image_url ? (
               <img src={card.image_url} alt={card.name} className="absolute inset-0 w-full h-full object-cover" />
             ) : (
               <div className="absolute inset-0 bg-gray-900" />
@@ -362,6 +439,22 @@ export default function Cards() {
     </>
   )
 
+  const viewToggle = () => {
+    if (!selected?.video_url) return null
+    return (
+      <div className="flex gap-2 justify-center mb-3">
+        <button onClick={() => setView('static')}
+          className={`px-4 py-1 rounded-full text-[11px] font-semibold tracking-wide ${view === 'static' ? 'bg-white text-black' : 'bg-gray-900 text-gray-400'}`}>
+          Static
+        </button>
+        <button onClick={() => setView('animated')}
+          className={`px-4 py-1 rounded-full text-[11px] font-semibold tracking-wide ${view === 'animated' ? 'bg-white text-black' : 'bg-gray-900 text-gray-400'}`}>
+          Animated
+        </button>
+      </div>
+    )
+  }
+
   const sideToggle = () => (
     <div className="flex gap-2 justify-center mb-3">
       <button onClick={() => setSide('front')}
@@ -390,8 +483,13 @@ export default function Cards() {
       ) : (
         <div className="grid grid-cols-2 gap-4">
           {cards.map(c => (
-            <button key={c.id} onClick={() => openCard(c)} className="text-left">
+            <button key={c.id} onClick={() => openCard(c)} className="text-left relative">
               {cardFront(c)}
+              {c.video_url && (
+                <span className="absolute bottom-2 left-2 z-[5] bg-black/70 rounded-full px-2 py-0.5 text-[9px] tracking-wide">
+                  🎬
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -539,11 +637,16 @@ export default function Cards() {
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
           <div className="w-full max-w-sm my-6" onClick={e => e.stopPropagation()}>
             {sideToggle()}
+            {side === 'front' && viewToggle()}
 
             <button onClick={() => setExpanded(true)} className="block w-full text-left">
-              {side === 'front' ? cardFront(selected) : cardBack(selected)}
+              {side === 'front' ? cardFront(selected, false, view === 'animated') : cardBack(selected)}
             </button>
             <p className="text-center text-[10px] text-gray-600 mt-2">tap the card to expand</p>
+
+            {animating && (
+              <p className="text-center text-xs text-purple-400 mt-3">Animating... (1-2 min)</p>
+            )}
 
             <div className="mt-4 bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2 text-xs">
               <div className="flex items-center justify-between">
@@ -566,8 +669,12 @@ export default function Cards() {
               </div>
             </div>
 
-            <button onClick={() => handleDownload(selected)} disabled={downloading}
+            <button onClick={openAnimate} disabled={animating}
               className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-3">
+              {animating ? 'Animating...' : selected.video_url ? '🎬 Re-animate Front' : '🎬 Animate Front'}
+            </button>
+            <button onClick={() => handleDownload(selected)} disabled={downloading}
+              className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2">
               {downloading ? 'Rendering...' : '⬇ Download PNG'}
             </button>
             <button onClick={() => openEdit(selected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-lg py-2 text-sm font-semibold mt-2">Edit Card</button>
@@ -577,13 +684,52 @@ export default function Cards() {
         </div>
       )}
 
+      {/* ANIMATE MODAL */}
+      {showAnimate && selected && (
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-5 z-[70]">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
+            <h2 className="font-bold text-lg mb-2">Animate Card Front</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Brings the front art to life. Takes 1-2 minutes and costs considerably more than an image.
+            </p>
+
+            <img src={selected.image_url} alt="" className="w-24 rounded-lg mb-3" />
+
+            <label className="block text-xs text-gray-400 mb-1">Motion Prompt</label>
+            <textarea value={animPrompt} onChange={e => setAnimPrompt(e.target.value)} rows={3}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+
+            <label className="block text-xs text-gray-400 mb-1">Length</label>
+            <select value={animDuration} onChange={e => setAnimDuration(parseInt(e.target.value))}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              <option value={5}>5 seconds</option>
+              <option value={8}>8 seconds</option>
+              <option value={10}>10 seconds (2x cost)</option>
+            </select>
+
+            <label className="block text-xs text-gray-400 mb-1">Resolution</label>
+            <select value={animRes} onChange={e => setAnimRes(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500">
+              <option value="720p">720p</option>
+              <option value="1080p">1080p (costs more)</option>
+            </select>
+
+            <div className="flex gap-2">
+              <button onClick={() => setShowAnimate(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={runAnimate} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Animate</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* EXPANDED — full screen card */}
       {selected && expanded && (
         <div className="fixed inset-0 bg-black flex flex-col items-center justify-center p-4 z-[60]" onClick={() => setExpanded(false)}>
           <div className="w-full max-w-md" onClick={e => e.stopPropagation()}>
             {sideToggle()}
+            {side === 'front' && viewToggle()}
             <button onClick={() => setExpanded(false)} className="block w-full text-left">
-              {side === 'front' ? cardFront(selected, true) : cardBack(selected, true)}
+              {side === 'front' ? cardFront(selected, true, view === 'animated') : cardBack(selected, true)}
             </button>
             <button onClick={() => handleDownload(selected)} disabled={downloading}
               className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-4">
