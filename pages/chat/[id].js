@@ -21,6 +21,7 @@ export default function Chat() {
   const [showPromptModal, setShowPromptModal] = useState(false)
   const [promptText, setPromptText] = useState('')
   const [negativeText, setNegativeText] = useState(DEFAULT_NEGATIVE)
+  const [seedText, setSeedText] = useState('')
   const [autoPlay, setAutoPlay] = useState(false)
   const [speakingIdx, setSpeakingIdx] = useState(null)
   const [showVideoModal, setShowVideoModal] = useState(false)
@@ -40,25 +41,14 @@ export default function Chat() {
   }, [messages])
 
   const load = async () => {
-    const { data: convo } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('id', id)
-      .single()
+    const { data: convo } = await supabase.from('conversations').select('*').eq('id', id).single()
     if (!convo) return
     setConversation(convo)
 
-    const { data: char } = await supabase
-      .from('characters')
-      .select('*')
-      .eq('id', convo.character_id)
-      .single()
+    const { data: char } = await supabase.from('characters').select('*').eq('id', convo.character_id).single()
     setCharacter(char)
 
-    const { data: mems } = await supabase
-      .from('core_memories')
-      .select('*')
-      .eq('character_id', convo.character_id)
+    const { data: mems } = await supabase.from('core_memories').select('*').eq('character_id', convo.character_id)
     setCoreMemories(mems || [])
 
     const { data: msgs } = await supabase
@@ -71,11 +61,7 @@ export default function Chat() {
     if (char?.user_appearance_override) {
       setUserDescription(char.user_appearance_override)
     } else {
-      const { data: settings } = await supabase
-        .from('user_settings')
-        .select('my_description')
-        .eq('id', 1)
-        .single()
+      const { data: settings } = await supabase.from('user_settings').select('my_description').eq('id', 1).single()
       setUserDescription(settings?.my_description || '')
     }
   }
@@ -96,9 +82,7 @@ export default function Chat() {
         audioRef.current.src = data.audioUrl
         audioRef.current.play()
       }
-    } catch (err) {
-      // ignore
-    }
+    } catch (err) {}
     setSpeakingIdx(null)
   }
 
@@ -110,11 +94,7 @@ export default function Chat() {
     setInput('')
     setLoading(true)
 
-    await supabase.from('messages').insert([{
-      conversation_id: id,
-      role: 'user',
-      content: userMsg.content,
-    }])
+    await supabase.from('messages').insert([{ conversation_id: id, role: 'user', content: userMsg.content }])
 
     try {
       const res = await fetch('/api/chat', {
@@ -132,11 +112,7 @@ export default function Chat() {
       const withReply = [...newMessages, { role: 'assistant', content: replyText }]
       setMessages(withReply)
 
-      await supabase.from('messages').insert([{
-        conversation_id: id,
-        role: 'assistant',
-        content: replyText,
-      }])
+      await supabase.from('messages').insert([{ conversation_id: id, role: 'assistant', content: replyText }])
 
       if (autoPlay && !replyText.startsWith('[Error')) {
         speak(replyText, withReply.length - 1)
@@ -150,9 +126,9 @@ export default function Chat() {
   const openPromptModal = (includeUser) => {
     const recent = messages.filter(m => m.role !== 'image' && m.role !== 'video').slice(-4).map(m => m.content).join(' ')
     const sceneContext = recent ? `current scene: ${recent.slice(0, 300)}` : ''
-    const prefilled = buildImagePrompt(character, sceneContext, includeUser, userDescription)
-    setPromptText(prefilled)
+    setPromptText(buildImagePrompt(character, sceneContext, includeUser, userDescription))
     setNegativeText(DEFAULT_NEGATIVE)
+    setSeedText('')
     setShowPromptModal(true)
   }
 
@@ -161,26 +137,33 @@ export default function Chat() {
     if (imaging) return
     setImaging(true)
 
-    const placeholder = { role: 'image', content: 'generating' }
-    setMessages(prev => [...prev, placeholder])
+    setMessages(prev => [...prev, { role: 'image', content: 'generating' }])
 
     try {
       const res = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: promptText, negativePrompt: negativeText }),
+        body: JSON.stringify({
+          prompt: promptText,
+          negativePrompt: negativeText,
+          seed: seedText || undefined,
+        }),
       })
       const data = await res.json()
       if (data.imageUrl) {
         setMessages(prev => {
           const copy = [...prev]
-          copy[copy.length - 1] = { role: 'image', content: data.imageUrl }
+          copy[copy.length - 1] = { role: 'image', content: data.imageUrl, seed: data.seed }
           return copy
         })
         await supabase.from('messages').insert([{
           conversation_id: id,
           role: 'image',
           content: data.imageUrl,
+          seed: data.seed,
+          prompt: promptText,
+          negative_prompt: negativeText,
+          size: data.size,
         }])
       } else {
         setMessages(prev => {
@@ -210,8 +193,7 @@ export default function Chat() {
     if (videoing) return
     setVideoing(true)
 
-    const placeholder = { role: 'video', content: 'generating' }
-    setMessages(prev => [...prev, placeholder])
+    setMessages(prev => [...prev, { role: 'video', content: 'generating' }])
 
     try {
       const res = await fetch('/api/generate-video', {
@@ -230,6 +212,7 @@ export default function Chat() {
           conversation_id: id,
           role: 'video',
           content: data.videoUrl,
+          prompt: videoPrompt,
         }])
       } else {
         setMessages(prev => {
@@ -248,23 +231,13 @@ export default function Chat() {
     setVideoing(false)
   }
 
-  const fileNameFromUrl = (url) => {
-    const parts = url.split('/character-images/')
-    return parts[1] || null
-  }
+  const fileNameFromUrl = (url) => url.split('/character-images/')[1] || null
 
   const deleteMedia = async (mediaUrl, role) => {
     setMessages(prev => prev.filter(m => !(m.role === role && m.content === mediaUrl)))
-    await supabase
-      .from('messages')
-      .delete()
-      .eq('conversation_id', id)
-      .eq('role', role)
-      .eq('content', mediaUrl)
+    await supabase.from('messages').delete().eq('conversation_id', id).eq('role', role).eq('content', mediaUrl)
     const fileName = fileNameFromUrl(mediaUrl)
-    if (fileName) {
-      await supabase.storage.from('character-images').remove([fileName])
-    }
+    if (fileName) await supabase.storage.from('character-images').remove([fileName])
   }
 
   const endAndSave = async () => {
@@ -290,14 +263,9 @@ export default function Chat() {
       })
       const data = await res.json()
       if (data.summary && data.summary.trim()) {
-        await supabase.from('core_memories').insert([{
-          character_id: character.id,
-          memory: data.summary.trim(),
-        }])
+        await supabase.from('core_memories').insert([{ character_id: character.id, memory: data.summary.trim() }])
       }
-    } catch (err) {
-      // continue
-    }
+    } catch (err) {}
 
     await supabase.from('conversations').delete().eq('id', id)
     setEnding(false)
@@ -325,11 +293,7 @@ export default function Chat() {
         <button onClick={() => router.push(`/character/${character.id}`)} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <span className="font-bold text-lg">{character.name}</span>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setAutoPlay(!autoPlay)}
-            className={`text-sm ${autoPlay ? 'text-purple-400' : 'text-gray-500'}`}
-            title="Toggle auto-play voice"
-          >
+          <button onClick={() => setAutoPlay(!autoPlay)} className={`text-sm ${autoPlay ? 'text-purple-400' : 'text-gray-500'}`} title="Toggle auto-play voice">
             {autoPlay ? '🔊' : '🔇'}
           </button>
           <button onClick={endAndSave} disabled={ending} className="text-gray-400 hover:text-white text-sm">
@@ -350,21 +314,10 @@ export default function Chat() {
             return (
               <div key={i} className="relative max-w-[80%] mr-auto">
                 <img src={m.content} alt="scene" className="w-full rounded-2xl" />
-                <button
-                  onClick={() => deleteMedia(m.content, 'image')}
-                  className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white rounded-full w-7 h-7 flex items-center justify-center text-sm"
-                  title="Delete image"
-                >
-                  ✕
-                </button>
-                <button
-                  onClick={() => openVideoModal(m.content)}
-                  disabled={videoing}
-                  className="absolute bottom-2 right-2 bg-black/70 hover:bg-black disabled:opacity-50 text-white rounded-full w-8 h-8 flex items-center justify-center"
-                  title="Animate this image"
-                >
-                  🎬
-                </button>
+                <button onClick={() => deleteMedia(m.content, 'image')}
+                  className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white rounded-full w-7 h-7 flex items-center justify-center text-sm" title="Delete image">✕</button>
+                <button onClick={() => openVideoModal(m.content)} disabled={videoing}
+                  className="absolute bottom-2 right-2 bg-black/70 hover:bg-black disabled:opacity-50 text-white rounded-full w-8 h-8 flex items-center justify-center" title="Animate this image">🎬</button>
               </div>
             )
           }
@@ -375,32 +328,18 @@ export default function Chat() {
             return (
               <div key={i} className="relative max-w-[80%] mr-auto">
                 <video src={m.content} controls loop className="w-full rounded-2xl" />
-                <button
-                  onClick={() => deleteMedia(m.content, 'video')}
-                  className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white rounded-full w-7 h-7 flex items-center justify-center text-sm"
-                  title="Delete video"
-                >
-                  ✕
-                </button>
+                <button onClick={() => deleteMedia(m.content, 'video')}
+                  className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white rounded-full w-7 h-7 flex items-center justify-center text-sm" title="Delete video">✕</button>
               </div>
             )
           }
           const isChar = m.role === 'assistant'
           return (
-            <div
-              key={i}
-              className={`max-w-[80%] rounded-2xl px-4 py-2 whitespace-pre-wrap ${
-                m.role === 'user' ? 'bg-purple-600 ml-auto' : 'bg-gray-800 mr-auto'
-              }`}
-            >
+            <div key={i} className={`max-w-[80%] rounded-2xl px-4 py-2 whitespace-pre-wrap ${m.role === 'user' ? 'bg-purple-600 ml-auto' : 'bg-gray-800 mr-auto'}`}>
               {renderContent(m.content)}
               {isChar && !m.content.startsWith('[') && (
-                <button
-                  onClick={() => speak(m.content, i)}
-                  disabled={speakingIdx === i}
-                  className="ml-2 text-gray-400 hover:text-white text-xs align-middle"
-                  title="Play voice"
-                >
+                <button onClick={() => speak(m.content, i)} disabled={speakingIdx === i}
+                  className="ml-2 text-gray-400 hover:text-white text-xs align-middle" title="Play voice">
                   {speakingIdx === i ? '⏳' : '🔊'}
                 </button>
               )}
@@ -414,73 +353,38 @@ export default function Chat() {
       </div>
 
       <div className="p-4 border-t border-gray-800 flex gap-2 flex-shrink-0 bg-black">
-        <button
-          onClick={() => openPromptModal(false)}
-          disabled={imaging}
-          className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 text-lg"
-          title="Image of the character"
-        >
-          🎨
-        </button>
-        <button
-          onClick={() => openPromptModal(true)}
-          disabled={imaging}
-          className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 text-lg"
-          title="Image of us together"
-        >
-          👥
-        </button>
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && send()}
+        <button onClick={() => openPromptModal(false)} disabled={imaging}
+          className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 text-lg" title="Image of the character">🎨</button>
+        <button onClick={() => openPromptModal(true)} disabled={imaging}
+          className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 text-lg" title="Image of us together">👥</button>
+        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()}
           placeholder="Type a message..."
-          className="flex-1 bg-gray-900 border border-gray-700 rounded-full px-4 py-2 outline-none focus:border-purple-500"
-        />
-        <button
-          onClick={send}
-          disabled={loading}
-          className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-full px-5 font-semibold"
-        >
-          Send
-        </button>
+          className="flex-1 bg-gray-900 border border-gray-700 rounded-full px-4 py-2 outline-none focus:border-purple-500" />
+        <button onClick={send} disabled={loading}
+          className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-full px-5 font-semibold">Send</button>
       </div>
 
       {showPromptModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-5 z-50">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
+        <div className="fixed inset-0 bg-black/70 flex items-start justify-center p-5 z-50 overflow-y-auto">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
             <h2 className="font-bold text-lg mb-2">Edit Image Prompt</h2>
             <p className="text-xs text-gray-500 mb-3">Tweak the scene, outfit, or details before generating.</p>
 
             <label className="block text-xs text-gray-400 mb-1">Prompt</label>
-            <textarea
-              value={promptText}
-              onChange={e => setPromptText(e.target.value)}
-              rows={7}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3"
-            />
+            <textarea value={promptText} onChange={e => setPromptText(e.target.value)} rows={7}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3" />
 
-            <label className="block text-xs text-gray-400 mb-1">Negative Prompt (things to avoid)</label>
-            <textarea
-              value={negativeText}
-              onChange={e => setNegativeText(e.target.value)}
-              rows={3}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-4"
-            />
+            <label className="block text-xs text-gray-400 mb-1">Negative Prompt</label>
+            <textarea value={negativeText} onChange={e => setNegativeText(e.target.value)} rows={3}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3" />
+
+            <label className="block text-xs text-gray-400 mb-1">Seed (optional)</label>
+            <input value={seedText} onChange={e => setSeedText(e.target.value)} placeholder="leave blank for random"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-4" />
 
             <div className="flex gap-2">
-              <button
-                onClick={() => setShowPromptModal(false)}
-                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmGenerate}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold"
-              >
-                Generate
-              </button>
+              <button onClick={() => setShowPromptModal(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={confirmGenerate} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Generate</button>
             </div>
           </div>
         </div>
@@ -490,31 +394,17 @@ export default function Chat() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-5 z-50">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
             <h2 className="font-bold text-lg mb-2">Animate Image</h2>
-            <p className="text-xs text-gray-500 mb-3">Describe the motion. Takes 1-2 minutes and costs more than an image.</p>
+            <p className="text-xs text-gray-500 mb-3">Takes 1-2 minutes and costs more than an image.</p>
 
             <img src={videoSourceUrl} alt="source" className="w-32 rounded-lg mb-3" />
 
             <label className="block text-xs text-gray-400 mb-1">Motion Prompt</label>
-            <textarea
-              value={videoPrompt}
-              onChange={e => setVideoPrompt(e.target.value)}
-              rows={3}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-4"
-            />
+            <textarea value={videoPrompt} onChange={e => setVideoPrompt(e.target.value)} rows={3}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-4" />
 
             <div className="flex gap-2">
-              <button
-                onClick={() => setShowVideoModal(false)}
-                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmVideo}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold"
-              >
-                Animate
-              </button>
+              <button onClick={() => setShowVideoModal(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={confirmVideo} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Animate</button>
             </div>
           </div>
         </div>
