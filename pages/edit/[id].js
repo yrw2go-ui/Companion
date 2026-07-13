@@ -11,6 +11,13 @@ const VOICES = [
   { id: 'sal', label: 'Sal — neutral, versatile' },
 ]
 
+const MODELS = [
+  { id: 'deepseek-v3', label: 'DeepSeek V3 — balanced, cheap, big context' },
+  { id: 'qwen/qwen3-max-2026-01-23', label: 'Qwen3 Max — flagship, best reasoning' },
+  { id: 'zai-org/GLM-4.6', label: 'GLM 4.6 — natural dialogue' },
+  { id: 'minimaxai/minimax-m2.7', label: 'MiniMax M2.7 — fast, lightweight' },
+]
+
 export default function EditCharacter() {
   const router = useRouter()
   const { id } = router.query
@@ -19,7 +26,8 @@ export default function EditCharacter() {
   const [form, setForm] = useState({
     name: '', age: '', appearance: '', personality: '',
     speaking_style: '', backstory: '', relationship: '', sample_dialogue: '',
-    response_rules: '', image_style: '', voice_id: 'eve',
+    response_rules: '', image_style: '', voice_id: 'eve', chat_model: 'deepseek-v3',
+    user_appearance_override: '',
   })
   const [memories, setMemories] = useState([])
   const [newMemory, setNewMemory] = useState('')
@@ -30,11 +38,7 @@ export default function EditCharacter() {
   }, [id])
 
   const load = async () => {
-    const { data } = await supabase
-      .from('characters')
-      .select('*')
-      .eq('id', id)
-      .single()
+    const { data } = await supabase.from('characters').select('*').eq('id', id).single()
     if (data) {
       setForm({
         name: data.name || '',
@@ -48,6 +52,8 @@ export default function EditCharacter() {
         response_rules: data.response_rules || '',
         image_style: data.image_style || '',
         voice_id: data.voice_id || 'eve',
+        chat_model: data.chat_model || 'deepseek-v3',
+        user_appearance_override: data.user_appearance_override || '',
       })
     }
     await loadMemories()
@@ -85,6 +91,8 @@ export default function EditCharacter() {
         response_rules: form.response_rules,
         image_style: form.image_style,
         voice_id: form.voice_id,
+        chat_model: form.chat_model,
+        user_appearance_override: form.user_appearance_override,
       })
       .eq('id', id)
     setSaving(false)
@@ -161,6 +169,21 @@ export default function EditCharacter() {
       {field('Relationship to You', 'relationship', 'Friend, partner, mentor...', true)}
       {field('Response Rules', 'response_rules', 'Keep replies to 2 paragraphs or less. Do not repeat yourself.', true)}
       {field('Image Style', 'image_style', 'e.g. photorealistic portrait  OR  anime style', true)}
+      {field('How I Appear To Them', 'user_appearance_override', 'Overrides your global description for this character', true)}
+
+      <div className="mb-4">
+        <label className="block text-sm text-gray-400 mb-1">Chat Model</label>
+        <select
+          value={form.chat_model}
+          onChange={e => update('chat_model', e.target.value)}
+          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none"
+        >
+          {MODELS.map(m => (
+            <option key={m.id} value={m.id}>{m.label}</option>
+          ))}
+        </select>
+        <p className="text-xs text-gray-600 mt-1">Which AI drives this character's replies.</p>
+      </div>
 
       <div className="mb-4">
         <label className="block text-sm text-gray-400 mb-1">Voice</label>
@@ -205,12 +228,7 @@ export default function EditCharacter() {
                   rows={2}
                   className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm"
                 />
-                <button
-                  onClick={() => deleteMemory(m.id)}
-                  className="text-red-500 hover:text-red-400 px-2 py-2 text-sm"
-                >
-                  ✕
-                </button>
+                <button onClick={() => deleteMemory(m.id)} className="text-red-500 hover:text-red-400 px-2 py-2 text-sm">✕</button>
               </div>
             ))
           )}
@@ -224,12 +242,7 @@ export default function EditCharacter() {
             placeholder="Add a memory..."
             className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm"
           />
-          <button
-            onClick={addMemory}
-            className="bg-purple-600 hover:bg-purple-700 rounded-lg px-4 text-sm font-semibold"
-          >
-            Add
-          </button>
+          <button onClick={addMemory} className="bg-purple-600 hover:bg-purple-700 rounded-lg px-4 text-sm font-semibold">Add</button>
         </div>
       </div>
 
@@ -241,10 +254,7 @@ export default function EditCharacter() {
         {saving ? 'Saving...' : 'Save Changes'}
       </button>
 
-      <button
-        onClick={del}
-        className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-3 font-semibold mt-3"
-      >
+      <button onClick={del} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-3 font-semibold mt-3">
         Delete Character
       </button>
     </div>
