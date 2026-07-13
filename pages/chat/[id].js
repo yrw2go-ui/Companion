@@ -23,6 +23,7 @@ export default function Chat() {
   const [negativeText, setNegativeText] = useState(DEFAULT_NEGATIVE)
   const [seedText, setSeedText] = useState('')
   const [autoPlay, setAutoPlay] = useState(false)
+  const [spicyMode, setSpicyMode] = useState(false)
   const [speakingIdx, setSpeakingIdx] = useState(null)
   const [showVideoModal, setShowVideoModal] = useState(false)
   const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
@@ -107,6 +108,7 @@ export default function Chat() {
           coreMemories,
           scenario: conversation?.scenario || '',
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+          spicyMode
         }),
       })
       const data = await res.json()
@@ -300,6 +302,9 @@ export default function Chat() {
           <button onClick={() => setAutoPlay(!autoPlay)} className={`text-sm ${autoPlay ? 'text-purple-400' : 'text-gray-500'}`} title="Toggle auto-play voice">
             {autoPlay ? '🔊' : '🔇'}
           </button>
+          <button onClick={() => setSpicyMode(!spicyMode)} className={`text-sm ${spicyMode ? 'text-red-400' : 'text-gray-500'}`} title="Toggle spicy mode">
+            {spicyMode ? '🌶️' : '🌶️'}
+          </button>
           <button onClick={endAndSave} disabled={ending} className="text-gray-400 hover:text-white text-sm">
             {ending ? 'Saving...' : 'End'}
           </button>
@@ -431,4 +436,4 @@ export default function Chat() {
       )}
     </div>
   )
-}
+    }
