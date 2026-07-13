@@ -14,10 +14,152 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-/* Chat page uses a fixed full-height frame with its own internal scrolling */
+/* Chat page: fixed full-height frame with internal scrolling */
 .chat-frame {
   height: 100vh;
   height: 100dvh;
   display: flex;
   flex-direction: column;
+}
+
+/* ---------- Trading card treatment ---------- */
+
+.card-shell {
+  position: relative;
+  border-radius: 14px;
+  padding: 2px;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.card-inner {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #08080b;
+}
+
+/* Metallic borders per rarity */
+.edge-common {
+  background: linear-gradient(145deg, #4b5563, #1f2937 40%, #6b7280 60%, #374151);
+}
+.edge-uncommon {
+  background: linear-gradient(145deg, #34d399, #065f46 40%, #6ee7b7 60%, #047857);
+}
+.edge-rare {
+  background: linear-gradient(145deg, #93c5fd, #1e3a8a 40%, #bfdbfe 60%, #1d4ed8);
+}
+.edge-epic {
+  background: linear-gradient(145deg, #d8b4fe, #581c87 40%, #f0abfc 60%, #7e22ce);
+}
+.edge-legendary {
+  background: linear-gradient(145deg, #fde68a, #92400e 35%, #fffbeb 50%, #b45309 65%, #fcd34d);
+}
+
+/* Outer glow per rarity */
+.glow-uncommon  { box-shadow: 0 0 18px -4px rgba(52, 211, 153, 0.45); }
+.glow-rare      { box-shadow: 0 0 20px -3px rgba(96, 165, 250, 0.5); }
+.glow-epic      { box-shadow: 0 0 24px -2px rgba(192, 132, 252, 0.55); }
+.glow-legendary { box-shadow: 0 0 34px -2px rgba(251, 191, 36, 0.6); }
+
+/* Foil sheen sweep */
+.foil::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.05) 42%,
+    rgba(255, 255, 255, 0.22) 48%,
+    rgba(190, 240, 255, 0.18) 52%,
+    rgba(255, 255, 255, 0.05) 58%,
+    transparent 70%
+  );
+  background-size: 280% 280%;
+  mix-blend-mode: screen;
+  animation: sheen 6s ease-in-out infinite;
+}
+
+.foil-strong::after {
+  background: linear-gradient(
+    115deg,
+    transparent 26%,
+    rgba(255, 235, 180, 0.10) 38%,
+    rgba(255, 255, 255, 0.40) 47%,
+    rgba(255, 220, 140, 0.35) 51%,
+    rgba(180, 240, 255, 0.30) 55%,
+    rgba(255, 255, 255, 0.10) 64%,
+    transparent 74%
+  );
+  animation: sheen 4.5s ease-in-out infinite;
+}
+
+@keyframes sheen {
+  0%   { background-position: 130% 0%; }
+  55%  { background-position: -30% 100%; }
+  100% { background-position: -30% 100%; }
+}
+
+/* Holographic speckle for the top tiers */
+.holo::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background:
+    radial-gradient(circle at 20% 25%, rgba(255, 120, 220, 0.10), transparent 32%),
+    radial-gradient(circle at 78% 30%, rgba(120, 220, 255, 0.10), transparent 34%),
+    radial-gradient(circle at 45% 78%, rgba(190, 255, 170, 0.08), transparent 36%);
+  mix-blend-mode: color-dodge;
+}
+
+/* Glass nameplate over the art */
+.nameplate {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  padding: 10px 12px;
+  background: linear-gradient(to top, rgba(6, 6, 10, 0.92), rgba(6, 6, 10, 0.55) 60%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Rarity badge */
+.badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.badge-common    { background: rgba(75, 85, 99, 0.75);  color: #e5e7eb; }
+.badge-uncommon  { background: rgba(5, 95, 70, 0.75);   color: #a7f3d0; }
+.badge-rare      { background: rgba(30, 58, 138, 0.75); color: #bfdbfe; }
+.badge-epic      { background: rgba(88, 28, 135, 0.75); color: #e9d5ff; }
+.badge-legendary {
+  background: linear-gradient(135deg, rgba(180, 83, 9, 0.9), rgba(251, 191, 36, 0.9));
+  color: #fffbeb;
+  border-color: rgba(255, 235, 160, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foil::after,
+  .foil-strong::after {
+    animation: none;
+  }
 }
