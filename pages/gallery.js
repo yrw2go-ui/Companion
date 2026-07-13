@@ -27,6 +27,8 @@ export default function Gallery() {
   const [seed, setSeed] = useState('')
   const [size, setSize] = useState('768*1024')
   const [charId, setCharId] = useState('')
+  const [guidance, setGuidance] = useState(3.5)
+  const [steps, setSteps] = useState(28)
   const [creating, setCreating] = useState(false)
 
   const [showVideo, setShowVideo] = useState(false)
@@ -91,6 +93,8 @@ export default function Gallery() {
     setSeed('')
     setSize('768*1024')
     setCharId('')
+    setGuidance(3.5)
+    setSteps(28)
     setShowCreate(true)
   }
 
@@ -101,6 +105,8 @@ export default function Gallery() {
     setSeed(keepSeed && item.seed ? String(item.seed) : '')
     setSize(item.size || '768*1024')
     setCharId('')
+    setGuidance(3.5)
+    setSteps(28)
     setSelected(null)
     setShowCreate(true)
   }
@@ -117,6 +123,8 @@ export default function Gallery() {
           negativePrompt: negative,
           seed: seed || undefined,
           size,
+          guidance,
+          steps,
         }),
       })
       const data = await res.json()
@@ -276,6 +284,18 @@ export default function Gallery() {
             <label className="block text-xs text-gray-400 mb-1">Seed (optional)</label>
             <input value={seed} onChange={e => setSeed(e.target.value)} placeholder="leave blank for random"
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+
+            <label className="block text-xs text-gray-400 mb-1">Guidance: {guidance}</label>
+            <input type="range" min="1" max="10" step="0.5" value={guidance}
+              onChange={e => setGuidance(parseFloat(e.target.value))}
+              className="w-full mb-1 accent-purple-500" />
+            <p className="text-[10px] text-gray-600 mb-3">Low (2-4) = softer, more natural. High (6+) = rigid, can look over-cooked. Flux likes 3-4.</p>
+
+            <label className="block text-xs text-gray-400 mb-1">Steps: {steps}</label>
+            <input type="range" min="10" max="50" step="1" value={steps}
+              onChange={e => setSteps(parseInt(e.target.value))}
+              className="w-full mb-1 accent-purple-500" />
+            <p className="text-[10px] text-gray-600 mb-3">More steps = more detail, slower. 28 is a good default.</p>
 
             <label className="block text-xs text-gray-400 mb-1">Tag to Character (optional)</label>
             <select value={charId} onChange={e => setCharId(e.target.value)}
