@@ -1,50 +1,47 @@
+// pages/settings.js
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 
 export default function Settings() {
   const router = useRouter()
-
   const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [debug, setDebug] = useState('')
+  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     load()
   }, [])
 
-  async function load() {
-    const { data, error } = await supabase
+  const load = async () => {
+    const { data } = await supabase
       .from('user_settings')
-      .select('*')
+      .select('my_description')
       .eq('id', 1)
-      .single()
+      .maybeSingle()
 
-    if (error) {
-      setDebug('LOAD ERROR:\n' + JSON.stringify(error, null, 2))
-    } else {
-      setDescription(data?.my_description || '')
-      setDebug('Loaded row:\n' + JSON.stringify(data, null, 2))
-    }
-
+    setDescription(data?.my_description || '')
     setLoading(false)
   }
 
-  async function save() {
+  const save = async () => {
     setSaving(true)
+    setSaved(false)
 
-    const result = await supabase
+    const { error } = await supabase
       .from('user_settings')
-      .update({
-        my_description: description
-      })
-      .eq('id', 1)
-      .select()
+      .upsert({ id: 1, my_description: description })
 
     setSaving(false)
 
-    setDebug(JSON.stringify(result, null, 2))
+    if (error) {
+      alert('Could not save: ' + error.message)
+      return
+    }
+
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
   }
 
   if (loading) {
@@ -57,39 +54,33 @@ export default function Settings() {
 
   return (
     <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">
+          ← Back
+        </button>
+        <h1 className="text-xl font-bold">Settings</h1>
+        <span className="w-12"></span>
+      </div>
 
-      <button
-        onClick={() => router.push('/')}
-        className="text-gray-400 mb-6"
-      >
-        ← Back
-      </button>
-
-      <h1 className="text-2xl font-bold mb-4">Settings</h1>
-
-      <label className="block mb-2">
-        How I Appear (global)
-      </label>
-
+      <label className="block text-sm text-gray-400 mb-1">How I Appear</label>
+      <p className="text-xs text-gray-600 mb-2">
+        Used when you appear in generated images. Individual characters can override this.
+      </p>
       <textarea
-        rows={5}
         value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        className="w-full bg-gray-900 border border-gray-700 rounded p-3 mb-4"
+        onChange={e => setDescription(e.target.value)}
+        placeholder="e.g. 40yr old man, dark hair, short beard, athletic build"
+        rows={4}
+        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none mb-4"
       />
 
       <button
         onClick={save}
         disabled={saving}
-        className="w-full bg-purple-600 rounded p-3"
+        className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold"
       >
-        {saving ? 'Saving...' : 'Save'}
+        {saving ? 'Saving...' : saved ? 'Saved' : 'Save'}
       </button>
-
-      <pre className="mt-6 text-xs bg-gray-900 p-3 rounded overflow-auto whitespace-pre-wrap">
-        {debug}
-      </pre>
-
     </div>
   )
 }
