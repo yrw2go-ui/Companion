@@ -32,6 +32,10 @@ export default function Chat() {
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
   const [videoing, setVideoing] = useState(false)
+  const [menuIdx, setMenuIdx] = useState(null)
+  const [editIdx, setEditIdx] = useState(null)
+  const [editText, setEditText] = useState('')
+  const [regenerating, setRegenerating] = useState(false)
   const audioRef = useRef(null)
   const bottomRef = useRef(null)
 
@@ -282,6 +286,141 @@ export default function Chat() {
     router.push(`/character/${character.id}`)
   }
 
+  // ---- message management ----
+
+  // delete this message and everything after it
+  const deleteFrom = async (idx) => {
+    const target = messages[idx]
+    if (!target) return
+    if (!confirm('Delete this message and everything after it?')) return
+
+    const removed = messages.slice(idx)
+    const kept = messages.slice(0, idx)
+
+    setMenuIdx(null)
+    setMessages(kept)
+
+    // remove media files from the bucket
+    const files = removed
+      .filter(m => (m.role === 'image' || m.role === 'video') && m.content !== 'generating')
+      .map(m => fileNameFromUrl(m.content))
+      .filter(Boolean)
+    if (files.length) {
+      await supabase.storage.from('character-images').remove(files)
+    }
+
+    // delete rows from this point forward
+    if (target.created_at) {
+      await supabase
+        .from('messages')
+        .delete()
+        .eq('conversation_id', id)
+        .gte('created_at', target.created_at)
+    } else {
+      // fallback: message not yet persisted, delete any rows matching content
+      for (const m of removed) {
+        if (m.content && m.content !== 'generating') {
+          await supabase
+            .from('messages')
+            .delete()
+            .eq('conversation_id', id)
+            .eq('content', m.content)
+        }
+      }
+    }
+  }
+
+  const startEdit = (idx) => {
+    setEditText(messages[idx]?.content || '')
+    setEditIdx(idx)
+    setMenuIdx(null)
+  }
+
+  const saveEdit = async () => {
+    if (editIdx === null) return
+    const target = messages[editIdx]
+    if (!target) return
+
+    const updated = [...messages]
+    updated[editIdx] = { ...target, content: editText }
+    setMessages(updated)
+    setEditIdx(null)
+
+    if (target.id) {
+      await supabase.from('messages').update({ content: editText }).eq('id', target.id)
+    } else if (target.created_at) {
+      await supabase
+        .from('messages')
+        .update({ content: editText })
+        .eq('conversation_id', id)
+        .eq('created_at', target.created_at)
+    }
+  }
+
+  // regenerate the character's reply at this index
+  const regenerate = async (idx) => {
+    if (regenerating) return
+    const target = messages[idx]
+    if (!target || target.role !== 'assistant') return
+
+    setMenuIdx(null)
+    setRegenerating(true)
+
+    // history up to (not including) this reply
+    const history = messages.slice(0, idx)
+    const removed = messages.slice(idx)
+
+    // clear this reply and anything after it, on screen
+    setMessages([...history, { role: 'assistant', content: 'thinking' }])
+
+    // clean up any media that followed it
+    const files = removed
+      .filter(m => (m.role === 'image' || m.role === 'video') && m.content !== 'generating')
+      .map(m => fileNameFromUrl(m.content))
+      .filter(Boolean)
+    if (files.length) {
+      await supabase.storage.from('character-images').remove(files)
+    }
+
+    // delete old rows from this point on
+    if (target.created_at) {
+      await supabase
+        .from('messages')
+        .delete()
+        .eq('conversation_id', id)
+        .gte('created_at', target.created_at)
+    }
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          character,
+          coreMemories,
+          scenario: conversation?.scenario || '',
+          messages: history.map(m => ({ role: m.role, content: m.content })),
+        }),
+      })
+      const data = await res.json()
+      const replyText = data.reply || '[Error: ' + (data.error || 'no response') + ']'
+
+      setMessages([...history, { role: 'assistant', content: replyText }])
+
+      if (!replyText.startsWith('[Error')) {
+        await supabase.from('messages').insert([{
+          conversation_id: id,
+          role: 'assistant',
+          content: replyText,
+        }])
+      }
+    } catch (err) {
+      setMessages([...history, { role: 'assistant', content: '[Error: ' + err.message + ']' }])
+    }
+
+    setRegenerating(false)
+  }
+
   const renderContent = (text) => {
     const parts = text.split(/(\*[^*]+\*)/g)
     return parts.map((part, i) => {
@@ -344,14 +483,60 @@ export default function Chat() {
             )
           }
           const isChar = m.role === 'assistant'
+
+          if (m.content === 'thinking') {
+            return <div key={i} className="bg-gray-800 mr-auto rounded-2xl px-4 py-2 text-gray-400">{character.name} is thinking...</div>
+          }
+
           return (
-            <div key={i} className={`max-w-[80%] rounded-2xl px-4 py-2 whitespace-pre-wrap ${m.role === 'user' ? 'bg-purple-600 ml-auto' : 'bg-gray-800 mr-auto'}`}>
-              {renderContent(m.content)}
-              {isChar && !m.content.startsWith('[') && (
-                <button onClick={() => speak(m.content, i)} disabled={speakingIdx === i}
-                  className="ml-2 text-gray-400 hover:text-white text-xs align-middle" title="Play voice">
-                  {speakingIdx === i ? '⏳' : '🔊'}
-                </button>
+            <div key={i} className={`relative max-w-[80%] ${m.role === 'user' ? 'ml-auto' : 'mr-auto'}`}>
+              <div
+                onClick={() => setMenuIdx(menuIdx === i ? null : i)}
+                className={`rounded-2xl px-4 py-2 whitespace-pre-wrap cursor-pointer ${m.role === 'user' ? 'bg-purple-600' : 'bg-gray-800'}`}
+              >
+                {renderContent(m.content)}
+                {isChar && !m.content.startsWith('[') && (
+                  <button
+                    onClick={e => { e.stopPropagation(); speak(m.content, i) }}
+                    disabled={speakingIdx === i}
+                    className="ml-2 text-gray-400 hover:text-white text-xs align-middle"
+                    title="Play voice"
+                  >
+                    {speakingIdx === i ? '⏳' : '🔊'}
+                  </button>
+                )}
+              </div>
+
+              {menuIdx === i && (
+                <div className={`flex gap-1 mt-1 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <button
+                    onClick={() => startEdit(i)}
+                    className="bg-gray-900 border border-gray-700 hover:bg-gray-800 rounded-full px-3 py-1 text-[11px]"
+                  >
+                    Edit
+                  </button>
+                  {isChar && (
+                    <button
+                      onClick={() => regenerate(i)}
+                      disabled={regenerating}
+                      className="bg-gray-900 border border-gray-700 hover:bg-gray-800 disabled:opacity-50 rounded-full px-3 py-1 text-[11px]"
+                    >
+                      Regenerate
+                    </button>
+                  )}
+                  <button
+                    onClick={() => deleteFrom(i)}
+                    className="bg-gray-900 border border-red-900 text-red-400 hover:bg-red-950 rounded-full px-3 py-1 text-[11px]"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    onClick={() => setMenuIdx(null)}
+                    className="bg-gray-900 border border-gray-700 hover:bg-gray-800 rounded-full px-3 py-1 text-[11px] text-gray-500"
+                  >
+                    ✕
+                  </button>
+                </div>
               )}
             </div>
           )
@@ -373,6 +558,33 @@ export default function Chat() {
         <button onClick={send} disabled={loading}
           className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-full px-5 font-semibold">Send</button>
       </div>
+
+      {editIdx !== null && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-5 z-[60]">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
+            <h2 className="font-bold text-lg mb-2">Edit Message</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Rewrite this message. The character will treat the edited version as what was actually said.
+            </p>
+
+            <textarea
+              value={editText}
+              onChange={e => setEditText(e.target.value)}
+              rows={8}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-4"
+            />
+
+            <div className="flex gap-2">
+              <button onClick={() => setEditIdx(null)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">
+                Cancel
+              </button>
+              <button onClick={saveEdit} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showPromptModal && (
         <div className="fixed inset-0 bg-black/70 flex items-start justify-center p-5 z-50 overflow-y-auto">
