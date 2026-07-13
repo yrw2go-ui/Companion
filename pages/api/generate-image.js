@@ -40,7 +40,7 @@ export default async function handler(req, res) {
       model: MODEL,
       prompt: prompt,
       size: usedSize,
-      num_images: 2,
+      num_images: 1,
       guidance_scale: 6.5,
       num_inference_steps: 28,
       seed: usedSeed,
