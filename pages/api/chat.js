@@ -1,26 +1,19 @@
 // pages/api/chat.js
 import { buildSystemPrompt } from '../../lib/buildSystemPrompt'
 
-// exact Atlas model IDs
 const ALLOWED_MODELS = [
-  // DeepSeek
   'deepseek-ai/deepseek-v4-pro',
   'deepseek-ai/deepseek-v4-flash',
   'deepseek-ai/deepseek-v3.2',
-  // Qwen
   'qwen/qwen3.5-plus',
   'qwen/qwen3.7-max',
   'qwen/qwen3.5-27b',
   'qwen/qwen3.5-35b-a3b',
-  // GLM
   'zai-org/glm-5',
   'zai-org/glm-4.7',
-  // MiniMax
   'minimaxai/minimax-m3',
   'minimaxai/minimax-m2.7',
-  // Kimi
   'moonshotai/kimi-k2.6',
-  // Grok
   'xai/grok-4.5',
 ]
 
@@ -40,6 +33,18 @@ export default async function handler(req, res) {
   const requested = character.chat_model
   const model = ALLOWED_MODELS.includes(requested) ? requested : DEFAULT_MODEL
 
+  // Only user/assistant turns are valid for the API.
+  // Media messages (role 'image' / 'video') and error placeholders must be stripped.
+  const cleanMessages = (messages || [])
+    .filter(m => m && (m.role === 'user' || m.role === 'assistant'))
+    .filter(m => typeof m.content === 'string' && m.content.trim().length > 0)
+    .filter(m => !m.content.startsWith('[Error') && !m.content.startsWith('[Image error') && !m.content.startsWith('[Video error'))
+    .map(m => ({ role: m.role, content: m.content }))
+
+  if (cleanMessages.length === 0) {
+    return res.status(400).json({ error: 'No valid messages to send' })
+  }
+
   const systemPrompt = buildSystemPrompt(character, coreMemories || [], scenario || '')
 
   try {
@@ -53,7 +58,7 @@ export default async function handler(req, res) {
         model,
         messages: [
           { role: 'system', content: systemPrompt },
-          ...messages,
+          ...cleanMessages,
         ],
         temperature: 0.85,
         max_tokens: 800,
@@ -79,6 +84,7 @@ export default async function handler(req, res) {
         error: data.error?.message || data.message || 'Atlas error',
         httpStatus: response.status,
         model,
+        sentRoles: cleanMessages.map(m => m.role),
         detail: data,
       })
     }
