@@ -19,11 +19,13 @@ const ART_STYLES = [
   { value: 'oil painting, classical portraiture, renaissance lighting, canvas texture, old master style', label: 'Oil Painting' },
   { value: 'watercolor illustration, soft washes, delicate linework, pastel palette, dreamy', label: 'Watercolor' },
   { value: 'comic book art, bold ink outlines, halftone shading, dynamic composition, graphic novel style', label: 'Comic Book' },
-  { value: 'art nouveau, ornate decorative border motifs, flowing organic lines, gold accents, Alphonse Mucha style', label: 'Art Nouveau' },
+  { value: 'art nouveau, ornate decorative motifs, flowing organic lines, gold accents, Alphonse Mucha style', label: 'Art Nouveau' },
   { value: 'dark fantasy, gothic atmosphere, moody chiaroscuro lighting, muted palette, intricate detail', label: 'Dark Fantasy' },
   { value: 'cyberpunk, neon lighting, chrome and holograms, rain-slick city night, high contrast', label: 'Cyberpunk' },
   { value: 'ethereal fantasy, glowing rim light, soft bloom, luminous atmosphere, celestial mood', label: 'Ethereal' },
 ]
+
+const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 
 const RARITY_STYLES = {
   common:    { ring: 'border-gray-500',   text: 'text-gray-300',   glow: '',                                        code: 'COM' },
@@ -33,10 +35,24 @@ const RARITY_STYLES = {
   legendary: { ring: 'border-amber-400',  text: 'text-amber-300',  glow: 'shadow-[0_0_25px_rgba(251,191,36,0.6)]',  code: 'LEG' },
 }
 
+const emptyDraft = () => ({
+  name: '',
+  title: '',
+  description: '',
+  flavor_text: '',
+  rarity: 'common',
+  stats: [{ label: 'Power', value: 50 }],
+  image_prompt: '',
+  back_image_prompt: '',
+})
+
 export default function Cards() {
   const router = useRouter()
   const [cards, setCards] = useState([])
   const [loading, setLoading] = useState(true)
+  const [selected, setSelected] = useState(null)
+
+  // create flow
   const [showCreate, setShowCreate] = useState(false)
   const [concept, setConcept] = useState('')
   const [drafting, setDrafting] = useState(false)
@@ -47,7 +63,14 @@ export default function Cards() {
   const [seedInput, setSeedInput] = useState('')
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState('')
-  const [selected, setSelected] = useState(null)
+
+  // edit flow
+  const [editing, setEditing] = useState(null)
+  const [editNegative, setEditNegative] = useState(DEFAULT_NEGATIVE)
+  const [editSize, setEditSize] = useState('768*1024')
+  const [editStyle, setEditStyle] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [regenProgress, setRegenProgress] = useState('')
 
   useEffect(() => {
     loadCards()
@@ -62,6 +85,18 @@ export default function Cards() {
     setLoading(false)
   }
 
+  const normalizeStats = (card) => {
+    if (Array.isArray(card.stats) && card.stats.length) return card.stats
+    // fall back to legacy columns if an old card has no stats array
+    const legacy = []
+    if (card.hp != null) legacy.push({ label: 'HP', value: card.hp })
+    if (card.attack != null) legacy.push({ label: 'ATK', value: card.attack })
+    if (card.defense != null) legacy.push({ label: 'DEF', value: card.defense })
+    if (card.speed != null) legacy.push({ label: 'SPD', value: card.speed })
+    return legacy
+  }
+
+  // ---------- create ----------
   const draftCard = async () => {
     if (!concept.trim() || drafting) return
     setDrafting(true)
@@ -84,8 +119,25 @@ export default function Cards() {
     setDrafting(false)
   }
 
-  const updateDraft = (field, value) => {
-    setDraft({ ...draft, [field]: value })
+  const skipToManual = () => setDraft(emptyDraft())
+
+  const withStyle = (basePrompt, style) => {
+    if (!style) return basePrompt
+    return `${basePrompt}, ${style}`
+  }
+
+  const genImage = async (imgPrompt, seedVal, neg, sz, style) => {
+    const res = await fetch('/api/generate-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: withStyle(imgPrompt, style),
+        negativePrompt: neg,
+        seed: seedVal || undefined,
+        size: sz,
+      }),
+    })
+    return res.json()
   }
 
   const makeCardNumber = async (rarity) => {
@@ -94,50 +146,33 @@ export default function Cards() {
       .from('cards')
       .select('id', { count: 'exact', head: true })
       .eq('rarity', rarity)
-    const next = (count || 0) + 1
-    return `${code}-${String(next).padStart(3, '0')}`
-  }
-
-  const withStyle = (basePrompt) => {
-    if (!artStyle) return basePrompt
-    return `${basePrompt}, ${artStyle}`
-  }
-
-  const genImage = async (imgPrompt, seedVal) => {
-    const res = await fetch('/api/generate-image', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: withStyle(imgPrompt),
-        negativePrompt: negative,
-        seed: seedVal || undefined,
-        size,
-      }),
-    })
-    return res.json()
+    return `${code}-${String((count || 0) + 1).padStart(3, '0')}`
   }
 
   const createCard = async () => {
     if (!draft || generating) return
+    if (!draft.image_prompt?.trim()) {
+      alert('Front art prompt is required')
+      return
+    }
     setGenerating(true)
 
     try {
       setProgress('Generating front art...')
-      const front = await genImage(draft.image_prompt, seedInput)
+      const front = await genImage(draft.image_prompt, seedInput, negative, size, artStyle)
       if (!front.imageUrl) {
         alert('Front image error: ' + (front.error || 'failed'))
-        setGenerating(false)
-        setProgress('')
-        return
+        setGenerating(false); setProgress(''); return
       }
 
-      setProgress('Generating back art...')
-      const back = await genImage(draft.back_image_prompt, '')
-      if (!back.imageUrl) {
-        alert('Back image error: ' + (back.error || 'failed'))
-        setGenerating(false)
-        setProgress('')
-        return
+      let back = { imageUrl: null, seed: null }
+      if (draft.back_image_prompt?.trim()) {
+        setProgress('Generating back art...')
+        back = await genImage(draft.back_image_prompt, '', negative, size, artStyle)
+        if (!back.imageUrl) {
+          alert('Back image error: ' + (back.error || 'failed'))
+          setGenerating(false); setProgress(''); return
+        }
       }
 
       setProgress('Saving...')
@@ -145,30 +180,25 @@ export default function Cards() {
       const cardNumber = await makeCardNumber(rarity)
 
       const { error } = await supabase.from('cards').insert([{
-        name: draft.name,
+        name: draft.name || 'Unnamed',
         title: draft.title,
         description: draft.description,
         flavor_text: draft.flavor_text,
         rarity,
         card_number: cardNumber,
+        stats: draft.stats || [],
         image_url: front.imageUrl,
-        image_prompt: withStyle(draft.image_prompt),
+        image_prompt: withStyle(draft.image_prompt, artStyle),
         seed: front.seed,
         back_image_url: back.imageUrl,
-        back_image_prompt: withStyle(draft.back_image_prompt),
+        back_image_prompt: draft.back_image_prompt ? withStyle(draft.back_image_prompt, artStyle) : null,
         back_seed: back.seed,
         negative_prompt: negative,
-        hp: parseInt(draft.hp) || 50,
-        attack: parseInt(draft.attack) || 50,
-        defense: parseInt(draft.defense) || 50,
-        speed: parseInt(draft.speed) || 50,
       }])
 
       if (error) {
         alert('Save error: ' + error.message)
-        setGenerating(false)
-        setProgress('')
-        return
+        setGenerating(false); setProgress(''); return
       }
 
       setShowCreate(false)
@@ -184,30 +214,151 @@ export default function Cards() {
     setProgress('')
   }
 
+  // ---------- edit ----------
+  const openEdit = (card) => {
+    setEditing({
+      ...card,
+      stats: normalizeStats(card),
+    })
+    setEditNegative(card.negative_prompt || DEFAULT_NEGATIVE)
+    setEditSize('768*1024')
+    setEditStyle('')
+    setSelected(null)
+  }
+
+  const saveEdit = async () => {
+    if (!editing || saving) return
+    setSaving(true)
+
+    const { error } = await supabase
+      .from('cards')
+      .update({
+        name: editing.name,
+        title: editing.title,
+        description: editing.description,
+        flavor_text: editing.flavor_text,
+        rarity: (editing.rarity || 'common').toLowerCase(),
+        card_number: editing.card_number,
+        stats: editing.stats,
+        image_prompt: editing.image_prompt,
+        back_image_prompt: editing.back_image_prompt,
+        negative_prompt: editNegative,
+      })
+      .eq('id', editing.id)
+
+    setSaving(false)
+    if (error) {
+      alert('Save error: ' + error.message)
+      return
+    }
+    setEditing(null)
+    loadCards()
+  }
+
+  const regenSide = async (side) => {
+    if (!editing || regenProgress) return
+    const promptText = side === 'front' ? editing.image_prompt : editing.back_image_prompt
+    if (!promptText?.trim()) {
+      alert('Add an art prompt first')
+      return
+    }
+
+    setRegenProgress(`Regenerating ${side}...`)
+    const result = await genImage(promptText, '', editNegative, editSize, editStyle)
+    if (!result.imageUrl) {
+      alert('Error: ' + (result.error || 'failed'))
+      setRegenProgress('')
+      return
+    }
+
+    const oldUrl = side === 'front' ? editing.image_url : editing.back_image_url
+
+    const patch = side === 'front'
+      ? { image_url: result.imageUrl, seed: result.seed }
+      : { back_image_url: result.imageUrl, back_seed: result.seed }
+
+    const { error } = await supabase.from('cards').update(patch).eq('id', editing.id)
+    if (error) {
+      alert('Save error: ' + error.message)
+      setRegenProgress('')
+      return
+    }
+
+    // remove the replaced file from storage
+    if (oldUrl) {
+      const f = oldUrl.split('/character-images/')[1]
+      if (f) await supabase.storage.from('character-images').remove([f])
+    }
+
+    setEditing({ ...editing, ...patch })
+    setRegenProgress('')
+    loadCards()
+  }
+
   const deleteCard = async (card) => {
     if (!confirm('Delete this card?')) return
     await supabase.from('cards').delete().eq('id', card.id)
     const files = []
-    if (card.image_url) {
-      const f = card.image_url.split('/character-images/')[1]
-      if (f) files.push(f)
+    for (const u of [card.image_url, card.back_image_url]) {
+      if (u) {
+        const f = u.split('/character-images/')[1]
+        if (f) files.push(f)
+      }
     }
-    if (card.back_image_url) {
-      const f = card.back_image_url.split('/character-images/')[1]
-      if (f) files.push(f)
-    }
-    if (files.length) {
-      await supabase.storage.from('character-images').remove(files)
-    }
+    if (files.length) await supabase.storage.from('character-images').remove(files)
     setSelected(null)
+    setEditing(null)
     loadCards()
   }
 
   const copy = (val) => navigator.clipboard?.writeText(String(val))
 
-  const statBar = (label, value) => (
-    <div className="flex items-center gap-2 text-[11px]">
-      <span className="w-8 text-gray-300">{label}</span>
+  // ---------- stat editors ----------
+  const statEditor = (statsArr, onChange) => (
+    <div className="space-y-2 mb-3">
+      {statsArr.map((s, i) => (
+        <div key={i} className="flex gap-2 items-center">
+          <input
+            value={s.label}
+            onChange={e => {
+              const copyArr = [...statsArr]
+              copyArr[i] = { ...copyArr[i], label: e.target.value }
+              onChange(copyArr)
+            }}
+            placeholder="Label"
+            className="flex-1 bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500"
+          />
+          <input
+            type="number"
+            value={s.value}
+            onChange={e => {
+              const copyArr = [...statsArr]
+              copyArr[i] = { ...copyArr[i], value: parseInt(e.target.value) || 0 }
+              onChange(copyArr)
+            }}
+            className="w-20 bg-black border border-gray-700 rounded-lg px-2 py-2 text-sm outline-none focus:border-purple-500"
+          />
+          <button
+            onClick={() => onChange(statsArr.filter((_, idx) => idx !== i))}
+            className="text-red-500 hover:text-red-400 px-2 text-sm"
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={() => onChange([...statsArr, { label: '', value: 50 }])}
+        className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold"
+      >
+        + Add Stat
+      </button>
+    </div>
+  )
+
+  // ---------- card rendering ----------
+  const statBar = (label, value, i) => (
+    <div key={i} className="flex items-center gap-2 text-[11px]">
+      <span className="w-14 text-gray-300 truncate">{label}</span>
       <div className="flex-1 bg-white/20 rounded-full h-1.5">
         <div className="bg-white h-1.5 rounded-full" style={{ width: `${Math.min(100, value)}%` }} />
       </div>
@@ -232,38 +383,51 @@ export default function Cards() {
     </div>
   )
 
-  const cardBack = (card, style) => (
-    <div className={`relative bg-gray-950 border-2 ${style.ring} ${style.glow} rounded-2xl overflow-hidden`}>
-      {card.back_image_url ? (
-        <img src={card.back_image_url} alt="" className="w-full aspect-[3/4] object-cover" />
+  const cardBack = (card, style) => {
+    const stats = normalizeStats(card)
+    return (
+      <div className={`relative bg-gray-950 border-2 ${style.ring} ${style.glow} rounded-2xl overflow-hidden`}>
+        {card.back_image_url ? (
+          <img src={card.back_image_url} alt="" className="w-full aspect-[3/4] object-cover" />
+        ) : (
+          <div className="w-full aspect-[3/4] bg-gray-900 flex items-center justify-center text-gray-700 text-xs">
+            no back art
+          </div>
+        )}
+
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-black/20" />
+
+        <div className="absolute inset-0 p-3 flex flex-col justify-end">
+          {card.description && (
+            <p className="text-[11px] text-gray-300 leading-snug mb-2">{card.description}</p>
+          )}
+          {card.flavor_text && (
+            <p className="text-[10px] italic text-gray-400 mb-2">"{card.flavor_text}"</p>
+          )}
+          <div className="space-y-1">
+            {stats.map((s, i) => statBar(s.label, s.value, i))}
+          </div>
+        </div>
+
+        <div className="p-3 pt-2 flex items-center justify-between border-t border-white/10">
+          <span className="text-[10px] font-mono text-gray-500">{card.card_number || '—'}</span>
+          <span className={`text-[10px] uppercase font-bold ${style.text}`}>{card.rarity}</span>
+        </div>
+      </div>
+    )
+  }
+
+  const inputRow = (label, value, onChange, multiline = false, rows = 2) => (
+    <>
+      <label className="block text-xs text-gray-400 mb-1">{label}</label>
+      {multiline ? (
+        <textarea value={value || ''} onChange={e => onChange(e.target.value)} rows={rows}
+          className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
       ) : (
-        <div className="w-full aspect-[3/4] bg-gray-900 flex items-center justify-center text-gray-700 text-xs">
-          no back art
-        </div>
+        <input value={value || ''} onChange={e => onChange(e.target.value)}
+          className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
       )}
-
-      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-black/20" />
-
-      <div className="absolute inset-0 p-3 flex flex-col justify-end">
-        {card.description && (
-          <p className="text-[11px] text-gray-300 leading-snug mb-2">{card.description}</p>
-        )}
-        {card.flavor_text && (
-          <p className="text-[10px] italic text-gray-400 mb-2">"{card.flavor_text}"</p>
-        )}
-        <div className="space-y-1">
-          {statBar('HP', card.hp)}
-          {statBar('ATK', card.attack)}
-          {statBar('DEF', card.defense)}
-          {statBar('SPD', card.speed)}
-        </div>
-      </div>
-
-      <div className="p-3 pt-2 flex items-center justify-between border-t border-white/10">
-        <span className="text-[10px] font-mono text-gray-500">{card.card_number || '—'}</span>
-        <span className={`text-[10px] uppercase font-bold ${style.text}`}>{card.rarity}</span>
-      </div>
-    </div>
+    </>
   )
 
   return (
@@ -271,10 +435,7 @@ export default function Cards() {
       <div className="flex items-center justify-between mb-6">
         <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <h1 className="text-xl font-bold">Cards</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold"
-        >
+        <button onClick={() => setShowCreate(true)} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">
           + New
         </button>
       </div>
@@ -296,6 +457,7 @@ export default function Cards() {
         </div>
       )}
 
+      {/* CREATE */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-50 overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
@@ -304,13 +466,12 @@ export default function Cards() {
             {!draft ? (
               <>
                 <label className="block text-xs text-gray-400 mb-1">Concept</label>
-                <textarea
-                  value={concept}
-                  onChange={e => setConcept(e.target.value)}
-                  rows={3}
+                <textarea value={concept} onChange={e => setConcept(e.target.value)} rows={3}
                   placeholder="e.g. an elegant sorceress in flowing silk, garden of moonflowers"
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500"
-                />
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+                <button onClick={skipToManual} className="text-xs text-gray-500 hover:text-gray-300 mb-4">
+                  or build it manually →
+                </button>
                 <div className="flex gap-2">
                   <button onClick={() => { setShowCreate(false); setConcept('') }} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">
                     Cancel
@@ -322,62 +483,33 @@ export default function Cards() {
               </>
             ) : (
               <>
-                <p className="text-xs text-gray-500 mb-3">Edit anything before generating. Two images will be made (front and back).</p>
+                <p className="text-xs text-gray-500 mb-3">Edit anything before generating.</p>
 
-                <label className="block text-xs text-gray-400 mb-1">Name</label>
-                <input value={draft.name || ''} onChange={e => updateDraft('name', e.target.value)}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
-
-                <label className="block text-xs text-gray-400 mb-1">Title</label>
-                <input value={draft.title || ''} onChange={e => updateDraft('title', e.target.value)}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+                {inputRow('Name', draft.name, v => setDraft({ ...draft, name: v }))}
+                {inputRow('Title', draft.title, v => setDraft({ ...draft, title: v }))}
 
                 <label className="block text-xs text-gray-400 mb-1">Rarity</label>
-                <select value={draft.rarity || 'common'} onChange={e => updateDraft('rarity', e.target.value)}
+                <select value={draft.rarity || 'common'} onChange={e => setDraft({ ...draft, rarity: e.target.value })}
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
-                  <option value="common">Common</option>
-                  <option value="uncommon">Uncommon</option>
-                  <option value="rare">Rare</option>
-                  <option value="epic">Epic</option>
-                  <option value="legendary">Legendary</option>
+                  {RARITIES.map(r => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}
                 </select>
 
-                <label className="block text-xs text-gray-400 mb-1">Description</label>
-                <textarea value={draft.description || ''} onChange={e => updateDraft('description', e.target.value)} rows={2}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+                {inputRow('Description', draft.description, v => setDraft({ ...draft, description: v }), true, 2)}
+                {inputRow('Flavor Text', draft.flavor_text, v => setDraft({ ...draft, flavor_text: v }))}
 
-                <label className="block text-xs text-gray-400 mb-1">Flavor Text</label>
-                <input value={draft.flavor_text || ''} onChange={e => updateDraft('flavor_text', e.target.value)}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
-
-                <div className="grid grid-cols-4 gap-2 mb-3">
-                  {['hp', 'attack', 'defense', 'speed'].map(stat => (
-                    <div key={stat}>
-                      <label className="block text-xs text-gray-400 mb-1 uppercase">{stat.slice(0, 3)}</label>
-                      <input type="number" value={draft[stat] || 50} onChange={e => updateDraft(stat, e.target.value)}
-                        className="w-full bg-black border border-gray-700 rounded-lg px-2 py-2 text-sm outline-none focus:border-purple-500" />
-                    </div>
-                  ))}
-                </div>
+                <label className="block text-xs text-gray-400 mb-1">Stats</label>
+                <p className="text-[10px] text-gray-600 mb-2">Rename, add, or remove any stat.</p>
+                {statEditor(draft.stats || [], arr => setDraft({ ...draft, stats: arr }))}
 
                 <label className="block text-xs text-gray-400 mb-1">Art Style</label>
                 <select value={artStyle} onChange={e => setArtStyle(e.target.value)}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500">
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
                   {ART_STYLES.map(s => <option key={s.label} value={s.value}>{s.label}</option>)}
                 </select>
-                <p className="text-[10px] text-gray-600 mb-3">Appended to both art prompts for a consistent look.</p>
 
-                <label className="block text-xs text-gray-400 mb-1">Front Art Prompt</label>
-                <textarea value={draft.image_prompt || ''} onChange={e => updateDraft('image_prompt', e.target.value)} rows={4}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
-
-                <label className="block text-xs text-gray-400 mb-1">Back Art Prompt</label>
-                <textarea value={draft.back_image_prompt || ''} onChange={e => updateDraft('back_image_prompt', e.target.value)} rows={4}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
-
-                <label className="block text-xs text-gray-400 mb-1">Negative Prompt</label>
-                <textarea value={negative} onChange={e => setNegative(e.target.value)} rows={3}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+                {inputRow('Front Art Prompt', draft.image_prompt, v => setDraft({ ...draft, image_prompt: v }), true, 4)}
+                {inputRow('Back Art Prompt (optional)', draft.back_image_prompt, v => setDraft({ ...draft, back_image_prompt: v }), true, 4)}
+                {inputRow('Negative Prompt', negative, setNegative, true, 3)}
 
                 <label className="block text-xs text-gray-400 mb-1">Aspect Ratio</label>
                 <select value={size} onChange={e => setSize(e.target.value)}
@@ -385,9 +517,7 @@ export default function Cards() {
                   {SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
 
-                <label className="block text-xs text-gray-400 mb-1">Front Seed (optional)</label>
-                <input value={seedInput} onChange={e => setSeedInput(e.target.value)} placeholder="leave blank for random"
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500" />
+                {inputRow('Front Seed (optional)', seedInput, setSeedInput)}
 
                 {progress && <p className="text-xs text-purple-400 mb-3">{progress}</p>}
 
@@ -405,6 +535,83 @@ export default function Cards() {
         </div>
       )}
 
+      {/* EDIT */}
+      {editing && (
+        <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-50 overflow-y-auto">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
+            <h2 className="font-bold text-lg mb-3">Edit Card</h2>
+
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {editing.image_url && <img src={editing.image_url} alt="" className="w-full rounded-lg" />}
+              {editing.back_image_url && <img src={editing.back_image_url} alt="" className="w-full rounded-lg" />}
+            </div>
+
+            {inputRow('Name', editing.name, v => setEditing({ ...editing, name: v }))}
+            {inputRow('Title', editing.title, v => setEditing({ ...editing, title: v }))}
+            {inputRow('Card Number', editing.card_number, v => setEditing({ ...editing, card_number: v }))}
+
+            <label className="block text-xs text-gray-400 mb-1">Rarity</label>
+            <select value={editing.rarity || 'common'} onChange={e => setEditing({ ...editing, rarity: e.target.value })}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              {RARITIES.map(r => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}
+            </select>
+
+            {inputRow('Description', editing.description, v => setEditing({ ...editing, description: v }), true, 2)}
+            {inputRow('Flavor Text', editing.flavor_text, v => setEditing({ ...editing, flavor_text: v }))}
+
+            <label className="block text-xs text-gray-400 mb-1">Stats</label>
+            {statEditor(editing.stats || [], arr => setEditing({ ...editing, stats: arr }))}
+
+            <div className="border-t border-gray-800 pt-4 mt-2">
+              <p className="text-xs text-gray-400 mb-2 font-semibold">Regenerate Art (optional)</p>
+
+              {inputRow('Front Art Prompt', editing.image_prompt, v => setEditing({ ...editing, image_prompt: v }), true, 3)}
+              {inputRow('Back Art Prompt', editing.back_image_prompt, v => setEditing({ ...editing, back_image_prompt: v }), true, 3)}
+              {inputRow('Negative Prompt', editNegative, setEditNegative, true, 2)}
+
+              <label className="block text-xs text-gray-400 mb-1">Add Art Style</label>
+              <select value={editStyle} onChange={e => setEditStyle(e.target.value)}
+                className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+                {ART_STYLES.map(s => <option key={s.label} value={s.value}>{s.label}</option>)}
+              </select>
+
+              <label className="block text-xs text-gray-400 mb-1">Aspect Ratio</label>
+              <select value={editSize} onChange={e => setEditSize(e.target.value)}
+                className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+                {SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+
+              {regenProgress && <p className="text-xs text-purple-400 mb-2">{regenProgress}</p>}
+
+              <div className="flex gap-2 mb-4">
+                <button onClick={() => regenSide('front')} disabled={!!regenProgress}
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">
+                  Regenerate Front
+                </button>
+                <button onClick={() => regenSide('back')} disabled={!!regenProgress}
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">
+                  Regenerate Back
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => setEditing(null)} disabled={saving} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">
+                Cancel
+              </button>
+              <button onClick={saveEdit} disabled={saving} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+
+            <button onClick={() => deleteCard(editing)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-3">
+              Delete Card
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* DETAIL */}
       {selected && (
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
           <div className="w-full max-w-lg my-6" onClick={e => e.stopPropagation()}>
@@ -432,23 +639,22 @@ export default function Cards() {
                       <span className="text-gray-500">Front seed</span>
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-gray-300">{selected.seed ?? '—'}</span>
-                        {selected.seed && (
-                          <button onClick={() => copy(selected.seed)} className="text-gray-500 hover:text-white">Copy</button>
-                        )}
+                        {selected.seed && <button onClick={() => copy(selected.seed)} className="text-gray-500 hover:text-white">Copy</button>}
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-gray-500">Back seed</span>
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-gray-300">{selected.back_seed ?? '—'}</span>
-                        {selected.back_seed && (
-                          <button onClick={() => copy(selected.back_seed)} className="text-gray-500 hover:text-white">Copy</button>
-                        )}
+                        {selected.back_seed && <button onClick={() => copy(selected.back_seed)} className="text-gray-500 hover:text-white">Copy</button>}
                       </div>
                     </div>
                   </div>
 
-                  <button onClick={() => deleteCard(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-3">
+                  <button onClick={() => openEdit(selected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-lg py-2 text-sm font-semibold mt-3">
+                    Edit Card
+                  </button>
+                  <button onClick={() => deleteCard(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">
                     Delete Card
                   </button>
                   <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
