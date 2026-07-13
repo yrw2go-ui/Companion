@@ -33,7 +33,7 @@ ${transcript}`
         'Authorization': `Bearer ${process.env.ATLAS_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'deepseek-v3',
+        model: 'deepseek-ai/deepseek-v4-pro',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.4,
         max_tokens: 400,
