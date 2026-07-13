@@ -148,7 +148,7 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrompt('gentle natural motion, subtle movement')
+    setVideoPrompt('gentle natural motion, sensual movement')
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideo(true)
