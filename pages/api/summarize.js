@@ -14,32 +14,48 @@ export default async function handler(req, res) {
     .map(m => `${m.role === 'user' ? 'User' : characterName}: ${m.content}`)
     .join('\n')
 
-  const prompt = `Summarize the key facts, events, and emotional moments from this conversation that ${characterName} should permanently remember about the user and their relationship. Write 2-4 short bullet points, each a single sentence. Only include things worth remembering long-term. Transcript:\n\n${transcript}`
+  const prompt = `Below is a conversation between a user and ${characterName}.
+
+Write 2-4 short bullet points capturing only the details worth remembering long term: things the user revealed about themselves, decisions made, emotional moments, or facts that changed the relationship.
+
+Write them as plain statements from ${characterName}'s perspective, e.g. "He told me he's afraid of losing his job."
+
+Do not include greetings, small talk, or anything trivial. Return only the bullet points, no preamble.
+
+Conversation:
+${transcript}`
 
   try {
-    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+    const response = await fetch('https://api.atlascloud.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.MISTRAL_API_KEY}`,
+        'Authorization': `Bearer ${process.env.ATLAS_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'mistral-small-latest',
+        model: 'deepseek-v3',
         messages: [{ role: 'user', content: prompt }],
-        temperature: 0.5,
-        max_tokens: 300,
+        temperature: 0.4,
+        max_tokens: 400,
       }),
     })
 
-    const data = await response.json()
+    const raw = await response.text()
 
-    if (!response.ok) {
-      return res.status(500).json({ error: data.message || 'Mistral API error' })
+    let data
+    try {
+      data = JSON.parse(raw)
+    } catch {
+      return res.status(200).json({ summary: '' })
     }
 
-    const summary = data.choices[0].message.content
-    res.status(200).json({ summary })
+    if (!response.ok) {
+      return res.status(200).json({ summary: '' })
+    }
+
+    const summary = data.choices?.[0]?.message?.content?.trim() || ''
+    return res.status(200).json({ summary })
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    return res.status(200).json({ summary: '' })
   }
 }
