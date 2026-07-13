@@ -22,6 +22,8 @@ export default function Chat() {
   const [promptText, setPromptText] = useState('')
   const [negativeText, setNegativeText] = useState(DEFAULT_NEGATIVE)
   const [seedText, setSeedText] = useState('')
+  const [guidance, setGuidance] = useState(3.5)
+  const [steps, setSteps] = useState(28)
   const [autoPlay, setAutoPlay] = useState(false)
   const [speakingIdx, setSpeakingIdx] = useState(null)
   const [showVideoModal, setShowVideoModal] = useState(false)
@@ -131,6 +133,8 @@ export default function Chat() {
     setPromptText(buildImagePrompt(character, sceneContext, includeUser, userDescription))
     setNegativeText(DEFAULT_NEGATIVE)
     setSeedText('')
+    setGuidance(3.5)
+    setSteps(28)
     setShowPromptModal(true)
   }
 
@@ -149,6 +153,8 @@ export default function Chat() {
           prompt: promptText,
           negativePrompt: negativeText,
           seed: seedText || undefined,
+          guidance,
+          steps,
         }),
       })
       const data = await res.json()
@@ -384,7 +390,19 @@ export default function Chat() {
 
             <label className="block text-xs text-gray-400 mb-1">Seed (optional)</label>
             <input value={seedText} onChange={e => setSeedText(e.target.value)} placeholder="leave blank for random"
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-4" />
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3" />
+
+            <label className="block text-xs text-gray-400 mb-1">Guidance: {guidance}</label>
+            <input type="range" min="1" max="10" step="0.5" value={guidance}
+              onChange={e => setGuidance(parseFloat(e.target.value))}
+              className="w-full mb-1 accent-purple-500" />
+            <p className="text-[10px] text-gray-600 mb-3">Low (2-4) = softer, more natural. High (6+) = rigid, can look over-cooked. Flux likes 3-4.</p>
+
+            <label className="block text-xs text-gray-400 mb-1">Steps: {steps}</label>
+            <input type="range" min="10" max="50" step="1" value={steps}
+              onChange={e => setSteps(parseInt(e.target.value))}
+              className="w-full mb-1 accent-purple-500" />
+            <p className="text-[10px] text-gray-600 mb-4">More steps = more detail, slower. 28 is a good default.</p>
 
             <div className="flex gap-2">
               <button onClick={() => setShowPromptModal(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
