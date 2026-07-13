@@ -27,33 +27,29 @@ const ART_STYLES = [
 
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 
-// visual treatment per rarity
 const TREAT = {
-  common:    { edge: 'edge-common',    glow: '',                badge: 'badge-common',    foil: '',            holo: false, code: 'COM' },
-  uncommon:  { edge: 'edge-uncommon',  glow: 'glow-uncommon',   badge: 'badge-uncommon',  foil: '',            holo: false, code: 'UNC' },
-  rare:      { edge: 'edge-rare',      glow: 'glow-rare',       badge: 'badge-rare',      foil: 'foil',        holo: false, code: 'RAR' },
-  epic:      { edge: 'edge-epic',      glow: 'glow-epic',       badge: 'badge-epic',      foil: 'foil',        holo: true,  code: 'EPI' },
-  legendary: { edge: 'edge-legendary', glow: 'glow-legendary',  badge: 'badge-legendary', foil: 'foil-strong', holo: true,  code: 'LEG' },
+  common:    { edge: 'edge-common',    glow: '',               badge: 'badge-common',    foil: '',            holo: false, code: 'COM' },
+  uncommon:  { edge: 'edge-uncommon',  glow: 'glow-uncommon',  badge: 'badge-uncommon',  foil: '',            holo: false, code: 'UNC' },
+  rare:      { edge: 'edge-rare',      glow: 'glow-rare',      badge: 'badge-rare',      foil: 'foil',        holo: false, code: 'RAR' },
+  epic:      { edge: 'edge-epic',      glow: 'glow-epic',      badge: 'badge-epic',      foil: 'foil',        holo: true,  code: 'EPI' },
+  legendary: { edge: 'edge-legendary', glow: 'glow-legendary', badge: 'badge-legendary', foil: 'foil-strong', holo: true,  code: 'LEG' },
 }
 
 const treatOf = (r) => TREAT[r] || TREAT.common
 
 const emptyDraft = () => ({
-  name: '',
-  title: '',
-  description: '',
-  flavor_text: '',
-  rarity: 'common',
-  stats: [{ label: 'Power', value: 50 }],
-  image_prompt: '',
-  back_image_prompt: '',
+  name: '', title: '', description: '', flavor_text: '', rarity: 'common',
+  stats: [{ label: 'Power', value: 50 }], image_prompt: '', back_image_prompt: '',
 })
 
 export default function Cards() {
   const router = useRouter()
   const [cards, setCards] = useState([])
   const [loading, setLoading] = useState(true)
+
   const [selected, setSelected] = useState(null)
+  const [side, setSide] = useState('front')
+  const [expanded, setExpanded] = useState(false)
 
   const [showCreate, setShowCreate] = useState(false)
   const [concept, setConcept] = useState('')
@@ -81,6 +77,12 @@ export default function Cards() {
     setLoading(false)
   }
 
+  const openCard = (card) => {
+    setSelected(card)
+    setSide('front')
+    setExpanded(false)
+  }
+
   const normalizeStats = (card) => {
     if (Array.isArray(card.stats) && card.stats.length) return card.stats
     const legacy = []
@@ -93,8 +95,7 @@ export default function Cards() {
 
   const draftCard = async () => {
     if (!concept.trim() || drafting) return
-    setDrafting(true)
-    setDraft(null)
+    setDrafting(true); setDraft(null)
     try {
       const res = await fetch('/api/generate-card', {
         method: 'POST',
@@ -104,9 +105,7 @@ export default function Cards() {
       const data = await res.json()
       if (data.card) setDraft(data.card)
       else alert('Error: ' + (data.error || 'could not draft card'))
-    } catch (err) {
-      alert('Error: ' + err.message)
-    }
+    } catch (err) { alert('Error: ' + err.message) }
     setDrafting(false)
   }
 
@@ -168,14 +167,11 @@ export default function Cards() {
         back_seed: back.seed,
         negative_prompt: negative,
       }])
-
       if (error) { alert('Save error: ' + error.message); setGenerating(false); setProgress(''); return }
 
       setShowCreate(false); setDraft(null); setConcept(''); setSeedInput(''); setNegative(DEFAULT_NEGATIVE)
       loadCards()
-    } catch (err) {
-      alert('Error: ' + err.message)
-    }
+    } catch (err) { alert('Error: ' + err.message) }
     setGenerating(false); setProgress('')
   }
 
@@ -208,17 +204,17 @@ export default function Cards() {
     loadCards()
   }
 
-  const regenSide = async (side) => {
+  const regenSide = async (which) => {
     if (!editing || regenProgress) return
-    const promptText = side === 'front' ? editing.image_prompt : editing.back_image_prompt
+    const promptText = which === 'front' ? editing.image_prompt : editing.back_image_prompt
     if (!promptText?.trim()) { alert('Add an art prompt first'); return }
 
-    setRegenProgress(`Regenerating ${side}...`)
+    setRegenProgress(`Regenerating ${which}...`)
     const result = await genImage(promptText, '', editNegative, editSize, editStyle)
     if (!result.imageUrl) { alert('Error: ' + (result.error || 'failed')); setRegenProgress(''); return }
 
-    const oldUrl = side === 'front' ? editing.image_url : editing.back_image_url
-    const patch = side === 'front'
+    const oldUrl = which === 'front' ? editing.image_url : editing.back_image_url
+    const patch = which === 'front'
       ? { image_url: result.imageUrl, seed: result.seed }
       : { back_image_url: result.imageUrl, back_seed: result.seed }
 
@@ -246,7 +242,7 @@ export default function Cards() {
       }
     }
     if (files.length) await supabase.storage.from('character-images').remove(files)
-    setSelected(null); setEditing(null)
+    setSelected(null); setEditing(null); setExpanded(false)
     loadCards()
   }
 
@@ -266,24 +262,21 @@ export default function Cards() {
         </div>
       ))}
       <button onClick={() => onChange([...statsArr, { label: '', value: 50 }])}
-        className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold">
-        + Add Stat
-      </button>
+        className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold">+ Add Stat</button>
     </div>
   )
 
-  const statBar = (label, value, i, dense) => (
-    <div key={i} className={`flex items-center gap-2 ${dense ? 'text-[9px]' : 'text-[11px]'}`}>
-      <span className={`${dense ? 'w-10' : 'w-14'} text-gray-200 truncate uppercase tracking-wide`}>{label}</span>
+  const statBar = (label, value, i, big) => (
+    <div key={i} className={`flex items-center gap-2 ${big ? 'text-xs' : 'text-[9px]'}`}>
+      <span className={`${big ? 'w-20' : 'w-10'} text-gray-200 truncate uppercase tracking-wide`}>{label}</span>
       <div className="flex-1 bg-white/25 rounded-full h-1">
         <div className="bg-white h-1 rounded-full" style={{ width: `${Math.min(100, value)}%` }} />
       </div>
-      <span className="w-5 text-right text-gray-100">{value}</span>
+      <span className={`${big ? 'w-7' : 'w-5'} text-right text-gray-100`}>{value}</span>
     </div>
   )
 
-  // FRONT — full-bleed art, glass nameplate, badge, foil
-  const cardFront = (card) => {
+  const cardFront = (card, big = false) => {
     const t = treatOf(card.rarity)
     return (
       <div className={`card-shell ${t.edge} ${t.glow}`}>
@@ -294,13 +287,11 @@ export default function Cards() {
             ) : (
               <div className="absolute inset-0 bg-gray-900" />
             )}
-
             <span className={`badge ${t.badge}`}>{card.rarity}</span>
-
             <div className="nameplate">
-              <div className="font-bold text-[15px] leading-tight truncate tracking-wide">{card.name}</div>
+              <div className={`font-bold leading-tight truncate tracking-wide ${big ? 'text-2xl' : 'text-[15px]'}`}>{card.name}</div>
               {card.title && (
-                <div className="text-[10px] text-gray-300 truncate uppercase tracking-[0.12em] mt-0.5">{card.title}</div>
+                <div className={`text-gray-300 truncate uppercase tracking-[0.12em] mt-0.5 ${big ? 'text-xs' : 'text-[10px]'}`}>{card.title}</div>
               )}
             </div>
           </div>
@@ -309,8 +300,7 @@ export default function Cards() {
     )
   }
 
-  // BACK — second art, stats + lore overlaid, card number
-  const cardBack = (card) => {
+  const cardBack = (card, big = false) => {
     const t = treatOf(card.rarity)
     const stats = normalizeStats(card)
     return (
@@ -320,28 +310,24 @@ export default function Cards() {
             {card.back_image_url ? (
               <img src={card.back_image_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
             ) : (
-              <div className="absolute inset-0 bg-gray-900 flex items-center justify-center text-gray-700 text-[10px]">
-                no back art
-              </div>
+              <div className="absolute inset-0 bg-gray-900 flex items-center justify-center text-gray-700 text-[10px]">no back art</div>
             )}
-
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/25" />
-
             <span className={`badge ${t.badge}`}>{card.rarity}</span>
 
-            <div className="absolute inset-0 z-[4] p-3 flex flex-col justify-end">
+            <div className={`absolute inset-0 z-[4] flex flex-col justify-end ${big ? 'p-5' : 'p-3'}`}>
               {card.description && (
-                <p className="text-[10px] text-gray-200 leading-snug mb-2">{card.description}</p>
+                <p className={`text-gray-200 leading-snug mb-2 ${big ? 'text-sm' : 'text-[10px]'}`}>{card.description}</p>
               )}
               {card.flavor_text && (
-                <p className="text-[9px] italic text-gray-400 mb-2 leading-snug">"{card.flavor_text}"</p>
+                <p className={`italic text-gray-400 mb-3 leading-snug ${big ? 'text-xs' : 'text-[9px]'}`}>"{card.flavor_text}"</p>
               )}
-              <div className="space-y-1 mb-2">
-                {stats.map((s, i) => statBar(s.label, s.value, i, true))}
+              <div className={`${big ? 'space-y-2' : 'space-y-1'} mb-2`}>
+                {stats.map((s, i) => statBar(s.label, s.value, i, big))}
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-white/15">
-                <span className="text-[9px] font-mono text-gray-400 tracking-widest">{card.card_number || '—'}</span>
-                <span className="text-[9px] text-gray-500 tracking-widest uppercase">Companion</span>
+                <span className={`font-mono text-gray-400 tracking-widest ${big ? 'text-[11px]' : 'text-[9px]'}`}>{card.card_number || '—'}</span>
+                <span className={`text-gray-500 tracking-widest uppercase ${big ? 'text-[11px]' : 'text-[9px]'}`}>Companion</span>
               </div>
             </div>
           </div>
@@ -363,14 +349,25 @@ export default function Cards() {
     </>
   )
 
+  const sideToggle = () => (
+    <div className="flex gap-2 justify-center mb-3">
+      <button onClick={() => setSide('front')}
+        className={`px-5 py-1.5 rounded-full text-xs font-semibold tracking-wide ${side === 'front' ? 'bg-purple-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
+        Front
+      </button>
+      <button onClick={() => setSide('back')}
+        className={`px-5 py-1.5 rounded-full text-xs font-semibold tracking-wide ${side === 'back' ? 'bg-purple-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
+        Back
+      </button>
+    </div>
+  )
+
   return (
     <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
       <div className="flex items-center justify-between mb-6">
         <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <h1 className="text-xl font-bold tracking-wide">Cards</h1>
-        <button onClick={() => setShowCreate(true)} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">
-          + New
-        </button>
+        <button onClick={() => setShowCreate(true)} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">+ New</button>
       </div>
 
       {loading ? (
@@ -380,7 +377,7 @@ export default function Cards() {
       ) : (
         <div className="grid grid-cols-2 gap-4">
           {cards.map(c => (
-            <button key={c.id} onClick={() => setSelected(c)} className="text-left">
+            <button key={c.id} onClick={() => openCard(c)} className="text-left">
               {cardFront(c)}
             </button>
           ))}
@@ -399,9 +396,7 @@ export default function Cards() {
                 <textarea value={concept} onChange={e => setConcept(e.target.value)} rows={3}
                   placeholder="e.g. an elegant sorceress in flowing silk, garden of moonflowers"
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
-                <button onClick={() => setDraft(emptyDraft())} className="text-xs text-gray-500 hover:text-gray-300 mb-4">
-                  or build it manually →
-                </button>
+                <button onClick={() => setDraft(emptyDraft())} className="text-xs text-gray-500 hover:text-gray-300 mb-4">or build it manually →</button>
                 <div className="flex gap-2">
                   <button onClick={() => { setShowCreate(false); setConcept('') }} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
                   <button onClick={draftCard} disabled={drafting} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
@@ -412,7 +407,6 @@ export default function Cards() {
             ) : (
               <>
                 <p className="text-xs text-gray-500 mb-3">Edit anything before generating.</p>
-
                 {inputRow('Name', draft.name, v => setDraft({ ...draft, name: v }))}
                 {inputRow('Title', draft.title, v => setDraft({ ...draft, title: v }))}
 
@@ -426,7 +420,6 @@ export default function Cards() {
                 {inputRow('Flavor Text', draft.flavor_text, v => setDraft({ ...draft, flavor_text: v }))}
 
                 <label className="block text-xs text-gray-400 mb-1">Stats</label>
-                <p className="text-[10px] text-gray-600 mb-2">Rename, add, or remove any stat.</p>
                 {statEditor(draft.stats || [], arr => setDraft({ ...draft, stats: arr }))}
 
                 <label className="block text-xs text-gray-400 mb-1">Art Style</label>
@@ -490,7 +483,6 @@ export default function Cards() {
 
             <div className="border-t border-gray-800 pt-4 mt-2">
               <p className="text-xs text-gray-400 mb-2 font-semibold">Regenerate Art</p>
-
               {inputRow('Front Art Prompt', editing.image_prompt, v => setEditing({ ...editing, image_prompt: v }), true, 3)}
               {inputRow('Back Art Prompt', editing.back_image_prompt, v => setEditing({ ...editing, back_image_prompt: v }), true, 3)}
               {inputRow('Negative Prompt', editNegative, setEditNegative, true, 2)}
@@ -524,27 +516,21 @@ export default function Cards() {
               </button>
             </div>
 
-            <button onClick={() => deleteCard(editing)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-3">
-              Delete Card
-            </button>
+            <button onClick={() => deleteCard(editing)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-3">Delete Card</button>
           </div>
         </div>
       )}
 
-      {/* DETAIL */}
-      {selected && (
-        <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
-          <div className="w-full max-w-lg my-6" onClick={e => e.stopPropagation()}>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-[10px] uppercase text-gray-500 mb-2 text-center tracking-widest">Front</p>
-                {cardFront(selected)}
-              </div>
-              <div>
-                <p className="text-[10px] uppercase text-gray-500 mb-2 text-center tracking-widest">Back</p>
-                {cardBack(selected)}
-              </div>
-            </div>
+      {/* DETAIL — one large card, front/back toggle, tap to expand */}
+      {selected && !expanded && (
+        <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
+          <div className="w-full max-w-sm my-6" onClick={e => e.stopPropagation()}>
+            {sideToggle()}
+
+            <button onClick={() => setExpanded(true)} className="block w-full text-left">
+              {side === 'front' ? cardFront(selected) : cardBack(selected)}
+            </button>
+            <p className="text-center text-[10px] text-gray-600 mt-2">tap the card to expand</p>
 
             <div className="mt-4 bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2 text-xs">
               <div className="flex items-center justify-between">
@@ -570,6 +556,22 @@ export default function Cards() {
             <button onClick={() => openEdit(selected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-lg py-2 text-sm font-semibold mt-3">Edit Card</button>
             <button onClick={() => deleteCard(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">Delete Card</button>
             <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* EXPANDED — full screen card */}
+      {selected && expanded && (
+        <div className="fixed inset-0 bg-black flex flex-col items-center justify-center p-4 z-[60]" onClick={() => setExpanded(false)}>
+          <div className="w-full max-w-md" onClick={e => e.stopPropagation()}>
+            {sideToggle()}
+            <button onClick={() => setExpanded(false)} className="block w-full text-left">
+              {side === 'front' ? cardFront(selected, true) : cardBack(selected, true)}
+            </button>
+            <button onClick={() => setExpanded(false)}
+              className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-4">
+              Close
+            </button>
           </div>
         </div>
       )}
