@@ -1,26 +1,47 @@
 // pages/api/generate-video.js
 import { createClient } from '@supabase/supabase-js'
+import formidable from 'formidable'
+import fs from 'fs'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+export const config = {
+  api: { bodyParser: false },
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { imageUrl, prompt, duration, resolution, negativePrompt } = req.body
+  const form = formidable({})
+  const [fields, files] = await form.parse(req)
 
-  if (!imageUrl) {
+  const imageUrl = fields.imageUrl?.[0]
+  const uploadedFile = files.image?.[0]
+  let finalImageUrl = imageUrl
+
+  if (uploadedFile) {
+    const fileData = fs.readFileSync(uploadedFile.filepath)
+    const fileName = `upload_${Date.now()}.jpg`
+    const { error } = await supabaseAdmin.storage.from('character-images').upload(fileName, fileData, { contentType: 'image/jpeg' })
+    if (error) return res.status(500).json({ error: error.message })
+    const { data } = supabaseAdmin.storage.from('character-images').getPublicUrl(fileName)
+    finalImageUrl = data.publicUrl
+  }
+
+  if (!finalImageUrl) {
     return res.status(400).json({ error: 'No source image provided' })
   }
 
-  const BASE_URL = 'https://api.atlascloud.ai/api/v1'
-  const MODEL = 'alibaba/wan-2.7/image-to-video';
+  const { prompt, duration, resolution, negativePrompt } = fields
 
-  // clamp duration to what the model supports
+  const BASE_URL = 'https://api.atlascloud.ai/api/v1'
+  const MODEL = 'alibaba/wan-2.7/image-to-video'
+
   let dur = parseInt(duration) || 5
   if (dur < 5) dur = 5
   if (dur > 15) dur = 15
@@ -39,7 +60,7 @@ export default async function handler(req, res) {
   try {
     const body = {
       model: MODEL,
-      image: imageUrl,
+      image: finalImageUrl,
       prompt: prompt || 'gentle natural motion, sensual movement',
       resolution: res720or1080,
       duration: dur,
@@ -70,14 +91,13 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'No prediction ID', detail: submitParsed.data })
     }
 
-    // longer clips take longer; scale the polling window
     const maxPolls = 80 + dur * 8
 
     let atlasUrl = null
     for (let i = 0; i < maxPolls; i++) {
       await new Promise(r => setTimeout(r, 2000))
 
-      const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
+      const pollRes = await fetch(`\( {BASE_URL}/model/prediction/ \){predictionId}`, {
         headers: { 'Authorization': `Bearer ${process.env.ATLAS_API_KEY}` },
       })
       const pollParsed = await safeJson(pollRes)
@@ -102,7 +122,7 @@ export default async function handler(req, res) {
     const vidRes = await fetch(atlasUrl)
     const vidBuffer = Buffer.from(await vidRes.arrayBuffer())
 
-    const fileName = `video_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`
+    const fileName = `video_\( {Date.now()}_ \){Math.random().toString(36).slice(2, 8)}.mp4`
     const { error: uploadError } = await supabaseAdmin.storage
       .from('character-images')
       .upload(fileName, vidBuffer, {
