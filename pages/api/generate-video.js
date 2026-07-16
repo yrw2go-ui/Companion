@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   }
 
   const BASE_URL = 'https://api.atlascloud.ai/api/v1'
-  const MODEL = 'alibaba/wan-2.6/image-to-video'
+  const MODEL = 'atlascloud/wan-2.2-turbo-spicy/image-to-video'
 
   let dur = parseInt(duration) || 5
   if (dur < 5) dur = 5
