@@ -11,56 +11,59 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const {
-    imageUrl,
-    prompt,
-    duration,
-    resolution,
-    model
-  } = req.body
+  const { imageUrl, prompt, duration, resolution } = req.body
 
   if (!imageUrl) {
-    return res.status(400).json({
-      error: 'No source image provided'
-    })
+    return res.status(400).json({ error: 'No source image provided' })
   }
 
   const BASE_URL = 'https://api.atlascloud.ai/api/v1'
-
-  const VIDEO_MODELS = {
-    'wan22-turbo-spicy': 'atlascloud/wan-2.2-turbo-spicy/image-to-video',
-    'wan26-spicy': 'atlascloud/wan-2.6-spicy/image-to-video',
-    'wan27-spicy': 'atlascloud/wan-2.7-spicy/image-to-video',
-    'seedance-v15-pro': 'atlascloud/seedance-v1.5-pro/image-to-video'
-  }
-
-  const MODEL =
-    VIDEO_MODELS[model] ||
-    VIDEO_MODELS['wan22-turbo-spicy']
+  const MODEL = 'alibaba/wan-2.6/image-to-video'
 
   let dur = parseInt(duration) || 5
   if (dur < 5) dur = 5
   if (dur > 15) dur = 15
 
-  const resValue =
-    resolution === '1080p'
-      ? '1080p'
-      : '720p'
+  const resValue = resolution === '1080p' ? '1080p' : '720p'
 
   const safeJson = async (response) => {
     const t = await response.text()
     try {
-      return {
-        ok: true,
-        data: JSON.parse(t)
-      }
+      return { ok: true, data: JSON.parse(t) }
     } catch {
-      return {
-        ok: false,
-        raw: t
-      }
+      return { ok: false, raw: t }
     }
   }
+
+  try {
+    const body = {
+      model: MODEL,
+      image: imageUrl,
+      prompt: prompt || 'gentle natural motion, subtle movement',
+      resolution: resValue,
+      duration: dur,
+      enable_prompt_expansion: true,
+      seed: -1,
+    }
+
+    const submitRes = await fetch(`${BASE_URL}/model/generateVideo`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.ATLAS_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
+
+    const submitParsed = await safeJson(submitRes)
+    if (!submitParsed.ok) {
+      return res.status(500).json({
+        error: 'Atlas returned non-JSON',
+        httpStatus: submitRes.status,
+        raw: submitParsed.raw?.slice(0, 400),
+        sentBody: body,
+      })
+    }
 
     const predictionId = submitParsed.data.data?.id
     if (!predictionId) {
