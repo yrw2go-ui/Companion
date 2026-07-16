@@ -42,7 +42,6 @@ export default async function handler(req, res) {
       prompt: prompt || 'gentle natural motion, subtle movement',
       resolution: resValue,
       duration: dur,
-      enable_prompt_expansion: true,
       seed: -1,
     }
 
