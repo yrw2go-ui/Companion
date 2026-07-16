@@ -39,10 +39,9 @@ export default async function handler(req, res) {
     const body = {
       model: MODEL,
       image: imageUrl,
-      prompt: prompt || 'gentle natural motion, subtle movement',
+      prompt: prompt || 'smooth natural motion, sensual movement',
       resolution: resValue,
       duration: dur,
-      enable_prompt_expansion: true,
       seed: -1,
     }
 
