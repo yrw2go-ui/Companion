@@ -1,78 +1,131 @@
-// pages/videotest.js
-import { useState } from 'react'
+// pages/api/generate-video.js
+import { createClient } from '@supabase/supabase-js'
 
-export default function VideoTest() {
-  const [imageUrl, setImageUrl] = useState('')
-  const [prompt, setPrompt] = useState('gentle natural motion, sensual movement')
-  const [duration, setDuration] = useState(5)
-  const [resolution, setResolution] = useState('720p')
-  const [videoUrl, setVideoUrl] = useState('')
-  const [result, setResult] = useState('')
-  const [loading, setLoading] = useState(false)
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
 
-  const generate = async () => {
-    setLoading(true)
-    setResult('')
-    setVideoUrl('')
-    try {
-      const res = await fetch('/api/generate-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl, prompt, duration, resolution }),
-      })
-      const data = await res.json()
-      if (data.videoUrl) {
-        setVideoUrl(data.videoUrl)
-      } else {
-        setResult(JSON.stringify(data, null, 2))
-      }
-    } catch (err) {
-      setResult('Error: ' + err.message)
-    }
-    setLoading(false)
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  return (
-    <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
-      <h1 className="text-xl font-bold mb-4">Video Test</h1>
+  const { imageUrl, prompt, duration, resolution } = req.body
 
-      <label className="block text-xs text-gray-400 mb-1">Image URL (from your Supabase bucket)</label>
-      <input value={imageUrl} onChange={e => setImageUrl(e.target.value)}
-        placeholder="https://...supabase.../character-images/img_xxx.jpeg"
-        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3 text-sm" />
+  if (!imageUrl) {
+    return res.status(400).json({ error: 'No source image provided' })
+  }
 
-      <label className="block text-xs text-gray-400 mb-1">Motion Prompt</label>
-      <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={2}
-        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3 text-sm" />
+  const BASE_URL = 'https://api.atlascloud.ai/api/v1'
+  const MODEL = 'atlascloud/wan-2.2-turbo-spicy/image-to-video'
 
-      <label className="block text-xs text-gray-400 mb-1">Length</label>
-      <select value={duration} onChange={e => setDuration(parseInt(e.target.value))}
-        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3 text-sm">
-        <option value={5}>5 seconds</option>
-        <option value={8}>8 seconds</option>
-        <option value={10}>10 seconds</option>
-        <option value={15}>15 seconds</option>
-      </select>
+  let dur = parseInt(duration) || 5
+  if (dur < 5) dur = 5
+  if (dur > 15) dur = 15
 
-      <label className="block text-xs text-gray-400 mb-1">Resolution</label>
-      <select value={resolution} onChange={e => setResolution(e.target.value)}
-        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-4 text-sm">
-        <option value="720p">720p</option>
-        <option value="1080p">1080p</option>
-      </select>
+  const resValue = resolution === '1080p' ? '1080p' : '720p'
 
-      <button onClick={generate} disabled={loading}
-        className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold mb-4">
-        {loading ? 'Generating (1-3 min)...' : 'Generate Video'}
-      </button>
+  const safeJson = async (response) => {
+    const t = await response.text()
+    try {
+      return { ok: true, data: JSON.parse(t) }
+    } catch {
+      return { ok: false, raw: t }
+    }
+  }
 
-      {videoUrl && <video controls autoPlay loop src={videoUrl} className="w-full rounded-lg mb-4" />}
+  try {
+    const body = {
+      model: MODEL,
+      image: imageUrl,
+      prompt: prompt || 'gentle natural motion, subtle movement',
+      resolution: resValue,
+      duration: dur,
+      enable_prompt_expansion: true,
+      seed: -1,
+    }
 
-      {result && (
-        <pre className="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs whitespace-pre-wrap break-all">
-          {result}
-        </pre>
-      )}
-    </div>
-  )
+    const submitRes = await fetch(`${BASE_URL}/model/generateVideo`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.ATLAS_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
+
+    const submitParsed = await safeJson(submitRes)
+    if (!submitParsed.ok) {
+      return res.status(500).json({
+        error: 'Atlas returned non-JSON',
+        httpStatus: submitRes.status,
+        raw: submitParsed.raw?.slice(0, 400),
+        sentBody: body,
+      })
+    }
+
+    const predictionId = submitParsed.data.data?.id
+    if (!predictionId) {
+      // surface exactly what Atlas said and what we sent
+      return res.status(500).json({
+        error: 'No prediction ID',
+        httpStatus: submitRes.status,
+        atlasResponse: submitParsed.data,
+        sentBody: body,
+      })
+    }
+
+    const maxPolls = 80 + dur * 8
+
+    let atlasUrl = null
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise(r => setTimeout(r, 2000))
+
+      const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
+        headers: { 'Authorization': `Bearer ${process.env.ATLAS_API_KEY}` },
+      })
+      const pollParsed = await safeJson(pollRes)
+      if (!pollParsed.ok) continue
+
+      const pollBody = pollParsed.data.data || pollParsed.data
+      const status = pollBody.status
+
+      if (status === 'completed' || status === 'succeeded') {
+        atlasUrl = pollBody.outputs?.[0]
+        break
+      }
+      if (status === 'failed' || status === 'error') {
+        return res.status(500).json({ error: pollBody.error || 'Generation failed', detail: pollBody })
+      }
+    }
+
+    if (!atlasUrl) {
+      return res.status(500).json({ error: 'Timed out waiting for video' })
+    }
+
+    const vidRes = await fetch(atlasUrl)
+    const vidBuffer = Buffer.from(await vidRes.arrayBuffer())
+
+    const fileName = `video_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('character-images')
+      .upload(fileName, vidBuffer, { contentType: 'video/mp4', upsert: false })
+
+    if (uploadError) {
+      return res.status(500).json({ error: 'Upload failed: ' + uploadError.message })
+    }
+
+    const { data: publicData } = supabaseAdmin.storage
+      .from('character-images')
+      .getPublicUrl(fileName)
+
+    return res.status(200).json({
+      videoUrl: publicData.publicUrl,
+      duration: dur,
+      resolution: resValue,
+    })
+  } catch (err) {
+    return res.status(500).json({ error: err.message })
+  }
 }
