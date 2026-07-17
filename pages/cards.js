@@ -74,7 +74,7 @@ export default function Cards() {
   const [downloading, setDownloading] = useState(false)
 
   const [showAnimate, setShowAnimate] = useState(false)
-  const [animPrompt, setAnimPrompt] = useState('subtle natural motion, gentle breathing, hair and fabric drifting slightly, eyes alive')
+  const [animPrompt, setAnimPrompt] = useState('smooth natural motion, eyes alive,')
   const [animDuration, setAnimDuration] = useState(5)
   const [animRes, setAnimRes] = useState('720p')
   const [animating, setAnimating] = useState(false)
