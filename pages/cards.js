@@ -4,7 +4,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
 
-const DEFAULT_NEGATIVE = 'blurry, wide hips, mature woman, curvy female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -74,7 +74,7 @@ export default function Cards() {
   const [downloading, setDownloading] = useState(false)
 
   const [showAnimate, setShowAnimate] = useState(false)
-  const [animPrompt, setAnimPrompt] = useState('smooth natural motion, eyes alive,')
+  const [animPrompt, setAnimPrompt] = useState('Smooth movement, eyes alive,')
   const [animDuration, setAnimDuration] = useState(5)
   const [animRes, setAnimRes] = useState('720p')
   const [animating, setAnimating] = useState(false)
@@ -262,7 +262,7 @@ export default function Cards() {
 
   const openAnimate = () => {
     if (!selected?.image_url) return
-    setAnimPrompt(selected.video_prompt || 'subtle natural motion, gentle breathing, hair and fabric drifting slightly, eyes alive')
+    setAnimPrompt(selected.video_prompt || 'Smooth movement, eyes alive,')
     setAnimDuration(5)
     setAnimRes('720p')
     setShowAnimate(true)
