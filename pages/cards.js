@@ -4,7 +4,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
 
-const DEFAULT_NEGATIVE = 'blurry, asian, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, wide hips, mature woman, curvy female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -60,6 +60,8 @@ export default function Cards() {
   const [size, setSize] = useState('768*1024')
   const [artStyle, setArtStyle] = useState(ART_STYLES[1].value)
   const [seedInput, setSeedInput] = useState('')
+  const [guidance, setGuidance] = useState(3.5)
+  const [steps, setSteps] = useState(28)
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState('')
 
@@ -130,6 +132,8 @@ export default function Cards() {
         negativePrompt: neg,
         seed: seedVal || undefined,
         size: sz,
+        guidance,
+        steps,
       }),
     })
     return res.json()
@@ -326,6 +330,25 @@ export default function Cards() {
       alert('Download failed: ' + err.message)
     }
     setDownloading(false)
+  }
+
+  const handleDownloadVideo = async (card) => {
+    if (!card.video_url) return
+    try {
+      const resp = await fetch(card.video_url)
+      const blob = await resp.blob()
+      const url = URL.createObjectURL(blob)
+      const safeName = String(card.name || 'card').replace(/[^a-z0-9]+/gi, '_').toLowerCase()
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${card.card_number || 'card'}_${safeName}.mp4`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (err) {
+      alert('Video download failed: ' + err.message)
+    }
   }
 
   const statEditor = (statsArr, onChange) => (
@@ -551,6 +574,18 @@ export default function Cards() {
 
                 {inputRow('Front Seed (optional)', seedInput, setSeedInput)}
 
+                <label className="block text-xs text-gray-400 mb-1">Guidance: {guidance}</label>
+                <input type="range" min="1" max="10" step="0.5" value={guidance}
+                  onChange={e => setGuidance(parseFloat(e.target.value))}
+                  className="w-full mb-1 accent-purple-500" />
+                <p className="text-[10px] text-gray-600 mb-3">Low (2-4) = softer, more natural. High (6+) = rigid, can look over-cooked. Flux likes 3-4.</p>
+
+                <label className="block text-xs text-gray-400 mb-1">Steps: {steps}</label>
+                <input type="range" min="10" max="50" step="1" value={steps}
+                  onChange={e => setSteps(parseInt(e.target.value))}
+                  className="w-full mb-1 accent-purple-500" />
+                <p className="text-[10px] text-gray-600 mb-3">More steps = more detail, slower. 28 is a good default.</p>
+
                 {progress && <p className="text-xs text-purple-400 mb-3">{progress}</p>}
 
                 <div className="flex gap-2">
@@ -677,6 +712,12 @@ export default function Cards() {
               className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2">
               {downloading ? 'Rendering...' : '⬇ Download PNG'}
             </button>
+            {selected.video_url && (
+              <button onClick={() => handleDownloadVideo(selected)}
+                className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
+                ⬇ Download MP4 (animated)
+              </button>
+            )}
             <button onClick={() => openEdit(selected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-lg py-2 text-sm font-semibold mt-2">Edit Card</button>
             <button onClick={() => deleteCard(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">Delete Card</button>
             <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
