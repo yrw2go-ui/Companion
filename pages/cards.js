@@ -4,7 +4,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
 
-const DEFAULT_NEGATIVE = 'blurry, wide hips, mature woman, big breasts, curvy female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, wide hips, mature woman, big breasts, curvy female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -77,7 +77,7 @@ export default function Cards() {
   const [downloading, setDownloading] = useState(false)
 
   const [showAnimate, setShowAnimate] = useState(false)
-  const [animPrompt, setAnimPrompt] = useState('Smooth natural movement, eyes alive,')
+  const [animPrompt, setAnimPrompt] = useState('Smooth movement, eyes alive,')
   const [animDuration, setAnimDuration] = useState(5)
   const [animRes, setAnimRes] = useState('720p')
   const [animating, setAnimating] = useState(false)
@@ -428,7 +428,7 @@ export default function Cards() {
             ) : (
               <div className="absolute inset-0 bg-gray-900 flex items-center justify-center text-gray-700 text-[10px]">no back art</div>
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/25" />
+            <div className="absolute inset-x-0 bottom-0 h-[58%] bg-gradient-to-t from-black via-black/85 to-transparent" />
             <span className={`badge ${t.badge}`}>{card.rarity}</span>
 
             <div className={`absolute inset-0 z-[4] flex flex-col justify-end ${big ? 'p-5' : 'p-3'}`}>
