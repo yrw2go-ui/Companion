@@ -35,7 +35,7 @@ export default function Gallery() {
 
   const [showVideo, setShowVideo] = useState(false)
   const [videoSource, setVideoSource] = useState('')
-  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
+  const [videoPrompt, setVideoPrompt] = useState('smooth natural motion, sensual movement')
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
   const [animating, setAnimating] = useState(false)
@@ -222,7 +222,7 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrompt('gentle natural motion, subtle movement')
+    setVideoPrompt('smooth natural motion, sensual movement')
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideo(true)
