@@ -40,6 +40,14 @@ export default function Gallery() {
   const [videoRes, setVideoRes] = useState('720p')
   const [animating, setAnimating] = useState(false)
 
+  const [showExtend, setShowExtend] = useState(false)
+  const [extendSource, setExtendSource] = useState(null)
+  const [extendPrompt, setExtendPrompt] = useState('')
+  const [extendDuration, setExtendDuration] = useState(5)
+  const [extendRes, setExtendRes] = useState('720p')
+  const [extending, setExtending] = useState(false)
+  const [extendStatus, setExtendStatus] = useState('')
+
   useEffect(() => { load() }, [])
 
   const load = async () => {
@@ -257,6 +265,115 @@ export default function Gallery() {
     setAnimating(false)
   }
 
+  // grab the final frame of a video as a data URL
+  const captureLastFrame = (url) => new Promise((resolve, reject) => {
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.preload = 'auto'
+    video.muted = true
+    video.playsInline = true
+
+    const fail = () => reject(new Error('Could not read the video'))
+
+    video.onloadedmetadata = () => {
+      // seek very close to the end (exact end can yield a blank frame)
+      const target = Math.max(0, video.duration - 0.1)
+      const onSeeked = () => {
+        try {
+          const canvas = document.createElement('canvas')
+          canvas.width = video.videoWidth
+          canvas.height = video.videoHeight
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          resolve(canvas.toDataURL('image/jpeg', 0.92))
+        } catch (e) {
+          reject(e)
+        }
+      }
+      video.onseeked = onSeeked
+      video.currentTime = target
+    }
+
+    video.onerror = fail
+    video.src = url
+  })
+
+  const openExtend = (item) => {
+    setExtendSource(item)
+    setExtendPrompt('')
+    setExtendDuration(5)
+    setExtendRes('720p')
+    setExtendStatus('')
+    setShowExtend(true)
+    setSelected(null)
+  }
+
+  const runExtend = async () => {
+    if (!extendSource || extending) return
+    if (!extendPrompt.trim()) {
+      alert('Describe what should happen next')
+      return
+    }
+
+    setShowExtend(false)
+    setExtending(true)
+
+    try {
+      setExtendStatus('Reading the last frame...')
+      const dataUrl = await captureLastFrame(extendSource.url)
+
+      setExtendStatus('Saving the frame...')
+      const frameRes = await fetch('/api/extract-frame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl }),
+      })
+      const frameData = await frameRes.json()
+      if (!frameData.imageUrl) {
+        alert('Frame error: ' + (frameData.error || 'failed'))
+        setExtending(false); setExtendStatus('')
+        return
+      }
+
+      setExtendStatus('Generating the continuation (1-2 min)...')
+      const vidRes = await fetch('/api/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: frameData.imageUrl,
+          prompt: extendPrompt,
+          duration: extendDuration,
+          resolution: extendRes,
+        }),
+      })
+      const vidData = await vidRes.json()
+
+      // the frame was only a stepping stone
+      if (frameData.fileName) {
+        await supabase.storage.from('character-images').remove([frameData.fileName])
+      }
+
+      if (!vidData.videoUrl) {
+        alert('Video error: ' + (vidData.error || 'failed'))
+        setExtending(false); setExtendStatus('')
+        return
+      }
+
+      await supabase.from('gallery_media').insert([{
+        type: 'video',
+        url: vidData.videoUrl,
+        prompt: extendPrompt,
+      }])
+
+      setExtendStatus('')
+      load()
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+    setExtending(false)
+    setExtendStatus('')
+  }
+
   const remove = async (item) => {
     if (!confirm('Delete this permanently?')) return
     await supabase.from(item.source).delete().eq('id', item.id)
@@ -336,6 +453,12 @@ export default function Gallery() {
       {animating && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-sm text-gray-400">
           Animating... (1-2 min)
+        </div>
+      )}
+
+      {extending && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-sm text-gray-400">
+          {extendStatus || 'Extending...'}
         </div>
       )}
 
@@ -455,6 +578,47 @@ export default function Gallery() {
         </div>
       )}
 
+      {/* EXTEND */}
+      {showExtend && extendSource && (
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-5 z-[60]">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
+            <h2 className="font-bold text-lg mb-2">Extend Video</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Takes the last frame of this clip and generates what happens next, as a new video.
+              The original is kept unchanged. The two clips stay separate files.
+            </p>
+
+            <video src={extendSource.url} className="w-28 rounded-lg mb-3" muted />
+
+            <label className="block text-xs text-gray-400 mb-1">What happens next?</label>
+            <textarea value={extendPrompt} onChange={e => setExtendPrompt(e.target.value)} rows={3}
+              placeholder="e.g. she turns toward the window and smiles"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+
+            <label className="block text-xs text-gray-400 mb-1">Length</label>
+            <select value={extendDuration} onChange={e => setExtendDuration(parseInt(e.target.value))}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              <option value={5}>5 seconds</option>
+              <option value={8}>8 seconds</option>
+              <option value={10}>10 seconds (2x cost)</option>
+              <option value={15}>15 seconds (3x cost)</option>
+            </select>
+
+            <label className="block text-xs text-gray-400 mb-1">Resolution</label>
+            <select value={extendRes} onChange={e => setExtendRes(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500">
+              <option value="720p">720p</option>
+              <option value="1080p">1080p (costs more)</option>
+            </select>
+
+            <div className="flex gap-2">
+              <button onClick={() => setShowExtend(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={runExtend} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Extend</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* DETAIL */}
       {selected && (
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
@@ -491,7 +655,7 @@ export default function Gallery() {
               )}
             </div>
 
-            {selected.type === 'image' && selected.prompt && selected.source !== 'cards' && (
+            {selected.type === 'image' && selected.prompt && (
               <div className="flex gap-2 mt-3">
                 <button onClick={() => openRegenerate(selected, true)}
                   className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold">
@@ -504,10 +668,17 @@ export default function Gallery() {
               </div>
             )}
 
-            {selected.type === 'image' && selected.source !== 'cards' && (
+            {selected.type === 'image' && (
               <button onClick={() => openAnimate(selected.url)}
                 className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
                 🎬 Animate
+              </button>
+            )}
+
+            {selected.type === 'video' && (
+              <button onClick={() => openExtend(selected)} disabled={extending}
+                className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2">
+                ⏭ Extend from last frame
               </button>
             )}
 
