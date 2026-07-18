@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
 
 const DEFAULT_NEGATIVE = 'blurry, wide hips, mature woman, big breasts, curvy female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -47,6 +48,9 @@ export default function Cards() {
   const router = useRouter()
   const [cards, setCards] = useState([])
   const [loading, setLoading] = useState(true)
+  const [sortBy, setSortBy] = useState('date_desc')
+  const [search, setSearch] = useState('')
+  const [rarityFilter, setRarityFilter] = useState('all')
 
   const [selected, setSelected] = useState(null)
   const [side, setSide] = useState('front')
@@ -449,6 +453,36 @@ export default function Cards() {
     )
   }
 
+  const visibleCards = (() => {
+    let list = [...cards]
+
+    if (rarityFilter !== 'all') {
+      list = list.filter(c => (c.rarity || 'common').toLowerCase() === rarityFilter)
+    }
+
+    const q = search.trim().toLowerCase()
+    if (q) {
+      list = list.filter(c => {
+        const hay = [
+          c.name, c.title, c.description, c.flavor_text,
+          c.card_number, c.rarity, c.image_prompt, c.back_image_prompt,
+          ...(Array.isArray(c.stats) ? c.stats.map(s => s.label) : []),
+        ].filter(Boolean).join(' ').toLowerCase()
+        return hay.includes(q)
+      })
+    }
+
+    const byName = (a, b) => (a.name || '').localeCompare(b.name || '')
+    const byDate = (a, b) => new Date(a.created_at) - new Date(b.created_at)
+
+    if (sortBy === 'name_asc') list.sort(byName)
+    else if (sortBy === 'name_desc') list.sort((a, b) => byName(b, a))
+    else if (sortBy === 'date_asc') list.sort(byDate)
+    else list.sort((a, b) => byDate(b, a)) // date_desc default
+
+    return list
+  })()
+
   const inputRow = (label, value, onChange, multiline = false, rows = 2) => (
     <>
       <label className="block text-xs text-gray-400 mb-1">{label}</label>
@@ -499,13 +533,47 @@ export default function Cards() {
         <button onClick={() => setShowCreate(true)} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">+ New</button>
       </div>
 
+      {!loading && cards.length > 0 && (
+        <div className="mb-4 space-y-2">
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search name, prompt, rarity..."
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500"
+          />
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {[
+              ['date_desc', 'Newest'],
+              ['date_asc', 'Oldest'],
+              ['name_asc', 'A–Z'],
+              ['name_desc', 'Z–A'],
+            ].map(([val, label]) => (
+              <button key={val} onClick={() => setSortBy(val)}
+                className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${sortBy === val ? 'bg-purple-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {['all', ...RARITIES].map(r => (
+              <button key={r} onClick={() => setRarityFilter(r)}
+                className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold capitalize ${rarityFilter === r ? 'bg-purple-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
+                {r === 'all' ? 'All' : r}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <p className="text-gray-500">Loading...</p>
       ) : cards.length === 0 ? (
         <p className="text-gray-500 text-sm">No cards yet. Tap "+ New" to summon one.</p>
+      ) : visibleCards.length === 0 ? (
+        <p className="text-gray-500 text-sm">No cards match "{search}".</p>
       ) : (
         <div className="grid grid-cols-2 gap-4">
-          {cards.map(c => (
+          {visibleCards.map(c => (
             <button key={c.id} onClick={() => openCard(c)} className="text-left relative">
               {cardFront(c)}
               {c.video_url && (
