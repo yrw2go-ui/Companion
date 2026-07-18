@@ -11,7 +11,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { imageUrl, prompt, duration, resolution } = req.body
+  const { imageUrl, prompt, duration, resolution, expandPrompt } = req.body
 
   if (!imageUrl) {
     return res.status(400).json({ error: 'No source image provided' })
@@ -42,6 +42,7 @@ export default async function handler(req, res) {
       prompt: prompt || 'smooth natural motion, sensual movement',
       resolution: resValue,
       duration: dur,
+      enable_prompt_expansion: expandPrompt === false ? false : true,
       seed: -1,
     }
 
