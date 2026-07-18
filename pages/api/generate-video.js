@@ -42,7 +42,6 @@ export default async function handler(req, res) {
       prompt: prompt || 'smooth natural motion, sensual movement',
       resolution: resValue,
       duration: dur,
-      enable_prompt_expansion: expandPrompt === false ? false : true,
       seed: -1,
     }
 
