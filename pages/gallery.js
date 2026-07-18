@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 
-const DEFAULT_NEGATIVE = 'blurry, wide hips, mature woman, big breasts, curvy female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, wide hips, mature woman, big breasts, curvy female , low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4' },
@@ -47,6 +47,8 @@ export default function Gallery() {
   const [extendRes, setExtendRes] = useState('720p')
   const [extending, setExtending] = useState(false)
   const [extendStatus, setExtendStatus] = useState('')
+  const [framePreview, setFramePreview] = useState('')
+  const [grabbingFrame, setGrabbingFrame] = useState(false)
 
   useEffect(() => { load() }, [])
 
@@ -265,7 +267,40 @@ export default function Gallery() {
     setAnimating(false)
   }
 
-  // grab the final frame of a video as a data URL
+  // is this canvas frame effectively blank?
+  const frameIsBlank = (canvas) => {
+    try {
+      const ctx = canvas.getContext('2d')
+      const w = canvas.width
+      const h = canvas.height
+      if (!w || !h) return true
+      // sample a grid of pixels and look at brightness spread
+      const data = ctx.getImageData(0, 0, w, h).data
+      let min = 255
+      let max = 0
+      const step = Math.max(4, Math.floor((w * h) / 2000)) * 4
+      for (let i = 0; i < data.length; i += step) {
+        const lum = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114)
+        if (lum < min) min = lum
+        if (lum > max) max = lum
+      }
+      // almost no variation means a flat/black/white frame
+      return (max - min) < 12
+    } catch {
+      return false
+    }
+  }
+
+  const drawToCanvas = (video) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    return canvas
+  }
+
+  // grab a good final frame, backing off from the end if it's blank
   const captureLastFrame = (url) => new Promise((resolve, reject) => {
     const video = document.createElement('video')
     video.crossOrigin = 'anonymous'
@@ -273,30 +308,89 @@ export default function Gallery() {
     video.muted = true
     video.playsInline = true
 
-    const fail = () => reject(new Error('Could not read the video'))
+    let attempts = 0
+    // try progressively earlier points if the end frame is empty
+    const offsets = [0.15, 0.4, 0.8, 1.4, 2.2]
+    let settled = false
 
-    video.onloadedmetadata = () => {
-      // seek very close to the end (exact end can yield a blank frame)
-      const target = Math.max(0, video.duration - 0.1)
-      const onSeeked = () => {
+    const cleanup = () => {
+      video.onseeked = null
+      video.onerror = null
+      video.onloadeddata = null
+    }
+
+    const fail = (msg) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new Error(msg || 'Could not read the video'))
+    }
+
+    const trySeek = () => {
+      if (attempts >= offsets.length) {
+        // give up on finding a non-blank frame, use whatever we last had
         try {
-          const canvas = document.createElement('canvas')
-          canvas.width = video.videoWidth
-          canvas.height = video.videoHeight
-          const ctx = canvas.getContext('2d')
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const canvas = drawToCanvas(video)
+          settled = true
+          cleanup()
           resolve(canvas.toDataURL('image/jpeg', 0.92))
         } catch (e) {
-          reject(e)
+          fail(e.message)
         }
+        return
       }
-      video.onseeked = onSeeked
+      const back = offsets[attempts]
+      attempts++
+      const target = Math.max(0, (video.duration || 0) - back)
       video.currentTime = target
     }
 
-    video.onerror = fail
+    video.onseeked = () => {
+      if (settled) return
+      // give the decoder a moment to actually paint the frame
+      setTimeout(() => {
+        if (settled) return
+        try {
+          const canvas = drawToCanvas(video)
+          if (frameIsBlank(canvas) && attempts < offsets.length) {
+            trySeek()
+            return
+          }
+          settled = true
+          cleanup()
+          resolve(canvas.toDataURL('image/jpeg', 0.92))
+        } catch (e) {
+          fail(e.message)
+        }
+      }, 120)
+    }
+
+    video.onerror = () => fail('Could not load the video')
+
+    // wait for real data, not just metadata
+    video.onloadeddata = () => {
+      if (!video.duration || !isFinite(video.duration)) {
+        fail('Video has no readable duration')
+        return
+      }
+      trySeek()
+    }
+
     video.src = url
+    video.load()
   })
+
+  const grabPreview = async (url) => {
+    setGrabbingFrame(true)
+    setFramePreview('')
+    try {
+      const dataUrl = await captureLastFrame(url)
+      setFramePreview(dataUrl)
+    } catch (err) {
+      alert('Could not read the last frame: ' + err.message)
+    }
+    setGrabbingFrame(false)
+  }
 
   const openExtend = (item) => {
     setExtendSource(item)
@@ -304,8 +398,10 @@ export default function Gallery() {
     setExtendDuration(5)
     setExtendRes('720p')
     setExtendStatus('')
+    setFramePreview('')
     setShowExtend(true)
     setSelected(null)
+    grabPreview(item.url)
   }
 
   const runExtend = async () => {
@@ -319,8 +415,7 @@ export default function Gallery() {
     setExtending(true)
 
     try {
-      setExtendStatus('Reading the last frame...')
-      const dataUrl = await captureLastFrame(extendSource.url)
+      const dataUrl = framePreview || await captureLastFrame(extendSource.url)
 
       setExtendStatus('Saving the frame...')
       const frameRes = await fetch('/api/extract-frame', {
@@ -344,6 +439,7 @@ export default function Gallery() {
           prompt: extendPrompt,
           duration: extendDuration,
           resolution: extendRes,
+          expandPrompt: false,
         }),
       })
       const vidData = await vidRes.json()
@@ -588,7 +684,26 @@ export default function Gallery() {
               The original is kept unchanged. The two clips stay separate files.
             </p>
 
-            <video src={extendSource.url} className="w-28 rounded-lg mb-3" muted />
+            <div className="mb-3">
+              <p className="text-[10px] text-gray-500 mb-1">Continuing from this frame:</p>
+              {grabbingFrame ? (
+                <div className="w-32 h-24 bg-black border border-gray-700 rounded-lg flex items-center justify-center text-[10px] text-gray-500">
+                  reading frame...
+                </div>
+              ) : framePreview ? (
+                <img src={framePreview} alt="last frame" className="w-32 rounded-lg border border-gray-700" />
+              ) : (
+                <div className="w-32 h-24 bg-black border border-gray-700 rounded-lg flex items-center justify-center text-[10px] text-gray-600">
+                  no frame
+                </div>
+              )}
+              <button
+                onClick={() => grabPreview(extendSource.url)}
+                className="text-[10px] text-gray-500 hover:text-gray-300 mt-1"
+              >
+                re-read frame
+              </button>
+            </div>
 
             <label className="block text-xs text-gray-400 mb-1">What happens next?</label>
             <textarea value={extendPrompt} onChange={e => setExtendPrompt(e.target.value)} rows={3}
@@ -613,7 +728,10 @@ export default function Gallery() {
 
             <div className="flex gap-2">
               <button onClick={() => setShowExtend(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
-              <button onClick={runExtend} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Extend</button>
+              <button onClick={runExtend} disabled={!framePreview || grabbingFrame}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
+                Extend
+              </button>
             </div>
           </div>
         </div>
