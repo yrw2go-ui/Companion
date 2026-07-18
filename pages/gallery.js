@@ -3,8 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 
-const DEFAULT_NEGATIVE = 'blurry, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
-
+const DEFAULT_NEGATIVE = 'blurry, wide hips, mature woman, big breasts, curvy female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4' },
   { value: '1024*768', label: 'Landscape 4:3' },
@@ -19,6 +18,8 @@ export default function Gallery() {
   const [characters, setCharacters] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
+  const [gSort, setGSort] = useState('date_desc')
+  const [gSearch, setGSearch] = useState('')
   const [selected, setSelected] = useState(null)
 
   const [showCreate, setShowCreate] = useState(false)
@@ -33,7 +34,7 @@ export default function Gallery() {
 
   const [showVideo, setShowVideo] = useState(false)
   const [videoSource, setVideoSource] = useState('')
-  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
+  const [videoPrompt, setVideoPrompt] = useState('smooth natural motion, sensual movement')
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
   const [animating, setAnimating] = useState(false)
@@ -156,7 +157,7 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrompt('gentle natural motion, sensual movement')
+    setVideoPrompt('smooth natural motion, sensual movement')
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideo(true)
@@ -202,12 +203,27 @@ export default function Gallery() {
 
   const copy = (val) => navigator.clipboard?.writeText(String(val))
 
-  const shown = media.filter(m => {
-    if (filter === 'all') return true
-    if (filter === 'images') return m.type === 'image'
-    if (filter === 'videos') return m.type === 'video'
-    return true
-  })
+  const shown = (() => {
+    let list = media.filter(m => {
+      if (filter === 'images') return m.type === 'image'
+      if (filter === 'videos') return m.type === 'video'
+      return true
+    })
+
+    const q = gSearch.trim().toLowerCase()
+    if (q) {
+      list = list.filter(m => {
+        const hay = [m.prompt, m.negative_prompt, m.type].filter(Boolean).join(' ').toLowerCase()
+        return hay.includes(q)
+      })
+    }
+
+    const byDate = (a, b) => new Date(a.created_at) - new Date(b.created_at)
+    if (gSort === 'date_asc') list.sort(byDate)
+    else list.sort((a, b) => byDate(b, a))
+
+    return list
+  })()
 
   const tab = (key, label) => (
     <button onClick={() => setFilter(key)}
@@ -226,10 +242,26 @@ export default function Gallery() {
         </button>
       </div>
 
-      <div className="flex gap-2 mb-5">
+      <div className="flex gap-2 mb-3">
         {tab('all', 'All')}
         {tab('images', 'Images')}
         {tab('videos', 'Videos')}
+      </div>
+
+      <input
+        value={gSearch}
+        onChange={e => setGSearch(e.target.value)}
+        placeholder="Search by prompt..."
+        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
+      />
+
+      <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
+        {[['date_desc', 'Newest'], ['date_asc', 'Oldest']].map(([val, label]) => (
+          <button key={val} onClick={() => setGSort(val)}
+            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${gSort === val ? 'bg-purple-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
+            {label}
+          </button>
+        ))}
       </div>
 
       {animating && (
