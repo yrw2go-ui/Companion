@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 
 const DEFAULT_NEGATIVE = 'blurry, wide hips, mature woman, big breasts, curvy female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4' },
   { value: '1024*768', label: 'Landscape 4:3' },
@@ -34,7 +35,7 @@ export default function Gallery() {
 
   const [showVideo, setShowVideo] = useState(false)
   const [videoSource, setVideoSource] = useState('')
-  const [videoPrompt, setVideoPrompt] = useState('smooth natural motion, sensual movement')
+  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
   const [animating, setAnimating] = useState(false)
@@ -51,6 +52,11 @@ export default function Gallery() {
     const { data: galMedia } = await supabase
       .from('gallery_media')
       .select('*')
+      .order('created_at', { ascending: false })
+
+    const { data: cardRows } = await supabase
+      .from('cards')
+      .select('id, name, card_number, image_url, back_image_url, video_url, image_prompt, back_image_prompt, video_prompt, seed, back_seed, created_at')
       .order('created_at', { ascending: false })
 
     const fromChats = (msgMedia || [])
@@ -81,7 +87,66 @@ export default function Gallery() {
       created_at: g.created_at,
     }))
 
-    setMedia([...fromChats, ...fromGallery].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)))
+    const fromCards = []
+    for (const c of cardRows || []) {
+      const label = `${c.card_number || ''} ${c.name || ''}`.trim()
+      if (c.image_url) {
+        fromCards.push({
+          key: 'card_front_' + c.id,
+          id: c.id,
+          source: 'cards',
+          cardSide: 'front',
+          cardId: c.id,
+          cardLabel: label,
+          protected: true,
+          type: 'image',
+          url: c.image_url,
+          seed: c.seed ?? null,
+          prompt: c.image_prompt ?? null,
+          negative_prompt: null,
+          size: null,
+          created_at: c.created_at,
+        })
+      }
+      if (c.back_image_url) {
+        fromCards.push({
+          key: 'card_back_' + c.id,
+          id: c.id,
+          source: 'cards',
+          cardSide: 'back',
+          cardId: c.id,
+          cardLabel: label,
+          protected: true,
+          type: 'image',
+          url: c.back_image_url,
+          seed: c.back_seed ?? null,
+          prompt: c.back_image_prompt ?? null,
+          negative_prompt: null,
+          size: null,
+          created_at: c.created_at,
+        })
+      }
+      if (c.video_url) {
+        fromCards.push({
+          key: 'card_video_' + c.id,
+          id: c.id,
+          source: 'cards',
+          cardSide: 'animation',
+          cardId: c.id,
+          cardLabel: label,
+          protected: true,
+          type: 'video',
+          url: c.video_url,
+          seed: null,
+          prompt: c.video_prompt ?? null,
+          negative_prompt: null,
+          size: null,
+          created_at: c.created_at,
+        })
+      }
+    }
+
+    setMedia([...fromChats, ...fromGallery, ...fromCards].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)))
 
     const { data: chars } = await supabase.from('characters').select('id, name')
     setCharacters(chars || [])
@@ -157,7 +222,7 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrompt('smooth natural motion, sensual movement')
+    setVideoPrompt('gentle natural motion, subtle movement')
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideo(true)
@@ -205,6 +270,9 @@ export default function Gallery() {
 
   const shown = (() => {
     let list = media.filter(m => {
+      if (filter === 'cards') return m.source === 'cards'
+      // card media only appears under the Cards tab
+      if (m.source === 'cards') return false
       if (filter === 'images') return m.type === 'image'
       if (filter === 'videos') return m.type === 'video'
       return true
@@ -213,7 +281,7 @@ export default function Gallery() {
     const q = gSearch.trim().toLowerCase()
     if (q) {
       list = list.filter(m => {
-        const hay = [m.prompt, m.negative_prompt, m.type].filter(Boolean).join(' ').toLowerCase()
+        const hay = [m.prompt, m.negative_prompt, m.type, m.cardLabel].filter(Boolean).join(' ').toLowerCase()
         return hay.includes(q)
       })
     }
@@ -246,6 +314,7 @@ export default function Gallery() {
         {tab('all', 'All')}
         {tab('images', 'Images')}
         {tab('videos', 'Videos')}
+        {tab('cards', 'Cards')}
       </div>
 
       <input
@@ -286,6 +355,11 @@ export default function Gallery() {
                   <video src={item.url} className="w-full h-full object-cover" muted />
                   <span className="absolute bottom-1.5 right-1.5 bg-black/70 rounded-full px-2 py-0.5 text-[10px]">▶ video</span>
                 </>
+              )}
+              {item.source === 'cards' && (
+                <span className="absolute top-1.5 left-1.5 bg-black/75 rounded-full px-2 py-0.5 text-[9px] tracking-wide">
+                  🃏 {item.cardSide}
+                </span>
               )}
             </button>
           ))}
@@ -403,6 +477,12 @@ export default function Gallery() {
                 <span className="text-gray-500">Created</span>
                 <span className="text-gray-400">{new Date(selected.created_at).toLocaleString()}</span>
               </div>
+              {selected.source === 'cards' && (
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">From card</span>
+                  <span className="text-gray-300">{selected.cardLabel} ({selected.cardSide})</span>
+                </div>
+              )}
               {selected.prompt && (
                 <div className="pt-1 border-t border-gray-800">
                   <p className="text-gray-500 mb-1">Prompt</p>
@@ -411,7 +491,7 @@ export default function Gallery() {
               )}
             </div>
 
-            {selected.type === 'image' && selected.prompt && (
+            {selected.type === 'image' && selected.prompt && selected.source !== 'cards' && (
               <div className="flex gap-2 mt-3">
                 <button onClick={() => openRegenerate(selected, true)}
                   className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold">
@@ -424,14 +504,20 @@ export default function Gallery() {
               </div>
             )}
 
-            {selected.type === 'image' && (
+            {selected.type === 'image' && selected.source !== 'cards' && (
               <button onClick={() => openAnimate(selected.url)}
                 className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
                 🎬 Animate
               </button>
             )}
 
-            <button onClick={() => remove(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">Delete</button>
+            {selected.source === 'cards' ? (
+              <p className="text-[11px] text-gray-500 text-center mt-3 mb-1">
+                This belongs to a card. Delete or replace it from the Cards page.
+              </p>
+            ) : (
+              <button onClick={() => remove(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">Delete</button>
+            )}
             <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
           </div>
         </div>
