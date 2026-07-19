@@ -27,7 +27,7 @@ Return ONLY a JSON object with no markdown, no backticks, no preamble, in exactl
     { "label": "Allure", "value": 20-100 },
     { "label": "Charisma", "value": 20-100 }
   ],
-  "image_prompt": "FRONT art: an editorial portrait. Give SPECIFIC physical details: approximate age, hair colour and style, eye colour, skin tone, build, and outfit. Then the pose, location, lighting and mood. Modern real-world settings only: studio, city street, gym, track, rooftop, cafe, beach, backstage",
+  "image_prompt": "FRONT art: an editorial portrait. Give SPECIFIC physical details: approximate age, hair colour and style, eye colour, skin tone, build, and outfit. Then the pose, location, lighting and mood. Modern real-world settings only: studio, city street, gym, track, cafe, beach, backstage",
   "back_image_prompt": "BACK art: the SAME person, different shot. REPEAT the physical description word for word from the front prompt, then change only the pose, location and framing"
 }
 
