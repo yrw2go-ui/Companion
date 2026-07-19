@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'No concept provided' })
   }
 
-  const prompt = `You are designing a collectible card for a contemporary lifestyle series. The characters are ORIGINAL FICTIONAL PEOPLE in a modern real-world setting: models, athletes, performers, artists, entrepreneurs, celebrities that are fictional. This is NOT fantasy. No magic, no swords, no mythical creatures, no supernatural powers, no sci-fi.
+  const prompt = `You are designing a collectible card for a sensual contemporary lifestyle series. The characters are sensual ORIGINAL FICTIONAL PEOPLE in a modern real-world setting: models, athletes, performers, artists, entrepreneurs. This is NOT fantasy. No magic, no swords, no mythical creatures, no supernatural powers, no sci-fi.
 
 Concept: ${concept}
 
@@ -22,16 +22,18 @@ Return ONLY a JSON object with no markdown, no backticks, no preamble, in exactl
   "flavor_text": "one memorable line they might say, max 15 words",
   "rarity": "one of: common, uncommon, rare, epic, legendary",
   "stats": [
-    { "label": "SHORT STAT NAME", "value": 20-100 },
-    { "label": "SHORT STAT NAME", "value": 20-100 },
-    { "label": "SHORT STAT NAME", "value": 20-100 },
-    { "label": "SHORT STAT NAME", "value": 20-100 }
+    { "label": "Star Power", "value": 20-100 },
+    { "label": "Physique", "value": 20-100 },
+    { "label": "Allure", "value": 20-100 },
+    { "label": "Charisma", "value": 20-100 }
   ],
   "image_prompt": "FRONT art: an editorial portrait. Give SPECIFIC physical details: approximate age, hair colour and style, eye colour, skin tone, build, and outfit. Then the pose, location, lighting and mood. Modern real-world settings only: studio, city street, gym, track, rooftop, cafe, beach, backstage",
   "back_image_prompt": "BACK art: the SAME person, different shot. REPEAT the physical description word for word from the front prompt, then change only the pose, location and framing"
 }
 
-STATS: invent 4 labels that suit this person's field rather than generic game stats. A sprinter might have Speed, Power, Form, Focus. A model might have Presence, Poise, Range, Energy. A chef might have Technique, Palate, Pace, Nerve. Keep each label 1-2 words.
+STATS: always use exactly these four labels, in this order, with no substitutions and no additions:
+  "Star Power", "Physique", "Allure", "Charisma"
+Only the values change from card to card. Choose values that fit the character and their rarity.
 
 APPEARANCE RULES, these matter:
 - The person must be a completely invented individual, not based on or resembling any real public figure. Never reference a real person's name or likeness.
@@ -73,12 +75,22 @@ Higher rarity should mean stronger overall stat values.`
       return res.status(500).json({ error: 'Could not parse card JSON', raw: text.slice(0, 300) })
     }
 
+    const STANDARD_LABELS = ['Star Power', 'Physique', 'Allure', 'Charisma']
+
+    // normalise to the standard four, keeping whatever values came back
+    if (Array.isArray(card.stats) && card.stats.length > 0) {
+      card.stats = STANDARD_LABELS.map((label, i) => {
+        const v = parseInt(card.stats[i]?.value)
+        return { label, value: isNaN(v) ? 50 : Math.max(1, Math.min(100, v)) }
+      })
+    }
+
     if (!Array.isArray(card.stats) || card.stats.length === 0) {
       card.stats = [
-        { label: 'Presence', value: 50 },
-        { label: 'Technique', value: 50 },
-        { label: 'Stamina', value: 50 },
-        { label: 'Focus', value: 50 },
+        { label: 'Star Power', value: 50 },
+        { label: 'Physique', value: 50 },
+        { label: 'Allure', value: 50 },
+        { label: 'Charisma', value: 50 },
       ]
     }
 
