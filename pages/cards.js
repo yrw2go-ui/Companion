@@ -14,16 +14,16 @@ const SIZES = [
 
 const ART_STYLES = [
   { value: '', label: 'None (use prompt as-is)' },
-  { value: 'photorealistic, DSLR photo, natural skin texture, soft cinematic lighting, shallow depth of field', label: 'Photorealistic' },
-  { value: 'digital painting, painterly brushwork, rich color, dramatic lighting, fantasy art, artstation quality', label: 'Digital Painting' },
-  { value: 'anime style, cel shaded, clean linework, vibrant colors, detailed eyes', label: 'Anime' },
-  { value: 'oil painting, classical portraiture, renaissance lighting, canvas texture, old master style', label: 'Oil Painting' },
-  { value: 'watercolor illustration, soft washes, delicate linework, pastel palette, dreamy', label: 'Watercolor' },
-  { value: 'comic book art, bold ink outlines, halftone shading, dynamic composition, graphic novel style', label: 'Comic Book' },
-  { value: 'art nouveau, ornate decorative motifs, flowing organic lines, gold accents, Alphonse Mucha style', label: 'Art Nouveau' },
-  { value: 'dark fantasy, gothic atmosphere, moody chiaroscuro lighting, muted palette, intricate detail', label: 'Dark Fantasy' },
-  { value: 'cyberpunk, neon lighting, chrome and holograms, rain-slick city night, high contrast', label: 'Cyberpunk' },
-  { value: 'ethereal fantasy, glowing rim light, soft bloom, luminous atmosphere, celestial mood', label: 'Ethereal' },
+  { value: 'editorial fashion photography, professional studio lighting, sharp focus, natural skin texture, high end magazine quality', label: 'Editorial Fashion' },
+  { value: 'natural light portrait photography, soft window light, shallow depth of field, candid feel, realistic skin', label: 'Natural Light Portrait' },
+  { value: 'sports photography, fast shutter, dynamic action, stadium or track setting, crisp detail, athletic', label: 'Sports Action' },
+  { value: 'black and white photography, high contrast monochrome, dramatic shadows, classic film grain', label: 'Black & White' },
+  { value: 'golden hour photography, warm backlight, sun flare, glowing rim light, outdoor', label: 'Golden Hour' },
+  { value: 'street style photography, urban backdrop, candid stride, city environment, documentary feel', label: 'Street Style' },
+  { value: 'studio beauty photography, clean seamless backdrop, soft even lighting, crisp detail, minimal', label: 'Studio Beauty' },
+  { value: 'cinematic film still, anamorphic look, moody colour grade, shallow focus, narrative feel', label: 'Cinematic' },
+  { value: 'analog film photography, 35mm grain, muted colour, slight halation, nostalgic tone', label: 'Film Photography' },
+  { value: 'high fashion runway photography, backstage energy, motion, professional lighting', label: 'Runway' },
 ]
 
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary']
@@ -595,7 +595,7 @@ export default function Cards() {
               <>
                 <label className="block text-xs text-gray-400 mb-1">Concept</label>
                 <textarea value={concept} onChange={e => setConcept(e.target.value)} rows={3}
-                  placeholder="e.g. an elegant sorceress in flowing silk, garden of moonflowers"
+                  placeholder="e.g. a sprinter who came up through club athletics, quiet and intense"
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
                 <button onClick={() => setDraft(emptyDraft())} className="text-xs text-gray-500 hover:text-gray-300 mb-4">or build it manually →</button>
                 <div className="flex gap-2">
