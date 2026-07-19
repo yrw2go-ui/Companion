@@ -28,6 +28,23 @@ const ART_STYLES = [
 
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 
+// stat value ranges per rarity, used when creating a variant
+const RARITY_STAT_RANGE = {
+  common:    [40, 62],
+  uncommon:  [52, 72],
+  rare:      [64, 82],
+  epic:      [76, 90],
+  legendary: [86, 99],
+}
+
+const rollStats = (labels, rarity) => {
+  const [lo, hi] = RARITY_STAT_RANGE[rarity] || RARITY_STAT_RANGE.common
+  return labels.map(label => ({
+    label,
+    value: Math.floor(lo + Math.random() * (hi - lo + 1)),
+  }))
+}
+
 const TREAT = {
   common:    { edge: 'edge-common',    glow: '',               badge: 'badge-common',    foil: '',            holo: false, code: 'COM' },
   uncommon:  { edge: 'edge-uncommon',  glow: 'glow-uncommon',  badge: 'badge-uncommon',  foil: '',            holo: false, code: 'UNC' },
@@ -38,14 +55,12 @@ const TREAT = {
 
 const treatOf = (r) => TREAT[r] || TREAT.common
 
+const STANDARD_LABELS = ['Star Power', 'Physique', 'Allure', 'Charisma']
+
 const emptyDraft = () => ({
   name: '', title: '', description: '', flavor_text: '', rarity: 'common',
-  stats: [
-    { label: 'Star Power', value: 70 },
-    { label: 'Physique', value: 70 },
-    { label: 'Allure', value: 70 },
-    { label: 'Charisma', value: 70 },
-  ], image_prompt: '', back_image_prompt: '',
+  stats: rollStats(STANDARD_LABELS, 'common'),
+  image_prompt: '', back_image_prompt: '',
 })
 
 export default function Cards() {
@@ -80,6 +95,7 @@ export default function Cards() {
   const [saving, setSaving] = useState(false)
   const [regenProgress, setRegenProgress] = useState('')
   const [downloading, setDownloading] = useState(false)
+  const [variantOf, setVariantOf] = useState(null)
 
   const [showAnimate, setShowAnimate] = useState(false)
   const [animPrompt, setAnimPrompt] = useState('Smooth movement, eyes alive,')
@@ -123,7 +139,13 @@ export default function Cards() {
         body: JSON.stringify({ concept }),
       })
       const data = await res.json()
-      if (data.card) setDraft(data.card)
+      if (data.card) {
+        const rarity = (data.card.rarity || 'common').toLowerCase()
+        const labels = Array.isArray(data.card.stats) && data.card.stats.length
+          ? data.card.stats.map(s => s.label)
+          : ['Star Power', 'Physique', 'Allure', 'Charisma']
+        setDraft({ ...data.card, rarity, stats: rollStats(labels, rarity) })
+      }
       else alert('Error: ' + (data.error || 'could not draft card'))
     } catch (err) { alert('Error: ' + err.message) }
     setDrafting(false)
@@ -191,7 +213,7 @@ export default function Cards() {
       }])
       if (error) { alert('Save error: ' + error.message); setGenerating(false); setProgress(''); return }
 
-      setShowCreate(false); setDraft(null); setConcept(''); setSeedInput(''); setNegative(DEFAULT_NEGATIVE)
+      setShowCreate(false); setDraft(null); setConcept(''); setSeedInput(''); setNegative(DEFAULT_NEGATIVE); setVariantOf(null)
       loadCards()
     } catch (err) { alert('Error: ' + err.message) }
     setGenerating(false); setProgress('')
@@ -325,6 +347,33 @@ export default function Cards() {
       alert('Error: ' + err.message)
     }
     setAnimating(false)
+  }
+
+  // start a new card for the same character, at a different rarity
+  const makeVariant = (card) => {
+    const labels = normalizeStats(card).map(s => s.label)
+    const baseLabels = labels.length ? labels : ['Star Power', 'Physique', 'Allure', 'Charisma']
+
+    // default the new one a tier up from the source where possible
+    const idx = RARITIES.indexOf((card.rarity || 'common').toLowerCase())
+    const nextRarity = RARITIES[Math.min(idx + 1, RARITIES.length - 1)]
+
+    setVariantOf(card)
+    setDraft({
+      name: card.name || '',
+      title: card.title || '',
+      description: card.description || '',
+      flavor_text: card.flavor_text || '',
+      rarity: nextRarity,
+      stats: rollStats(baseLabels, nextRarity),
+      image_prompt: card.image_prompt || '',
+      back_image_prompt: card.back_image_prompt || '',
+    })
+    setNegative(card.negative_prompt || DEFAULT_NEGATIVE)
+    setSeedInput(card.seed != null ? String(card.seed) : '')
+    setArtStyle('')
+    setSelected(null)
+    setShowCreate(true)
   }
 
   const copy = (val) => navigator.clipboard?.writeText(String(val))
@@ -604,7 +653,7 @@ export default function Cards() {
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
                 <button onClick={() => setDraft(emptyDraft())} className="text-xs text-gray-500 hover:text-gray-300 mb-4">or build it manually →</button>
                 <div className="flex gap-2">
-                  <button onClick={() => { setShowCreate(false); setConcept('') }} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+                  <button onClick={() => { setShowCreate(false); setConcept(''); setVariantOf(null) }} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
                   <button onClick={draftCard} disabled={drafting} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
                     {drafting ? 'Drafting...' : 'Draft Card'}
                   </button>
@@ -612,15 +661,37 @@ export default function Cards() {
               </>
             ) : (
               <>
-                <p className="text-xs text-gray-500 mb-3">Edit anything before generating.</p>
+                {variantOf ? (
+                  <div className="bg-purple-950/40 border border-purple-900 rounded-lg p-3 mb-3">
+                    <p className="text-xs text-purple-300 font-semibold mb-1">
+                      New card for {variantOf.name}
+                    </p>
+                    <p className="text-[11px] text-gray-400">
+                      Same character, same seed. Pick a rarity and adjust the scene in the art prompts.
+                      The face may still differ between cards.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 mb-3">Edit anything before generating.</p>
+                )}
                 {inputRow('Name', draft.name, v => setDraft({ ...draft, name: v }))}
                 {inputRow('Title', draft.title, v => setDraft({ ...draft, title: v }))}
 
                 <label className="block text-xs text-gray-400 mb-1">Rarity</label>
-                <select value={draft.rarity || 'common'} onChange={e => setDraft({ ...draft, rarity: e.target.value })}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+                <select value={draft.rarity || 'common'}
+                  onChange={e => {
+                    const r = e.target.value
+                    const labels = (draft.stats || []).map(s => s.label)
+                    setDraft({
+                      ...draft,
+                      rarity: r,
+                      stats: labels.length ? rollStats(labels, r) : draft.stats,
+                    })
+                  }}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500">
                   {RARITIES.map(r => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}
                 </select>
+                <p className="text-[10px] text-gray-600 mb-3">Changing rarity re-rolls the stat values to suit that tier.</p>
 
                 {inputRow('Description', draft.description, v => setDraft({ ...draft, description: v }), true, 2)}
                 {inputRow('Flavor Text', draft.flavor_text, v => setDraft({ ...draft, flavor_text: v }))}
@@ -661,7 +732,7 @@ export default function Cards() {
                 {progress && <p className="text-xs text-purple-400 mb-3">{progress}</p>}
 
                 <div className="flex gap-2">
-                  <button onClick={() => setDraft(null)} disabled={generating} className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-semibold">Back</button>
+                  <button onClick={() => { setDraft(null); setVariantOf(null) }} disabled={generating} className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-semibold">Back</button>
                   <button onClick={createCard} disabled={generating} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
                     {generating ? 'Summoning...' : 'Create Card'}
                   </button>
@@ -790,6 +861,10 @@ export default function Cards() {
                 ⬇ Download MP4 (animated)
               </button>
             )}
+            <button onClick={() => makeVariant(selected)}
+              className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
+              ✦ New card for this character
+            </button>
             <button onClick={() => openEdit(selected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-lg py-2 text-sm font-semibold mt-2">Edit Card</button>
             <button onClick={() => deleteCard(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">Delete Card</button>
             <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
