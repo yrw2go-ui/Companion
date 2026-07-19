@@ -40,7 +40,12 @@ const treatOf = (r) => TREAT[r] || TREAT.common
 
 const emptyDraft = () => ({
   name: '', title: '', description: '', flavor_text: '', rarity: 'common',
-  stats: [{ label: 'Power', value: 50 }], image_prompt: '', back_image_prompt: '',
+  stats: [
+    { label: 'Star Power', value: 70 },
+    { label: 'Physique', value: 70 },
+    { label: 'Allure', value: 70 },
+    { label: 'Charisma', value: 70 },
+  ], image_prompt: '', back_image_prompt: '',
 })
 
 export default function Cards() {
