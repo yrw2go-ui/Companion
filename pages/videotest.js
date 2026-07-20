@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 const MODELS = [
+  { label: 'Grok Imagine', value: 'xai/grok-imagine-video-v1.5/image-to-video' },  // check exact ID
   { label: 'WAN 2.2 Turbo Spicy', value: 'atlascloud/wan-2.2-turbo-spicy/image-to-video' },
   { label: 'WAN 2.6 Spicy', value: 'atlascloud/wan-2.6-spicy/image-to-video' },
   { label: 'WAN 2.2', value: 'atlascloud/wan-2.2/image-to-video' },
