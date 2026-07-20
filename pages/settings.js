@@ -18,6 +18,9 @@ export default function Settings() {
   const [orphanInfo, setOrphanInfo] = useState(null)
   const [importResult, setImportResult] = useState(null)
 
+  const [clearingAudio, setClearingAudio] = useState(false)
+  const [audioResult, setAudioResult] = useState(null)
+
   useEffect(() => {
     load()
   }, [])
@@ -110,6 +113,47 @@ export default function Settings() {
     setImporting(false)
   }
 
+  const clearAudio = async () => {
+    if (clearingAudio) return
+    setClearingAudio(true)
+    setAudioResult(null)
+    try {
+      // count first so the confirmation is meaningful
+      const scanRes = await fetch('/api/clear-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: true }),
+      })
+      const scan = await scanRes.json()
+      if (scan.error) {
+        setAudioResult('Error: ' + scan.error)
+        setClearingAudio(false)
+        return
+      }
+      if (!scan.audioCount) {
+        setAudioResult('No audio files found.')
+        setClearingAudio(false)
+        return
+      }
+      if (!confirm(`Delete all ${scan.audioCount} audio file(s)? Voice lines will regenerate when replayed.`)) {
+        setClearingAudio(false)
+        return
+      }
+
+      const res = await fetch('/api/clear-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: false }),
+      })
+      const data = await res.json()
+      if (data.error) setAudioResult('Error: ' + data.error)
+      else setAudioResult(`Deleted ${data.deleted} audio file(s).`)
+    } catch (err) {
+      setAudioResult('Error: ' + err.message)
+    }
+    setClearingAudio(false)
+  }
+
   if (loading) {
     return <div className="min-h-screen bg-black text-white flex items-center justify-center">Loading...</div>
   }
@@ -183,6 +227,24 @@ export default function Settings() {
         )}
 
         {importResult && <p className="text-xs text-gray-400 mt-3">{importResult}</p>}
+      </div>
+
+      <div className="mt-10 border-t border-gray-800 pt-6">
+        <h2 className="font-semibold mb-1">Clear Voice Audio</h2>
+        <p className="text-xs text-gray-600 mb-3">
+          Deletes every voice clip in storage, whatever its age. Lines regenerate automatically
+          the next time you play them.
+        </p>
+
+        <button
+          onClick={clearAudio}
+          disabled={clearingAudio}
+          className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-semibold"
+        >
+          {clearingAudio ? 'Working...' : 'Delete all audio files'}
+        </button>
+
+        {audioResult && <p className="text-xs text-gray-400 mt-3">{audioResult}</p>}
       </div>
 
       <div className="mt-10 border-t border-gray-800 pt-6">
