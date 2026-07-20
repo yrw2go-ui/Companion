@@ -24,7 +24,7 @@ const MODELS = [
 export default function VideoTest() {
   const [imageUrl, setImageUrl] = useState('')
   const [prompt, setPrompt] = useState(
-    'gentle natural motion, subtle movement, slight breeze'
+    'smooth natural motion, sensual movement,'
   )
 
   const [model, setModel] = useState(MODELS[0].value)
