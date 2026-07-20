@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 
-const DEFAULT_NEGATIVE = 'blurry, wide hips, mature woman, big breasts, curvy female , low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, mature woman, wide hips, big breasts, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4' },
@@ -21,6 +21,7 @@ export default function Gallery() {
   const [filter, setFilter] = useState('all')
   const [gSort, setGSort] = useState('date_desc')
   const [gSearch, setGSearch] = useState('')
+  const [favOnly, setFavOnly] = useState(false)
   const [selected, setSelected] = useState(null)
 
   const [showCreate, setShowCreate] = useState(false)
@@ -88,6 +89,7 @@ export default function Gallery() {
       key: 'gal_' + g.id,
       id: g.id,
       source: 'gallery_media',
+      is_favorite: !!g.is_favorite,
       type: g.type,
       url: g.url,
       seed: g.seed ?? null,
@@ -439,7 +441,6 @@ export default function Gallery() {
           prompt: extendPrompt,
           duration: extendDuration,
           resolution: extendRes,
-          expandPrompt: false,
         }),
       })
       const vidData = await vidRes.json()
@@ -470,6 +471,27 @@ export default function Gallery() {
     setExtendStatus('')
   }
 
+  const toggleFavorite = async (item) => {
+    if (item.source !== 'gallery_media') return
+    const next = !item.is_favorite
+
+    // update on screen straight away
+    setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, is_favorite: next } : m)))
+    setSelected(prev => (prev && prev.key === item.key ? { ...prev, is_favorite: next } : prev))
+
+    const { error } = await supabase
+      .from('gallery_media')
+      .update({ is_favorite: next })
+      .eq('id', item.id)
+
+    if (error) {
+      alert('Could not update: ' + error.message)
+      // put it back
+      setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, is_favorite: !next } : m)))
+      setSelected(prev => (prev && prev.key === item.key ? { ...prev, is_favorite: !next } : prev))
+    }
+  }
+
   const remove = async (item) => {
     if (!confirm('Delete this permanently?')) return
     await supabase.from(item.source).delete().eq('id', item.id)
@@ -490,6 +512,10 @@ export default function Gallery() {
       if (filter === 'videos') return m.type === 'video'
       return true
     })
+
+    if (favOnly) {
+      list = list.filter(m => m.is_favorite)
+    }
 
     const q = gSearch.trim().toLowerCase()
     if (q) {
@@ -544,6 +570,10 @@ export default function Gallery() {
             {label}
           </button>
         ))}
+        <button onClick={() => setFavOnly(!favOnly)}
+          className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${favOnly ? 'bg-amber-500 text-black' : 'bg-gray-900 text-gray-400'}`}>
+          ★ Favorites
+        </button>
       </div>
 
       {animating && (
@@ -579,6 +609,9 @@ export default function Gallery() {
                 <span className="absolute top-1.5 left-1.5 bg-black/75 rounded-full px-2 py-0.5 text-[9px] tracking-wide">
                   🃏 {item.cardSide}
                 </span>
+              )}
+              {item.is_favorite && (
+                <span className="absolute top-1.5 right-1.5 text-amber-400 text-sm drop-shadow">★</span>
               )}
             </button>
           ))}
@@ -745,6 +778,13 @@ export default function Gallery() {
               <img src={selected.url} alt="" className="w-full rounded-2xl" />
             ) : (
               <video src={selected.url} controls autoPlay loop className="w-full rounded-2xl" />
+            )}
+
+            {selected.source === 'gallery_media' && (
+              <button onClick={() => toggleFavorite(selected)}
+                className={`w-full rounded-lg py-2 text-sm font-semibold mt-3 ${selected.is_favorite ? 'bg-amber-500 text-black hover:bg-amber-400' : 'bg-gray-800 hover:bg-gray-700'}`}>
+                {selected.is_favorite ? '★ Favorited' : '☆ Add to favorites'}
+              </button>
             )}
 
             <div className="mt-3 bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2 text-xs">
