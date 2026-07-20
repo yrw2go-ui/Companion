@@ -11,14 +11,14 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { prompt, negativePrompt, seed, size } = req.body
+  const { prompt, negativePrompt, seed, size, referenceImageUrl } = req.body
 
   if (!prompt) {
     return res.status(400).json({ error: 'No prompt provided' })
   }
 
   const BASE_URL = 'https://api.atlascloud.ai/api/v1'
-  const MODEL = 'z-image/turbo'
+  const MODEL = referenceImageUrl ? 'alibaba/wan-2.7-pro/image-edit' : 'z-image/turbo'
 
   const safeJson = async (response) => {
     const text = await response.text()
@@ -44,6 +44,10 @@ export default async function handler(req, res) {
       guidance_scale: 6.5,
       num_inference_steps: 28,
       seed: usedSeed,
+    }
+
+    if (referenceImageUrl) {
+      body.images = [referenceImageUrl]
     }
 
     if (negativePrompt && negativePrompt.trim()) {
@@ -73,7 +77,7 @@ export default async function handler(req, res) {
     for (let i = 0; i < 40; i++) {
       await new Promise(r => setTimeout(r, 1500))
 
-      const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
+      const pollRes = await fetch(`\( {BASE_URL}/model/prediction/ \){predictionId}`, {
         headers: { 'Authorization': `Bearer ${process.env.ATLAS_API_KEY}` },
       })
       const pollParsed = await safeJson(pollRes)
@@ -98,7 +102,7 @@ export default async function handler(req, res) {
     const imgRes = await fetch(atlasUrl)
     const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
 
-    const fileName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpeg`
+    const fileName = `img_\( {Date.now()}_ \){Math.random().toString(36).slice(2, 8)}.jpeg`
     const { error: uploadError } = await supabaseAdmin.storage
       .from('character-images')
       .upload(fileName, imgBuffer, {
