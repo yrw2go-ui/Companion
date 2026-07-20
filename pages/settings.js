@@ -13,6 +13,11 @@ export default function Settings() {
   const [cleaning, setCleaning] = useState(false)
   const [cleanResult, setCleanResult] = useState(null)
 
+  const [scanning, setScanning] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [orphanInfo, setOrphanInfo] = useState(null)
+  const [importResult, setImportResult] = useState(null)
+
   useEffect(() => {
     load()
   }, [])
@@ -62,6 +67,49 @@ export default function Settings() {
     setCleaning(false)
   }
 
+  const scanOrphans = async () => {
+    if (scanning) return
+    setScanning(true)
+    setOrphanInfo(null)
+    setImportResult(null)
+    try {
+      const res = await fetch('/api/import-orphans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: true }),
+      })
+      const data = await res.json()
+      if (data.error) setImportResult('Error: ' + data.error)
+      else setOrphanInfo(data)
+    } catch (err) {
+      setImportResult('Error: ' + err.message)
+    }
+    setScanning(false)
+  }
+
+  const runImport = async () => {
+    if (importing) return
+    if (!confirm(`Import ${orphanInfo?.orphanCount || 0} file(s) into the gallery?`)) return
+    setImporting(true)
+    setImportResult(null)
+    try {
+      const res = await fetch('/api/import-orphans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: false }),
+      })
+      const data = await res.json()
+      if (data.error) setImportResult('Error: ' + data.error)
+      else {
+        setImportResult(`Imported ${data.imported} file(s) into the gallery.`)
+        setOrphanInfo(null)
+      }
+    } catch (err) {
+      setImportResult('Error: ' + err.message)
+    }
+    setImporting(false)
+  }
+
   if (loading) {
     return <div className="min-h-screen bg-black text-white flex items-center justify-center">Loading...</div>
   }
@@ -93,6 +141,49 @@ export default function Settings() {
       >
         {saving ? 'Saving...' : saved ? 'Saved' : 'Save'}
       </button>
+
+      <div className="mt-10 border-t border-gray-800 pt-6">
+        <h2 className="font-semibold mb-1">Import Orphaned Media</h2>
+        <p className="text-xs text-gray-600 mb-3">
+          Finds files in storage that aren't showing anywhere in the app, such as videos made on the test page,
+          and adds them to the gallery.
+        </p>
+
+        <button
+          onClick={scanOrphans}
+          disabled={scanning}
+          className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-semibold"
+        >
+          {scanning ? 'Scanning...' : 'Scan for orphaned files'}
+        </button>
+
+        {orphanInfo && (
+          <div className="mt-3 bg-gray-900 border border-gray-800 rounded-lg p-3">
+            <p className="text-xs text-gray-300 mb-2">
+              Found {orphanInfo.orphanCount} orphaned file(s) out of {orphanInfo.scanned} scanned.
+            </p>
+            {orphanInfo.sample?.length > 0 && (
+              <ul className="text-[10px] text-gray-500 font-mono mb-3 space-y-0.5">
+                {orphanInfo.sample.map(n => <li key={n} className="truncate">{n}</li>)}
+                {orphanInfo.orphanCount > orphanInfo.sample.length && (
+                  <li className="text-gray-600">...and {orphanInfo.orphanCount - orphanInfo.sample.length} more</li>
+                )}
+              </ul>
+            )}
+            {orphanInfo.orphanCount > 0 && (
+              <button
+                onClick={runImport}
+                disabled={importing}
+                className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-2 text-sm font-semibold"
+              >
+                {importing ? 'Importing...' : `Import ${orphanInfo.orphanCount} into gallery`}
+              </button>
+            )}
+          </div>
+        )}
+
+        {importResult && <p className="text-xs text-gray-400 mt-3">{importResult}</p>}
+      </div>
 
       <div className="mt-10 border-t border-gray-800 pt-6">
         <h2 className="font-semibold mb-1">Storage Cleanup</h2>
