@@ -4,7 +4,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabaseClient'
 import { buildImagePrompt } from '../../lib/buildImagePrompt'
 
-const DEFAULT_NEGATIVE = 'blurry, big breasts, mature woman, asian, wide hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 export default function Chat() {
   const router = useRouter()
@@ -37,6 +37,7 @@ export default function Chat() {
   const [editText, setEditText] = useState('')
   const [regenerating, setRegenerating] = useState(false)
   const audioRef = useRef(null)
+  const sessionAudio = useRef([])
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -47,6 +48,26 @@ export default function Chat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // voice clips only need to exist while you're in the conversation
+  useEffect(() => {
+    const flush = () => {
+      const files = sessionAudio.current
+      if (!files || files.length === 0) return
+      // keepalive lets the request finish even as the page goes away
+      navigator.sendBeacon?.(
+        '/api/delete-media',
+        new Blob([JSON.stringify({ files })], { type: 'application/json' })
+      )
+      sessionAudio.current = []
+    }
+
+    window.addEventListener('pagehide', flush)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      clearSessionAudio()
+    }
+  }, [])
 
   const load = async () => {
     const { data: convo } = await supabase.from('conversations').select('*').eq('id', id).single()
@@ -87,6 +108,10 @@ export default function Chat() {
       })
       const data = await res.json()
       if (data.audioUrl && audioRef.current) {
+        const fileName = fileNameFromUrl(data.audioUrl)
+        if (fileName && !sessionAudio.current.includes(fileName)) {
+          sessionAudio.current.push(fileName)
+        }
         audioRef.current.src = data.audioUrl
         audioRef.current.play()
       }
@@ -196,7 +221,7 @@ export default function Chat() {
 
   const openVideoModal = (imageUrl) => {
     setVideoSourceUrl(imageUrl)
-    setVideoPrompt('gentle natural motion, sensual movement')
+    setVideoPrompt('gentle natural motion, subtle movement')
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideoModal(true)
@@ -247,6 +272,18 @@ export default function Chat() {
 
   const fileNameFromUrl = (url) => url.split('/character-images/')[1] || null
 
+  // remove the voice clips generated during this visit
+  const clearSessionAudio = async () => {
+    const files = sessionAudio.current
+    if (!files || files.length === 0) return
+    sessionAudio.current = []
+    try {
+      await supabase.storage.from('character-images').remove(files)
+    } catch (err) {
+      // nothing to do; the storage cleanup will catch it later
+    }
+  }
+
   const deleteMedia = async (mediaUrl, role) => {
     setMessages(prev => prev.filter(m => !(m.role === role && m.content === mediaUrl)))
     await supabase.from('messages').delete().eq('conversation_id', id).eq('role', role).eq('content', mediaUrl)
@@ -280,6 +317,8 @@ export default function Chat() {
         await supabase.from('core_memories').insert([{ character_id: character.id, memory: data.summary.trim() }])
       }
     } catch (err) {}
+
+    await clearSessionAudio()
 
     await supabase.from('conversations').delete().eq('id', id)
     setEnding(false)
