@@ -179,10 +179,6 @@ export default async function handler(req, res) {
       await imageResponse.arrayBuffer()
     )
 
-  const imageBuffer = Buffer.from(
-  await imageResponse.arrayBuffer()
-)
-
       const fileName =
       `edited_${Date.now()}_${Math.random()
         .toString(36)
