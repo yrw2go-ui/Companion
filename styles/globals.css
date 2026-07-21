@@ -73,11 +73,40 @@ body {
   100% { background-position: 0% 50%; }
 }
 
+/* After Hours: pearlized onyx, black with a slow iridescent shift */
+.edge-afterhours {
+  background: linear-gradient(
+    135deg,
+    #0a0a0d, #14121c 12%,
+    #2a2338 24%,
+    #3d2f4a 34%,
+    #2f4550 44%,
+    #6b6470 52%,
+    #2f4550 60%,
+    #3d2f4a 70%,
+    #2a2338 80%,
+    #14121c 90%, #0a0a0d
+  );
+  background-size: 250% 250%;
+  animation: onyx 12s ease-in-out infinite;
+}
+
+@keyframes onyx {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
 /* Outer glow per rarity */
 .glow-uncommon  { box-shadow: 0 0 18px -4px rgba(52, 211, 153, 0.45); }
 .glow-rare      { box-shadow: 0 0 20px -3px rgba(96, 165, 250, 0.5); }
 .glow-epic      { box-shadow: 0 0 24px -2px rgba(192, 132, 252, 0.55); }
 .glow-legendary { box-shadow: 0 0 34px -2px rgba(251, 191, 36, 0.6); }
+.glow-afterhours {
+  box-shadow:
+    0 0 20px -6px rgba(160, 150, 175, 0.4),
+    0 0 42px -10px rgba(70, 90, 105, 0.45);
+}
 .glow-ultra {
   box-shadow:
     0 0 26px -4px rgba(192, 132, 252, 0.65),
@@ -117,6 +146,21 @@ body {
     transparent 74%
   );
   animation: sheen 4.5s ease-in-out infinite;
+}
+
+.foil-pearl::after {
+  background: linear-gradient(
+    118deg,
+    transparent 30%,
+    rgba(180, 200, 210, 0.05) 42%,
+    rgba(230, 220, 235, 0.14) 48%,
+    rgba(190, 175, 205, 0.11) 52%,
+    rgba(160, 195, 200, 0.05) 58%,
+    transparent 70%
+  );
+  background-size: 280% 280%;
+  mix-blend-mode: screen;
+  animation: sheen 8s ease-in-out infinite;
 }
 
 .foil-ultra::after {
@@ -195,6 +239,13 @@ body {
   border-color: rgba(255, 235, 160, 0.6);
 }
 
+.badge-afterhours {
+  background: rgba(8, 8, 11, 0.9);
+  color: #d8d2e0;
+  border-color: rgba(180, 175, 195, 0.45);
+  letter-spacing: 0.14em;
+}
+
 .badge-ultra {
   background: linear-gradient(135deg, rgba(192, 132, 252, 0.92), rgba(103, 232, 249, 0.92));
   color: #0b0b12;
@@ -206,7 +257,9 @@ body {
   .foil::after,
   .foil-strong::after,
   .foil-ultra::after,
-  .edge-ultra {
+  .foil-pearl::after,
+  .edge-ultra,
+  .edge-afterhours {
     animation: none;
   }
 }
