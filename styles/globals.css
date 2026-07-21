@@ -56,11 +56,33 @@ body {
   background: linear-gradient(145deg, #fde68a, #92400e 35%, #fffbeb 50%, #b45309 65%, #fcd34d);
 }
 
+/* Ultra Elite: shifting prismatic metal, animated so it never sits still */
+.edge-ultra {
+  background: linear-gradient(
+    135deg,
+    #f0abfc, #a5b4fc 14%, #67e8f9 28%, #ffffff 40%,
+    #fde68a 54%, #fca5a5 68%, #c4b5fd 82%, #f0abfc
+  );
+  background-size: 300% 300%;
+  animation: prism 7s linear infinite;
+}
+
+@keyframes prism {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
 /* Outer glow per rarity */
 .glow-uncommon  { box-shadow: 0 0 18px -4px rgba(52, 211, 153, 0.45); }
 .glow-rare      { box-shadow: 0 0 20px -3px rgba(96, 165, 250, 0.5); }
 .glow-epic      { box-shadow: 0 0 24px -2px rgba(192, 132, 252, 0.55); }
 .glow-legendary { box-shadow: 0 0 34px -2px rgba(251, 191, 36, 0.6); }
+.glow-ultra {
+  box-shadow:
+    0 0 26px -4px rgba(192, 132, 252, 0.65),
+    0 0 44px -2px rgba(103, 232, 249, 0.45);
+}
 
 /* Foil sheen sweep */
 .foil::after {
@@ -95,6 +117,22 @@ body {
     transparent 74%
   );
   animation: sheen 4.5s ease-in-out infinite;
+}
+
+.foil-ultra::after {
+  background: linear-gradient(
+    115deg,
+    transparent 22%,
+    rgba(240, 171, 252, 0.18) 34%,
+    rgba(255, 255, 255, 0.55) 44%,
+    rgba(103, 232, 249, 0.42) 50%,
+    rgba(253, 230, 138, 0.42) 56%,
+    rgba(196, 181, 253, 0.20) 66%,
+    transparent 78%
+  );
+  background-size: 280% 280%;
+  mix-blend-mode: screen;
+  animation: sheen 3.6s ease-in-out infinite;
 }
 
 @keyframes sheen {
@@ -157,9 +195,18 @@ body {
   border-color: rgba(255, 235, 160, 0.6);
 }
 
+.badge-ultra {
+  background: linear-gradient(135deg, rgba(192, 132, 252, 0.92), rgba(103, 232, 249, 0.92));
+  color: #0b0b12;
+  border-color: rgba(255, 255, 255, 0.7);
+  font-weight: 900;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .foil::after,
-  .foil-strong::after {
+  .foil-strong::after,
+  .foil-ultra::after,
+  .edge-ultra {
     animation: none;
   }
 }
