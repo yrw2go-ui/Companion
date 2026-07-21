@@ -76,7 +76,11 @@ export default async function handler(req, res) {
     }
 
     if (imageUrl) {
-      requestBody.image = imageUrl
+  if (MODEL === 'xai/grok-imagine-video-v1.5/image-to-video') {
+    requestBody.image_url = imageUrl
+  } else {
+    requestBody.image = imageUrl
+  }
     }
 
     const submitRes = await fetch(
