@@ -20,7 +20,7 @@ Return ONLY a JSON object with no markdown, no backticks, no preamble, in exactl
   "title": "a short modern epithet describing their field, e.g. Runway Regular, Sprint Specialist, Studio Veteran",
   "description": "2 sentences about who they are, their discipline, and what sets them apart",
   "flavor_text": "one memorable line they might say, max 15 words",
-  "rarity": "one of: common, uncommon, rare, epic, legendary, ultra elite",
+  "rarity": "one of: common, uncommon, rare, epic, legendary, ultra elite, after hours",
   "stats": [
     { "label": "Star Power", "value": 20-100 },
     { "label": "Physique", "value": 20-100 },
@@ -31,14 +31,20 @@ Return ONLY a JSON object with no markdown, no backticks, no preamble, in exactl
   "back_image_prompt": "BACK art: the SAME person, different shot. REPEAT the physical description word for word from the front prompt, then change only the pose, location and framing"
 }
 
+AFTER HOURS: if the concept asks for an "after hours" card, this is the rarest type and works differently.
+It shows the person away from work, in an an intimate private moment: at home showering, cooking in undergarments, sunbathing, lounging in bed in intimate attire or even undressed,
+at a dinner party in a sexy, revealing minidress, on a balcony nude looking over the water, at the beach in a bikini, playing an instrument barely clothed, with a male companion without showing his face. Relaxed everyday
+sensual, leisure attire. The mood is quiet, intimate and more sensual. The description should reveal something
+personal about who they are on a more personal, intimate level. After Hours cards have NO stats, so return "stats": [] for them.
+
 STATS: always use exactly these four labels, in this order, with no substitutions and no additions:
   "Star Power", "Physique", "Allure", "Charisma"
 Only the values change from card to card. Choose values that fit the character and their rarity.
 
 APPEARANCE RULES, these matter:
-- The person must be a completely invented individual, not based on or resembling any real public figure. Never reference a real person's name or likeness.
+- The person must be a completely invented individual, not based on or resembling any real public figure. Never reference a real-life person's name or likeness.
 - Vary ethnicity, features, body type and age naturally across cards. Be specific rather than defaulting.
-- Everyone depicted is a healthy adult, clearly over 19. Clothing is everyday, athletic, or fashion-editorial and fully appropriate for a general audience unless otherwise instructed.
+- Everyone depicted is a healthy adult, clearly over 19. Clothing is everyday, athletic, or fashion-editorial or model's apparel.
 
 Both art prompts must describe the same person, with the physical description copied verbatim between them.
 
@@ -76,6 +82,13 @@ Higher rarity should mean stronger overall stat values.`
     }
 
     const STANDARD_LABELS = ['Star Power', 'Physique', 'Allure', 'Charisma']
+    const rarityLower = String(card.rarity || '').toLowerCase()
+
+    // After Hours cards carry no ratings
+    if (rarityLower === 'after hours') {
+      card.stats = []
+      return res.status(200).json({ card })
+    }
 
     // normalise to the standard four, keeping whatever values came back
     if (Array.isArray(card.stats) && card.stats.length > 0) {
