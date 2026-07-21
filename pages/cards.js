@@ -4,7 +4,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
 
-const DEFAULT_NEGATIVE = 'blurry, big hips, mature body, wide hips, mature woman, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, mature body, wide hips, mature woman, big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -26,7 +26,7 @@ const ART_STYLES = [
   { value: 'high fashion runway photography, backstage energy, motion, professional lighting', label: 'Runway' },
 ]
 
-const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'ultra elite']
+const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'ultra elite', 'after hours']
 
 // stat value ranges per rarity, used when creating a variant
 const RARITY_STAT_RANGE = {
@@ -38,7 +38,12 @@ const RARITY_STAT_RANGE = {
   'ultra elite': [94, 100],
 }
 
+// rarities that carry no ratings at all
+const STATLESS = ['after hours']
+const isStatless = (r) => STATLESS.includes(String(r || '').toLowerCase())
+
 const rollStats = (labels, rarity) => {
+  if (isStatless(rarity)) return []
   const [lo, hi] = RARITY_STAT_RANGE[rarity] || RARITY_STAT_RANGE.common
   return labels.map(label => ({
     label,
@@ -53,6 +58,7 @@ const TREAT = {
   epic:      { edge: 'edge-epic',      glow: 'glow-epic',      badge: 'badge-epic',      foil: 'foil',        holo: true,  code: 'EPI' },
   legendary: { edge: 'edge-legendary', glow: 'glow-legendary', badge: 'badge-legendary', foil: 'foil-strong', holo: true,  code: 'LEG' },
   'ultra elite': { edge: 'edge-ultra', glow: 'glow-ultra', badge: 'badge-ultra', foil: 'foil-ultra', holo: true, code: 'ULT' },
+  'after hours': { edge: 'edge-afterhours', glow: 'glow-afterhours', badge: 'badge-afterhours', foil: 'foil-pearl', holo: false, code: 'AFT' },
 }
 
 const treatOf = (r) => TREAT[r] || TREAT.common
@@ -125,6 +131,7 @@ export default function Cards() {
   }
 
   const normalizeStats = (card) => {
+    if (isStatless(card.rarity)) return []
     if (Array.isArray(card.stats) && card.stats.length) return card.stats
     const legacy = []
     if (card.hp != null) legacy.push({ label: 'HP', value: card.hp })
@@ -497,9 +504,11 @@ export default function Cards() {
               {card.flavor_text && (
                 <p className={`italic text-gray-400 mb-3 leading-snug ${big ? 'text-xs' : 'text-[9px]'}`}>"{card.flavor_text}"</p>
               )}
-              <div className={`${big ? 'space-y-2' : 'space-y-1'} mb-2`}>
-                {stats.map((s, i) => statBar(s.label, s.value, i, big))}
-              </div>
+              {stats.length > 0 && (
+                <div className={`${big ? 'space-y-2' : 'space-y-1'} mb-2`}>
+                  {stats.map((s, i) => statBar(s.label, s.value, i, big))}
+                </div>
+              )}
               <div className="flex items-center justify-between pt-2 border-t border-white/15">
                 <span className={`font-mono text-gray-400 tracking-widest ${big ? 'text-[11px]' : 'text-[9px]'}`}>{card.card_number || '—'}</span>
                 <span className={`text-gray-500 tracking-widest uppercase ${big ? 'text-[11px]' : 'text-[9px]'}`}>Companion</span>
@@ -701,8 +710,16 @@ export default function Cards() {
                 {inputRow('Description', draft.description, v => setDraft({ ...draft, description: v }), true, 2)}
                 {inputRow('Flavor Text', draft.flavor_text, v => setDraft({ ...draft, flavor_text: v }))}
 
-                <label className="block text-xs text-gray-400 mb-1">Stats</label>
-                {statEditor(draft.stats || [], arr => setDraft({ ...draft, stats: arr }))}
+                {isStatless(draft.rarity) ? (
+                  <p className="text-[11px] text-gray-500 mb-3">
+                    After Hours cards carry no ratings.
+                  </p>
+                ) : (
+                  <>
+                    <label className="block text-xs text-gray-400 mb-1">Stats</label>
+                    {statEditor(draft.stats || [], arr => setDraft({ ...draft, stats: arr }))}
+                  </>
+                )}
 
                 <label className="block text-xs text-gray-400 mb-1">Art Style</label>
                 <select value={artStyle} onChange={e => setArtStyle(e.target.value)}
@@ -772,8 +789,16 @@ export default function Cards() {
             {inputRow('Description', editing.description, v => setEditing({ ...editing, description: v }), true, 2)}
             {inputRow('Flavor Text', editing.flavor_text, v => setEditing({ ...editing, flavor_text: v }))}
 
-            <label className="block text-xs text-gray-400 mb-1">Stats</label>
-            {statEditor(editing.stats || [], arr => setEditing({ ...editing, stats: arr }))}
+            {isStatless(editing.rarity) ? (
+              <p className="text-[11px] text-gray-500 mb-3">
+                After Hours cards carry no ratings.
+              </p>
+            ) : (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Stats</label>
+                {statEditor(editing.stats || [], arr => setEditing({ ...editing, stats: arr }))}
+              </>
+            )}
 
             <div className="border-t border-gray-800 pt-4 mt-2">
               <p className="text-xs text-gray-400 mb-2 font-semibold">Regenerate Art</p>
