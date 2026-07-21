@@ -3,7 +3,8 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 const MODELS = [
-  { label: 'Grok Imagine', value: 'xai/grok-imagine-video-v1.5/image-to-video' },  // check exact ID
+  { label: 'Seedance T2V', value: 'bytedance/seedance-v1-pro-t2v-720p' },
+  { label: 'Grok Imagine', value: 'xai/grok-imagine-video-v1.5/image-to-video' },
   { label: 'WAN 2.2 Turbo Spicy', value: 'atlascloud/wan-2.2-turbo-spicy/image-to-video' },
   { label: 'WAN 2.6 Spicy', value: 'atlascloud/wan-2.6-spicy/image-to-video' },
   { label: 'WAN 2.2', value: 'atlascloud/wan-2.2/image-to-video' },
@@ -23,7 +24,7 @@ export default function VideoTest() {
   const [saved, setSaved] = useState(false)
 
   async function generate() {
-    if (!imageUrl) { alert('Please enter an image URL'); return }
+    if (!prompt) { alert('Please enter a prompt'); return }
     setLoading(true)
     setVideoUrl('')
     setResult('')
@@ -32,7 +33,7 @@ export default function VideoTest() {
       const res = await fetch('/api/generate-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl, prompt, model, duration, resolution }),
+        body: JSON.stringify({ imageUrl: imageUrl || undefined, prompt, model, duration, resolution }),
       })
       const data = await res.json()
       if (data.videoUrl) setVideoUrl(data.videoUrl)
@@ -58,8 +59,8 @@ export default function VideoTest() {
     <div className="min-h-screen bg-black text-white max-w-xl mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6">AtlasCloud Video Test</h1>
 
-      <label className="block mb-2">Image URL</label>
-      <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 mb-4" />
+      <label className="block mb-2">Image URL (optional for T2V)</label>
+      <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://... (leave blank for T2V)" className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 mb-4" />
 
       <label className="block mb-2">Video Model</label>
       <select value={model} onChange={e => setModel(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 mb-4">
@@ -109,4 +110,4 @@ export default function VideoTest() {
       )}
     </div>
   )
-  }
+                                                  }
