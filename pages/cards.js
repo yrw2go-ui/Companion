@@ -4,7 +4,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
 
-const DEFAULT_NEGATIVE = 'blurry, big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, big hips, mature body, wide hips, mature woman, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -26,7 +26,7 @@ const ART_STYLES = [
   { value: 'high fashion runway photography, backstage energy, motion, professional lighting', label: 'Runway' },
 ]
 
-const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'ultra elite']
 
 // stat value ranges per rarity, used when creating a variant
 const RARITY_STAT_RANGE = {
@@ -34,7 +34,8 @@ const RARITY_STAT_RANGE = {
   uncommon:  [52, 72],
   rare:      [64, 82],
   epic:      [76, 90],
-  legendary: [86, 99],
+  legendary: [86, 96],
+  'ultra elite': [94, 100],
 }
 
 const rollStats = (labels, rarity) => {
@@ -51,9 +52,13 @@ const TREAT = {
   rare:      { edge: 'edge-rare',      glow: 'glow-rare',      badge: 'badge-rare',      foil: 'foil',        holo: false, code: 'RAR' },
   epic:      { edge: 'edge-epic',      glow: 'glow-epic',      badge: 'badge-epic',      foil: 'foil',        holo: true,  code: 'EPI' },
   legendary: { edge: 'edge-legendary', glow: 'glow-legendary', badge: 'badge-legendary', foil: 'foil-strong', holo: true,  code: 'LEG' },
+  'ultra elite': { edge: 'edge-ultra', glow: 'glow-ultra', badge: 'badge-ultra', foil: 'foil-ultra', holo: true, code: 'ULT' },
 }
 
 const treatOf = (r) => TREAT[r] || TREAT.common
+
+const rarityLabel = (r) =>
+  String(r || 'common').split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
 
 const STANDARD_LABELS = ['Star Power', 'Physique', 'Allure', 'Charisma']
 
@@ -611,7 +616,7 @@ export default function Cards() {
             {['all', ...RARITIES].map(r => (
               <button key={r} onClick={() => setRarityFilter(r)}
                 className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold capitalize ${rarityFilter === r ? 'bg-purple-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
-                {r === 'all' ? 'All' : r}
+                {r === 'all' ? 'All' : rarityLabel(r)}
               </button>
             ))}
           </div>
@@ -689,7 +694,7 @@ export default function Cards() {
                     })
                   }}
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500">
-                  {RARITIES.map(r => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}
+                  {RARITIES.map(r => <option key={r} value={r}>{rarityLabel(r)}</option>)}
                 </select>
                 <p className="text-[10px] text-gray-600 mb-3">Changing rarity re-rolls the stat values to suit that tier.</p>
 
@@ -761,7 +766,7 @@ export default function Cards() {
             <label className="block text-xs text-gray-400 mb-1">Rarity</label>
             <select value={editing.rarity || 'common'} onChange={e => setEditing({ ...editing, rarity: e.target.value })}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
-              {RARITIES.map(r => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}
+              {RARITIES.map(r => <option key={r} value={r}>{rarityLabel(r)}</option>)}
             </select>
 
             {inputRow('Description', editing.description, v => setEditing({ ...editing, description: v }), true, 2)}
