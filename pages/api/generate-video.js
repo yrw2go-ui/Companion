@@ -11,14 +11,18 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { imageUrl, prompt, duration, resolution, expandPrompt } = req.body
+  const { imageUrl, prompt, duration, resolution, model: customModel } = req.body
 
-  if (!imageUrl) {
-    return res.status(400).json({ error: 'No source image provided' })
+  if (!prompt) {
+    return res.status(400).json({ error: 'No prompt provided' })
   }
 
   const BASE_URL = 'https://api.atlascloud.ai/api/v1'
-  const MODEL = 'atlascloud/wan-2.2-turbo-spicy/image-to-video'
+  let MODEL = customModel || 'atlascloud/wan-2.2-turbo-spicy/image-to-video'
+
+  if (!imageUrl) {
+    MODEL = 'bytedance/seedance-v1-pro-t2v-720p' // T2V
+  }
 
   let dur = parseInt(duration) || 5
   if (dur < 5) dur = 5
@@ -38,11 +42,14 @@ export default async function handler(req, res) {
   try {
     const body = {
       model: MODEL,
-      image: imageUrl,
       prompt: prompt || 'smooth natural motion, sensual movement',
       resolution: resValue,
       duration: dur,
       seed: -1,
+    }
+
+    if (imageUrl) {
+      body.image = imageUrl
     }
 
     const submitRes = await fetch(`${BASE_URL}/model/generateVideo`, {
@@ -56,23 +63,12 @@ export default async function handler(req, res) {
 
     const submitParsed = await safeJson(submitRes)
     if (!submitParsed.ok) {
-      return res.status(500).json({
-        error: 'Atlas returned non-JSON',
-        httpStatus: submitRes.status,
-        raw: submitParsed.raw?.slice(0, 400),
-        sentBody: body,
-      })
+      return res.status(500).json({ error: 'Atlas returned non-JSON', raw: submitParsed.raw?.slice(0, 400) })
     }
 
     const predictionId = submitParsed.data.data?.id
     if (!predictionId) {
-      // surface exactly what Atlas said and what we sent
-      return res.status(500).json({
-        error: 'No prediction ID',
-        httpStatus: submitRes.status,
-        atlasResponse: submitParsed.data,
-        sentBody: body,
-      })
+      return res.status(500).json({ error: 'No prediction ID', detail: submitParsed.data })
     }
 
     const maxPolls = 80 + dur * 8
@@ -81,7 +77,7 @@ export default async function handler(req, res) {
     for (let i = 0; i < maxPolls; i++) {
       await new Promise(r => setTimeout(r, 2000))
 
-      const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
+      const pollRes = await fetch(`\( {BASE_URL}/model/prediction/ \){predictionId}`, {
         headers: { 'Authorization': `Bearer ${process.env.ATLAS_API_KEY}` },
       })
       const pollParsed = await safeJson(pollRes)
@@ -106,10 +102,13 @@ export default async function handler(req, res) {
     const vidRes = await fetch(atlasUrl)
     const vidBuffer = Buffer.from(await vidRes.arrayBuffer())
 
-    const fileName = `video_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`
+    const fileName = `video_\( {Date.now()}_ \){Math.random().toString(36).slice(2, 8)}.mp4`
     const { error: uploadError } = await supabaseAdmin.storage
       .from('character-images')
-      .upload(fileName, vidBuffer, { contentType: 'video/mp4', upsert: false })
+      .upload(fileName, vidBuffer, {
+        contentType: 'video/mp4',
+        upsert: false,
+      })
 
     if (uploadError) {
       return res.status(500).json({ error: 'Upload failed: ' + uploadError.message })
