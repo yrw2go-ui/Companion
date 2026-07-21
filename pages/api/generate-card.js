@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'No concept provided' })
   }
 
-  const prompt = `You are designing a collectible card for a sensual contemporary lifestyle series. The characters are sensual ORIGINAL FICTIONAL PEOPLE in a modern real-world setting: models, athletes, performers, artists, entrepreneurs. This is NOT fantasy. No magic, no swords, no mythical creatures, no supernatural powers, no sci-fi.
+  const prompt = `You are designing a collectible card for a contemporary lifestyle series. The characters are ORIGINAL FICTIONAL PEOPLE in a modern real-world setting: models, athletes, performers, artists, entrepreneurs. This is NOT fantasy. No magic, no swords, no mythical creatures, no supernatural powers, no sci-fi.
 
 Concept: ${concept}
 
@@ -20,14 +20,14 @@ Return ONLY a JSON object with no markdown, no backticks, no preamble, in exactl
   "title": "a short modern epithet describing their field, e.g. Runway Regular, Sprint Specialist, Studio Veteran",
   "description": "2 sentences about who they are, their discipline, and what sets them apart",
   "flavor_text": "one memorable line they might say, max 15 words",
-  "rarity": "one of: common, uncommon, rare, epic, legendary",
+  "rarity": "one of: common, uncommon, rare, epic, legendary, ultra elite",
   "stats": [
     { "label": "Star Power", "value": 20-100 },
     { "label": "Physique", "value": 20-100 },
     { "label": "Allure", "value": 20-100 },
     { "label": "Charisma", "value": 20-100 }
   ],
-  "image_prompt": "FRONT art: an editorial portrait. Give SPECIFIC physical details: approximate age, hair colour and style, eye colour, skin tone, build, and outfit. Then the pose, location, lighting and mood. Modern real-world settings only: studio, city street, gym, track, cafe, beach, backstage",
+  "image_prompt": "FRONT art: an editorial portrait. Give SPECIFIC physical details: approximate age, hair colour and style, eye colour, skin tone, build, and outfit. Then the pose, location, lighting and mood. Modern real-world settings only: studio, city street, gym, track, rooftop, cafe, beach, backstage",
   "back_image_prompt": "BACK art: the SAME person, different shot. REPEAT the physical description word for word from the front prompt, then change only the pose, location and framing"
 }
 
@@ -38,7 +38,7 @@ Only the values change from card to card. Choose values that fit the character a
 APPEARANCE RULES, these matter:
 - The person must be a completely invented individual, not based on or resembling any real public figure. Never reference a real person's name or likeness.
 - Vary ethnicity, features, body type and age naturally across cards. Be specific rather than defaulting.
-- Everyone depicted is a healthy adult, clearly over 21. Clothing is everyday, athletic, or fashion-editorial and fully appropriate for a general audience.
+- Everyone depicted is a healthy adult, clearly over 19. Clothing is everyday, athletic, or fashion-editorial and fully appropriate for a general audience unless otherwise instructed.
 
 Both art prompts must describe the same person, with the physical description copied verbatim between them.
 
