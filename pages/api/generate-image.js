@@ -77,7 +77,7 @@ export default async function handler(req, res) {
     for (let i = 0; i < 40; i++) {
       await new Promise(r => setTimeout(r, 1500))
 
-      const pollRes = await fetch(`\( {BASE_URL}/model/prediction/ \){predictionId}`, {
+      const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
         headers: { 'Authorization': `Bearer ${process.env.ATLAS_API_KEY}` },
       })
       const pollParsed = await safeJson(pollRes)
@@ -102,7 +102,7 @@ export default async function handler(req, res) {
     const imgRes = await fetch(atlasUrl)
     const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
 
-    const fileName = `img_\( {Date.now()}_ \){Math.random().toString(36).slice(2, 8)}.jpeg`
+    const fileName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpeg`
     const { error: uploadError } = await supabaseAdmin.storage
       .from('character-images')
       .upload(fileName, imgBuffer, {
