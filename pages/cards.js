@@ -304,7 +304,7 @@ export default function Cards() {
 
   const openAnimate = () => {
     if (!selected?.image_url) return
-    setAnimPrompt(selected.video_prompt || 'Smooth movement, eyes alive,')
+    setAnimPrompt(selected.video_prompt || 'Smooth natural motion, eyes alive, sensual movement')
     setAnimDuration(5)
     setAnimRes('720p')
     setShowAnimate(true)
