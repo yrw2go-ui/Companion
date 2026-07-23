@@ -10,6 +10,7 @@ export default function Settings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [savedValue, setSavedValue] = useState('')
 
   const [cleaning, setCleaning] = useState(false)
   const [cleanResult, setCleanResult] = useState(null)
@@ -35,7 +36,9 @@ export default function Settings() {
       .select('my_description')
       .eq('id', 1)
       .maybeSingle()
-    setDescription(data?.my_description || '')
+    const loaded = data?.my_description || ''
+    setDescription(loaded)
+    setSavedValue(loaded)
     setLoading(false)
   }
 
@@ -51,7 +54,7 @@ export default function Settings() {
       return
     }
     setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setSavedValue(description)
   }
 
   const cleanup = async () => {
@@ -245,7 +248,10 @@ export default function Settings() {
       </p>
       <textarea
         value={description}
-        onChange={e => setDescription(e.target.value)}
+        onChange={e => {
+          setDescription(e.target.value)
+          if (saved) setSaved(false)
+        }}
         placeholder="e.g. 40yr old man, dark hair, short beard, athletic build"
         rows={4}
         className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none mb-4"
@@ -253,10 +259,14 @@ export default function Settings() {
 
       <button
         onClick={save}
-        disabled={saving}
-        className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold"
+        disabled={saving || description === savedValue}
+        className={`w-full rounded-lg py-3 font-semibold ${
+          description === savedValue
+            ? 'bg-gray-700 text-gray-400 cursor-default'
+            : 'bg-purple-600 hover:bg-purple-700'
+        }`}
       >
-        {saving ? 'Saving...' : saved ? 'Saved' : 'Save'}
+        {saving ? 'Saving...' : description === savedValue ? 'Saved' : 'Save'}
       </button>
 
       <div className="mt-10 border-t border-gray-800 pt-6">
