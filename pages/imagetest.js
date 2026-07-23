@@ -1,7 +1,7 @@
 // pages/imagetest.js
 import { useState } from 'react'
 
-const DEFAULT_NEGATIVE = 'blurry, big hips, wide hips, mature woman, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, big hips, wide hips, mature woman, unattractive female,low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 export default function ImageTest() {
   const [prompt, setPrompt] = useState('portrait of a petite young lady with light brown hair posing in a highcut thong, soft lighting, digital art')
@@ -19,9 +19,9 @@ export default function ImageTest() {
         body: JSON.stringify({ prompt, negativePrompt: negative }),
       })
       const data = await res.json()
-      setResult(JSON.stringify(data, null, 2))
+      setResult(data)
     } catch (err) {
-      setResult('Error: ' + err.message)
+      setResult({ error: err.message })
     }
     setLoading(false)
   }
@@ -50,9 +50,15 @@ export default function ImageTest() {
         {loading ? 'Generating...' : 'Generate'}
       </button>
       {result && (
-        <pre className="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs whitespace-pre-wrap break-all overflow-auto">
-          {result}
-        </pre>
+        <div>
+          {result.imageUrl ? (
+            <img src={result.imageUrl} alt="Generated" className="w-full rounded-lg" />
+          ) : (
+            <pre className="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs whitespace-pre-wrap break-all overflow-auto">
+              {JSON.stringify(result, null, 2)}
+            </pre>
+          )}
+        </div>
       )}
     </div>
   )
