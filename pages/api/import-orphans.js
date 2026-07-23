@@ -29,6 +29,7 @@ export default async function handler(req, res) {
   }
 
   const dryRun = req.body?.dryRun === true
+  const mode = req.body?.mode === 'delete' ? 'delete' : 'import'
 
   try {
     // 1. every filename already referenced anywhere
@@ -36,9 +37,9 @@ export default async function handler(req, res) {
 
     const { data: cards } = await supabaseAdmin
       .from('cards')
-      .select('image_url, back_image_url, video_url')
+      .select('image_url, back_image_url, video_url, poster_url')
     for (const c of cards || []) {
-      for (const u of [c.image_url, c.back_image_url, c.video_url]) {
+      for (const u of [c.image_url, c.back_image_url, c.video_url, c.poster_url]) {
         const f = fileFromUrl(u)
         if (f) known.add(f)
       }
@@ -50,10 +51,12 @@ export default async function handler(req, res) {
       if (f) known.add(f)
     }
 
-    const { data: gal } = await supabaseAdmin.from('gallery_media').select('url')
+    const { data: gal } = await supabaseAdmin.from('gallery_media').select('url, poster_url')
     for (const g of gal || []) {
-      const f = fileFromUrl(g.url)
-      if (f) known.add(f)
+      for (const u of [g.url, g.poster_url]) {
+        const f = fileFromUrl(u)
+        if (f) known.add(f)
+      }
     }
 
     const { data: msgs } = await supabaseAdmin
@@ -91,6 +94,7 @@ export default async function handler(req, res) {
         if (known.has(f.name)) continue
         // skip the temporary frames used for video extension
         if (f.name.startsWith('frame_')) continue
+        if (f.name.startsWith('poster_')) continue
         orphans.push(f)
       }
 
@@ -107,7 +111,24 @@ export default async function handler(req, res) {
       })
     }
 
-    // 3. insert them into gallery_media
+    // 3a. delete them instead, if that's what was asked
+    if (mode === 'delete') {
+      const names = orphans.map(o => o.name)
+      let deleted = 0
+      for (let i = 0; i < names.length; i += 100) {
+        const batch = names.slice(i, i + 100)
+        const { error } = await supabaseAdmin.storage.from(BUCKET).remove(batch)
+        if (!error) deleted += batch.length
+      }
+      return res.status(200).json({
+        mode: 'delete',
+        scanned,
+        orphanCount: orphans.length,
+        deleted,
+      })
+    }
+
+    // 3b. insert them into gallery_media
     const rows = orphans.map(o => {
       const { data: pub } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(o.name)
       return {
@@ -126,6 +147,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
+      mode: 'import',
       scanned,
       orphanCount: orphans.length,
       imported,
