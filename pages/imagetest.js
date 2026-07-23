@@ -1,7 +1,7 @@
 // pages/imagetest.js
 import { useState } from 'react'
 
-const DEFAULT_NEGATIVE = 'blurry, big hips, wide hips, mature woman, unattractive female,low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, (Asian), big hips, wide hips, mature woman, unattractive female,low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 export default function ImageTest() {
   const [prompt, setPrompt] = useState('portrait of a petite young lady with light brown hair posing in a highcut thong, soft lighting, digital art')
