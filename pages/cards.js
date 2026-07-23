@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
 import { makePoster } from '../lib/posterFrame'
 
-const DEFAULT_NEGATIVE = 'blurry, big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, mature body, wide hips, mature woman, unattractive female, boring, big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -25,6 +25,7 @@ const ART_STYLES = [
   { value: 'cinematic film still, anamorphic look, moody colour grade, shallow focus, narrative feel', label: 'Cinematic' },
   { value: 'analog film photography, 35mm grain, muted colour, slight halation, nostalgic tone', label: 'Film Photography' },
   { value: 'high fashion runway photography, backstage energy, motion, professional lighting', label: 'Runway' },
+  { value: 'highly sensual photography, erotic energy, strong sensualism, professional lighting', label: 'Seductive' },
 ]
 
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'ultra elite', 'after hours']
