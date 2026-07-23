@@ -2,7 +2,7 @@
 import { useState } from 'react'
 
 export default function ImageTest() {
-  const [prompt, setPrompt] = useState('portrait of a young woman with red hair, soft lighting, digital art')
+  const [prompt, setPrompt] = useState('portrait of a petite young young with light brown hair posing in a highcut thong, soft lighting, digital art')
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
 
