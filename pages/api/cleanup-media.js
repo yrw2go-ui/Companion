@@ -26,9 +26,9 @@ export default async function handler(req, res) {
 
     const { data: cards } = await supabaseAdmin
       .from('cards')
-      .select('image_url, back_image_url, video_url')
+      .select('image_url, back_image_url, video_url, poster_url')
     for (const c of cards || []) {
-      for (const u of [c.image_url, c.back_image_url, c.video_url]) {
+      for (const u of [c.image_url, c.back_image_url, c.video_url, c.poster_url]) {
         const f = fileFromUrl(u)
         if (f) protectedFiles.add(f)
       }
