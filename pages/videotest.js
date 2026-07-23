@@ -1,6 +1,7 @@
 // pages/videotest.js
 import { useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { makePoster } from '../lib/posterFrame'
 
 const MODELS = [
   { label: 'Seedance T2V', value: 'bytedance/seedance-v1-pro-t2v-720p' },
@@ -47,8 +48,9 @@ export default function VideoTest() {
   const saveToGallery = async () => {
     if (!videoUrl || saving) return
     setSaving(true)
+    const poster = await makePoster(videoUrl)
     const { error } = await supabase.from('gallery_media').insert([{
-      type: 'video', url: videoUrl, prompt,
+      type: 'video', url: videoUrl, prompt, poster_url: poster,
     }])
     setSaving(false)
     if (error) { alert('Save failed: ' + error.message); return }
@@ -110,4 +112,4 @@ export default function VideoTest() {
       )}
     </div>
   )
-                                                  }
+}
