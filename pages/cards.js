@@ -5,13 +5,23 @@ import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
 import { makePoster } from '../lib/posterFrame'
 
-const DEFAULT_NEGATIVE = 'blurry, mature body, wide hips, mature woman, unattractive female, boring, big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
   { value: '1024*1024', label: 'Square 1:1' },
   { value: '576*1024', label: 'Tall 9:16' },
 ]
+
+const IMAGE_MODELS = [
+  { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux' },
+  { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux' },
+  { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell' },
+  { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream' },
+  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok' },
+]
+
+const familyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
 
 const ART_STYLES = [
   { value: '', label: 'None (use prompt as-is)' },
@@ -25,7 +35,6 @@ const ART_STYLES = [
   { value: 'cinematic film still, anamorphic look, moody colour grade, shallow focus, narrative feel', label: 'Cinematic' },
   { value: 'analog film photography, 35mm grain, muted colour, slight halation, nostalgic tone', label: 'Film Photography' },
   { value: 'high fashion runway photography, backstage energy, motion, professional lighting', label: 'Runway' },
-  { value: 'highly sensual photography, erotic energy, strong sensualism, professional lighting', label: 'Seductive' },
 ]
 
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'ultra elite', 'after hours']
@@ -95,6 +104,7 @@ export default function Cards() {
   const [negative, setNegative] = useState(DEFAULT_NEGATIVE)
   const [size, setSize] = useState('768*1024')
   const [artStyle, setArtStyle] = useState(ART_STYLES[1].value)
+  const [imageModel, setImageModel] = useState(IMAGE_MODELS[0].id)
   const [seedInput, setSeedInput] = useState('')
   const [guidance, setGuidance] = useState(3.5)
   const [steps, setSteps] = useState(28)
@@ -167,18 +177,38 @@ export default function Cards() {
 
   const withStyle = (base, style) => (!style ? base : `${base}, ${style}`)
 
-  const genImage = async (imgPrompt, seedVal, neg, sz, style) => {
+  const genImage = async (imgPrompt, seedVal, neg, sz, style, modelId) => {
+    const useModel = modelId || imageModel
+    const fam = familyOf(useModel)
+
+    const payload = {
+      model: useModel,
+      prompt: withStyle(imgPrompt, style),
+    }
+
+    if (fam === 'grok') {
+      payload.aspectRatio = '2:3'
+      payload.resolution = '2k'
+    } else if (fam === 'seedream') {
+      payload.size = '1328*1776'   // portrait, card-friendly
+      payload.thinking = 'disabled'
+    } else if (fam === 'schnell') {
+      payload.size = sz || '768*1024'
+      payload.seed = seedVal || undefined
+      payload.negativePrompt = neg
+    } else {
+      // flux / z-image
+      payload.size = sz || '768*1024'
+      payload.seed = seedVal || undefined
+      payload.negativePrompt = neg
+      payload.guidance = guidance
+      payload.steps = steps
+    }
+
     const res = await fetch('/api/generate-image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: withStyle(imgPrompt, style),
-        negativePrompt: neg,
-        seed: seedVal || undefined,
-        size: sz,
-        guidance,
-        steps,
-      }),
+      body: JSON.stringify(payload),
     })
     return res.json()
   }
@@ -224,6 +254,7 @@ export default function Cards() {
         back_image_prompt: draft.back_image_prompt ? withStyle(draft.back_image_prompt, artStyle) : null,
         back_seed: back.seed,
         negative_prompt: negative,
+        image_model: imageModel,
       }])
       if (error) { alert('Save error: ' + error.message); setGenerating(false); setProgress(''); return }
 
@@ -268,7 +299,7 @@ export default function Cards() {
     if (!promptText?.trim()) { alert('Add an art prompt first'); return }
 
     setRegenProgress(`Regenerating ${which}...`)
-    const result = await genImage(promptText, '', editNegative, editSize, editStyle)
+    const result = await genImage(promptText, '', editNegative, editSize, editStyle, editing.image_model || imageModel)
     if (!result.imageUrl) { alert('Error: ' + (result.error || 'failed')); setRegenProgress(''); return }
 
     const oldUrl = which === 'front' ? editing.image_url : editing.back_image_url
@@ -387,6 +418,7 @@ export default function Cards() {
     setNegative(card.negative_prompt || DEFAULT_NEGATIVE)
     setSeedInput(card.seed != null ? String(card.seed) : '')
     setArtStyle('')
+    setImageModel(card.image_model || IMAGE_MODELS[0].id)
     setSelected(null)
     setShowCreate(true)
   }
@@ -724,6 +756,18 @@ export default function Cards() {
                     {statEditor(draft.stats || [], arr => setDraft({ ...draft, stats: arr }))}
                   </>
                 )}
+
+                <label className="block text-xs text-gray-400 mb-1">Image Model</label>
+                <select value={imageModel} onChange={e => setImageModel(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500">
+                  {IMAGE_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+                <p className="text-[10px] text-gray-600 mb-3">
+                  {familyOf(imageModel) === 'seedream' && 'Highest resolution. No seed or negative prompt.'}
+                  {familyOf(imageModel) === 'grok' && 'Stylized. No seed or negative prompt.'}
+                  {familyOf(imageModel) === 'schnell' && 'Fast, lower cost. Uses seed + negative.'}
+                  {familyOf(imageModel) === 'flux' && 'Balanced. Full control (seed, guidance, steps).'}
+                </p>
 
                 <label className="block text-xs text-gray-400 mb-1">Art Style</label>
                 <select value={artStyle} onChange={e => setArtStyle(e.target.value)}
