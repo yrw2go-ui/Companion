@@ -3,7 +3,8 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 const MODELS = [
-  { id: 'z-image/turbo', label: 'Z-Image-Turbo', family: 'Turbo' },
+  { id: 'z-image/turbo', label: 'Z-Image-Turbo', family: 'flux' },
+  { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux' },
   { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok' },
 ]
 
