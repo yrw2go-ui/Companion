@@ -2,8 +2,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
+import { makePoster } from '../lib/posterFrame'
 
-const DEFAULT_NEGATIVE = 'blurry, mature woman, wide hips, big breasts, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4' },
@@ -33,7 +34,6 @@ export default function Gallery() {
   const [guidance, setGuidance] = useState(3.5)
   const [steps, setSteps] = useState(28)
   const [creating, setCreating] = useState(false)
-  const [referenceImage, setReferenceImage] = useState('')
 
   const [showVideo, setShowVideo] = useState(false)
   const [videoSource, setVideoSource] = useState('')
@@ -91,6 +91,7 @@ export default function Gallery() {
       id: g.id,
       source: 'gallery_media',
       is_favorite: !!g.is_favorite,
+      poster_url: g.poster_url ?? null,
       type: g.type,
       url: g.url,
       seed: g.seed ?? null,
@@ -174,10 +175,10 @@ export default function Gallery() {
     setCharId('')
     setGuidance(3.5)
     setSteps(28)
-    setReferenceImage('')
     setShowCreate(true)
   }
 
+  // reopen create modal pre-filled from an existing image
   const openRegenerate = (item, keepSeed) => {
     setPrompt(item.prompt || '')
     setNegative(item.negative_prompt || DEFAULT_NEGATIVE)
@@ -186,7 +187,6 @@ export default function Gallery() {
     setCharId('')
     setGuidance(3.5)
     setSteps(28)
-    setReferenceImage(item.url || '')
     setSelected(null)
     setShowCreate(true)
   }
@@ -205,7 +205,6 @@ export default function Gallery() {
           size,
           guidance,
           steps,
-          referenceImageUrl: referenceImage || undefined,
         }),
       })
       const data = await res.json()
@@ -228,7 +227,6 @@ export default function Gallery() {
       setShowCreate(false)
       setPrompt('')
       setSeed('')
-      setReferenceImage('')
       load()
     } catch (err) {
       alert('Error: ' + err.message)
@@ -261,10 +259,12 @@ export default function Gallery() {
         setAnimating(false)
         return
       }
+      const poster = await makePoster(data.videoUrl)
       await supabase.from('gallery_media').insert([{
         type: 'video',
         url: data.videoUrl,
         prompt: videoPrompt,
+        poster_url: poster,
       }])
       load()
     } catch (err) {
@@ -273,12 +273,14 @@ export default function Gallery() {
     setAnimating(false)
   }
 
+  // is this canvas frame effectively blank?
   const frameIsBlank = (canvas) => {
     try {
       const ctx = canvas.getContext('2d')
       const w = canvas.width
       const h = canvas.height
       if (!w || !h) return true
+      // sample a grid of pixels and look at brightness spread
       const data = ctx.getImageData(0, 0, w, h).data
       let min = 255
       let max = 0
@@ -288,6 +290,7 @@ export default function Gallery() {
         if (lum < min) min = lum
         if (lum > max) max = lum
       }
+      // almost no variation means a flat/black/white frame
       return (max - min) < 12
     } catch {
       return false
@@ -303,6 +306,7 @@ export default function Gallery() {
     return canvas
   }
 
+  // grab a good final frame, backing off from the end if it's blank
   const captureLastFrame = (url) => new Promise((resolve, reject) => {
     const video = document.createElement('video')
     video.crossOrigin = 'anonymous'
@@ -311,6 +315,7 @@ export default function Gallery() {
     video.playsInline = true
 
     let attempts = 0
+    // try progressively earlier points if the end frame is empty
     const offsets = [0.15, 0.4, 0.8, 1.4, 2.2]
     let settled = false
 
@@ -329,6 +334,7 @@ export default function Gallery() {
 
     const trySeek = () => {
       if (attempts >= offsets.length) {
+        // give up on finding a non-blank frame, use whatever we last had
         try {
           const canvas = drawToCanvas(video)
           settled = true
@@ -347,6 +353,7 @@ export default function Gallery() {
 
     video.onseeked = () => {
       if (settled) return
+      // give the decoder a moment to actually paint the frame
       setTimeout(() => {
         if (settled) return
         try {
@@ -366,6 +373,7 @@ export default function Gallery() {
 
     video.onerror = () => fail('Could not load the video')
 
+    // wait for real data, not just metadata
     video.onloadeddata = () => {
       if (!video.duration || !isFinite(video.duration)) {
         fail('Video has no readable duration')
@@ -441,6 +449,7 @@ export default function Gallery() {
       })
       const vidData = await vidRes.json()
 
+      // the frame was only a stepping stone
       if (frameData.fileName) {
         await supabase.storage.from('character-images').remove([frameData.fileName])
       }
@@ -451,10 +460,12 @@ export default function Gallery() {
         return
       }
 
+      const poster = await makePoster(vidData.videoUrl)
       await supabase.from('gallery_media').insert([{
         type: 'video',
         url: vidData.videoUrl,
         prompt: extendPrompt,
+        poster_url: poster,
       }])
 
       setExtendStatus('')
@@ -470,6 +481,7 @@ export default function Gallery() {
     if (item.source !== 'gallery_media') return
     const next = !item.is_favorite
 
+    // update on screen straight away
     setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, is_favorite: next } : m)))
     setSelected(prev => (prev && prev.key === item.key ? { ...prev, is_favorite: next } : prev))
 
@@ -480,6 +492,7 @@ export default function Gallery() {
 
     if (error) {
       alert('Could not update: ' + error.message)
+      // put it back
       setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, is_favorite: !next } : m)))
       setSelected(prev => (prev && prev.key === item.key ? { ...prev, is_favorite: !next } : prev))
     }
@@ -499,6 +512,7 @@ export default function Gallery() {
   const shown = (() => {
     let list = media.filter(m => {
       if (filter === 'cards') return m.source === 'cards'
+      // card media only appears under the Cards tab
       if (m.source === 'cards') return false
       if (filter === 'images') return m.type === 'image'
       if (filter === 'videos') return m.type === 'video'
@@ -593,7 +607,13 @@ export default function Gallery() {
                 <img src={item.url} alt="" className="w-full h-full object-cover" />
               ) : (
                 <>
-                  <video src={item.url} className="w-full h-full object-cover" muted />
+                  {item.poster_url ? (
+                    <img src={item.poster_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
+                      <span className="text-3xl text-gray-600">▶</span>
+                    </div>
+                  )}
                   <span className="absolute bottom-1.5 right-1.5 bg-black/70 rounded-full px-2 py-0.5 text-[10px]">▶ video</span>
                 </>
               )}
@@ -610,15 +630,11 @@ export default function Gallery() {
         </div>
       )}
 
-      {/* CREATE MODAL */}
+      {/* CREATE / REGENERATE */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-50 overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
-            <h2 className="font-bold text-lg mb-3">Create Image (I2I if reference)</h2>
-
-            <label className="block text-xs text-gray-400 mb-1">Reference Image URL (optional for I2I)</label>
-            <input value={referenceImage} onChange={e => setReferenceImage(e.target.value)} placeholder="https://example.com/image.jpg"
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+            <h2 className="font-bold text-lg mb-3">Create Image</h2>
 
             <label className="block text-xs text-gray-400 mb-1">Prompt</label>
             <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={5}
@@ -773,7 +789,7 @@ export default function Gallery() {
             {selected.type === 'image' ? (
               <img src={selected.url} alt="" className="w-full rounded-2xl" />
             ) : (
-              <video src={selected.url} controls autoPlay loop className="w-full rounded-2xl" />
+              <video src={selected.url} controls loop preload="none" playsInline poster={selected.poster_url || undefined} className="w-full rounded-2xl" />
             )}
 
             {selected.source === 'gallery_media' && (
@@ -849,4 +865,4 @@ export default function Gallery() {
       )}
     </div>
   )
-          }
+}
