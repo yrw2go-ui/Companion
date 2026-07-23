@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { dataUrl } = req.body
+  const { dataUrl, kind } = req.body
 
   if (!dataUrl || !dataUrl.startsWith('data:image')) {
     return res.status(400).json({ error: 'No frame provided' })
@@ -29,7 +29,8 @@ export default async function handler(req, res) {
     const base64 = dataUrl.split(',')[1]
     const buffer = Buffer.from(base64, 'base64')
 
-    const fileName = `frame_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpeg`
+    const prefix = kind === 'poster' ? 'poster' : 'frame'
+    const fileName = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpeg`
 
     const { error: uploadError } = await supabaseAdmin.storage
       .from('character-images')
