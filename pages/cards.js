@@ -3,8 +3,9 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
+import { makePoster } from '../lib/posterFrame'
 
-const DEFAULT_NEGATIVE = 'blurry, mature body, wide hips, mature woman, big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -24,7 +25,6 @@ const ART_STYLES = [
   { value: 'cinematic film still, anamorphic look, moody colour grade, shallow focus, narrative feel', label: 'Cinematic' },
   { value: 'analog film photography, 35mm grain, muted colour, slight halation, nostalgic tone', label: 'Film Photography' },
   { value: 'high fashion runway photography, backstage energy, motion, professional lighting', label: 'Runway' },
-  { value: 'highly sensual photography, erotic energy, strong sensualism, professional lighting', label: 'Seductive' },
 ]
 
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'ultra elite', 'after hours']
@@ -305,7 +305,7 @@ export default function Cards() {
 
   const openAnimate = () => {
     if (!selected?.image_url) return
-    setAnimPrompt(selected.video_prompt || 'Smooth natural motion, eyes alive, sensual movement')
+    setAnimPrompt(selected.video_prompt || 'Smooth movement, eyes alive,')
     setAnimDuration(5)
     setAnimRes('720p')
     setShowAnimate(true)
@@ -336,9 +336,10 @@ export default function Cards() {
         return
       }
 
+      const poster = await makePoster(data.videoUrl)
       const { error } = await supabase
         .from('cards')
-        .update({ video_url: data.videoUrl, video_prompt: animPrompt })
+        .update({ video_url: data.videoUrl, video_prompt: animPrompt, poster_url: poster })
         .eq('id', selected.id)
 
       if (error) {
@@ -353,7 +354,7 @@ export default function Cards() {
         if (f) await supabase.storage.from('character-images').remove([f])
       }
 
-      setSelected({ ...selected, video_url: data.videoUrl, video_prompt: animPrompt })
+      setSelected({ ...selected, video_url: data.videoUrl, video_prompt: animPrompt, poster_url: poster })
       setView('animated')
       loadCards()
     } catch (err) {
@@ -463,6 +464,7 @@ export default function Cards() {
                 loop
                 muted
                 playsInline
+                poster={card.poster_url || undefined}
                 className="absolute inset-0 w-full h-full object-cover"
               />
             ) : card.image_url ? (
