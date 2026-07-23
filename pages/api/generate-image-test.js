@@ -38,6 +38,7 @@ export default async function handler(req, res) {
 
   // build the request body per model family
   let body
+  let usedSeedOut = null
   if (model.startsWith('xai/grok-imagine')) {
     body = {
       model,
@@ -52,6 +53,7 @@ export default async function handler(req, res) {
     const usedSeed = (seed !== undefined && seed !== null && seed !== '')
       ? parseInt(seed)
       : Math.floor(Math.random() * 2147483647)
+    usedSeedOut = usedSeed
     body = {
       model,
       prompt,
@@ -119,7 +121,7 @@ export default async function handler(req, res) {
 
     const { data: pub } = supabaseAdmin.storage.from('character-images').getPublicUrl(fileName)
 
-    return res.status(200).json({ imageUrl: pub.publicUrl, model, sentBody: body })
+    return res.status(200).json({ imageUrl: pub.publicUrl, model, seed: usedSeedOut, sentBody: body })
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
