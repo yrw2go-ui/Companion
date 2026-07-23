@@ -1,6 +1,7 @@
 // pages/api/generate-image-test.js
-// Test endpoint supporting multiple text-to-image models.
-// Kept separate from generate-image.js so the live app is untouched.
+// Multi-model text-to-image test endpoint. Each model family gets the exact
+// request shape from its Atlas schema. Kept separate from the live
+// generate-image.js so the app is untouched while testing.
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseAdmin = createClient(
@@ -16,15 +17,13 @@ export default async function handler(req, res) {
   }
 
   const {
-    model,
-    prompt,
-    negativePrompt,
-    seed,
-    size,           // flux style: "768*1024"
-    guidance,
-    steps,
-    aspectRatio,    // grok style: "2:3"
-    resolution,     // grok style: "1k" | "2k"
+    model, prompt, negativePrompt, seed,
+    size,          // flux-dev / flux-schnell / seedream: "W*H"
+    guidance, steps,
+    aspectRatio,   // grok: "2:3"
+    resolution,    // grok: "1k" | "2k"
+    outputFormat,  // seedream
+    thinking,      // seedream
   } = req.body
 
   if (!prompt) return res.status(400).json({ error: 'No prompt provided' })
@@ -36,10 +35,13 @@ export default async function handler(req, res) {
     catch { return { ok: false, raw: t } }
   }
 
-  // build the request body per model family
+  const randSeed = () => Math.floor(Math.random() * 2147483647)
+
   let body
   let usedSeedOut = null
+
   if (model.startsWith('xai/grok-imagine')) {
+    // Grok Imagine image: aspect_ratio + resolution, no negative/seed
     body = {
       model,
       prompt,
@@ -48,12 +50,33 @@ export default async function handler(req, res) {
       resolution: resolution || '1k',
       enable_base64_output: false,
     }
+  } else if (model.startsWith('bytedance/seedream')) {
+    // Seedream 5 Pro: size enum, output_format, thinking; no negative/seed/guidance
+    body = {
+      model,
+      prompt,
+      size: size || '2048*2048',
+      output_format: outputFormat || 'jpeg',
+      thinking: thinking || 'disabled',
+      enable_base64_output: false,
+    }
+  } else if (model === 'black-forest-labs/flux-schnell') {
+    // Flux Schnell: seed + size, NO guidance/steps (distilled, fixed few-step)
+    const s = (seed !== undefined && seed !== null && seed !== '') ? parseInt(seed) : randSeed()
+    usedSeedOut = s
+    body = {
+      model,
+      prompt,
+      size: size || '1024*1024',
+      seed: s,
+      num_images: 1,
+      enable_base64_output: false,
+    }
+    if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
   } else {
-    // flux-dev and similar
-    const usedSeed = (seed !== undefined && seed !== null && seed !== '')
-      ? parseInt(seed)
-      : Math.floor(Math.random() * 2147483647)
-    usedSeedOut = usedSeed
+    // flux-dev, z-image and other "classic" models: size, guidance, steps, seed
+    const s = (seed !== undefined && seed !== null && seed !== '') ? parseInt(seed) : randSeed()
+    usedSeedOut = s
     body = {
       model,
       prompt,
@@ -61,11 +84,9 @@ export default async function handler(req, res) {
       num_images: 1,
       guidance_scale: parseFloat(guidance) || 3.5,
       num_inference_steps: parseInt(steps) || 28,
-      seed: usedSeed,
+      seed: s,
     }
-    if (negativePrompt && negativePrompt.trim()) {
-      body.negative_prompt = negativePrompt.trim()
-    }
+    if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
   }
 
   try {
@@ -89,38 +110,33 @@ export default async function handler(req, res) {
     }
 
     let atlasUrl = null
-    for (let i = 0; i < 45; i++) {
+    for (let i = 0; i < 60; i++) {
       await new Promise(r => setTimeout(r, 1500))
       const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
         headers: { 'Authorization': `Bearer ${process.env.ATLAS_API_KEY}` },
       })
       const pollParsed = await safeJson(pollRes)
       if (!pollParsed.ok) continue
-
       const pb = pollParsed.data.data || pollParsed.data
-      if (pb.status === 'completed' || pb.status === 'succeeded') {
-        atlasUrl = pb.outputs?.[0]
-        break
-      }
+      if (pb.status === 'completed' || pb.status === 'succeeded') { atlasUrl = pb.outputs?.[0]; break }
       if (pb.status === 'failed' || pb.status === 'error') {
-        return res.status(500).json({ error: pb.error || 'Generation failed', detail: pb })
+        return res.status(500).json({ error: pb.error || 'Generation failed', detail: pb, sentBody: body })
       }
     }
 
-    if (!atlasUrl) return res.status(500).json({ error: 'Timed out' })
+    if (!atlasUrl) return res.status(500).json({ error: 'Timed out', sentBody: body })
 
-    // re-host to Supabase
     const imgRes = await fetch(atlasUrl)
     const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
-    const fileName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpeg`
+    const ext = outputFormat === 'png' ? 'png' : 'jpeg'
+    const fileName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
     const { error: uploadError } = await supabaseAdmin.storage
       .from('character-images')
-      .upload(fileName, imgBuffer, { contentType: 'image/jpeg', upsert: false })
+      .upload(fileName, imgBuffer, { contentType: `image/${ext}`, upsert: false })
 
     if (uploadError) return res.status(500).json({ error: 'Upload failed: ' + uploadError.message })
 
     const { data: pub } = supabaseAdmin.storage.from('character-images').getPublicUrl(fileName)
-
     return res.status(200).json({ imageUrl: pub.publicUrl, model, seed: usedSeedOut, sentBody: body })
   } catch (err) {
     return res.status(500).json({ error: err.message })
