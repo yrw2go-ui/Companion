@@ -1,8 +1,11 @@
 // pages/imagetest.js
 import { useState } from 'react'
 
+const DEFAULT_NEGATIVE = 'blurry, big hips, wide hips, mature woman, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+
 export default function ImageTest() {
-  const [prompt, setPrompt] = useState('portrait of a petite young young with light brown hair posing in a highcut thong, soft lighting, digital art')
+  const [prompt, setPrompt] = useState('portrait of a petite young lady with light brown hair posing in a highcut thong, soft lighting, digital art')
+  const [negative, setNegative] = useState(DEFAULT_NEGATIVE)
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -13,7 +16,7 @@ export default function ImageTest() {
       const res = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, negativePrompt: negative }),
       })
       const data = await res.json()
       setResult(JSON.stringify(data, null, 2))
@@ -31,6 +34,13 @@ export default function ImageTest() {
         onChange={e => setPrompt(e.target.value)}
         rows={3}
         className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3"
+      />
+      <textarea
+        value={negative}
+        onChange={e => setNegative(e.target.value)}
+        rows={2}
+        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3"
+        placeholder="Negative prompt"
       />
       <button
         onClick={generate}
