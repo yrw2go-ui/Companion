@@ -33,6 +33,7 @@ export default function ImageTest() {
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [returnedSeed, setReturnedSeed] = useState(null)
 
   const family = MODELS.find(m => m.id === model)?.family
 
@@ -54,7 +55,7 @@ export default function ImageTest() {
         }),
       })
       const data = await res.json()
-      if (data.imageUrl) setImageUrl(data.imageUrl)
+      if (data.imageUrl) { setImageUrl(data.imageUrl); setReturnedSeed(data.seed ?? null) }
       else setResult(JSON.stringify(data, null, 2))
     } catch (err) {
       setResult('Error: ' + err.message)
@@ -65,7 +66,12 @@ export default function ImageTest() {
   const saveToGallery = async () => {
     if (!imageUrl) return
     const { error } = await supabase.from('gallery_media').insert([{
-      type: 'image', url: imageUrl, prompt,
+      type: 'image',
+      url: imageUrl,
+      prompt,
+      negative_prompt: family === 'flux' ? negative : null,
+      seed: returnedSeed,
+      size: family === 'flux' ? size : null,
     }])
     if (error) { alert('Save failed: ' + error.message); return }
     setSaved(true)
@@ -138,6 +144,18 @@ export default function ImageTest() {
       {imageUrl && (
         <>
           <img src={imageUrl} alt="" className="w-full rounded-lg mb-3" />
+          {returnedSeed != null && (
+            <div className="flex items-center justify-between bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3 text-xs">
+              <span className="text-gray-400">Seed: <span className="font-mono text-gray-200">{returnedSeed}</span></span>
+              <button onClick={() => navigator.clipboard?.writeText(String(returnedSeed))}
+                className="text-purple-400 hover:text-purple-300 font-semibold">Copy</button>
+            </div>
+          )}
+          <div className="flex items-center justify-between bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3 text-xs">
+            <span className="text-gray-400 truncate mr-2 font-mono">{imageUrl}</span>
+            <button onClick={() => navigator.clipboard?.writeText(imageUrl)}
+              className="text-purple-400 hover:text-purple-300 font-semibold shrink-0">Copy</button>
+          </div>
           <button onClick={saveToGallery} disabled={saved}
             className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-60 rounded-lg py-3 font-semibold mb-4">
             {saved ? 'Saved to Gallery' : 'Save to Gallery'}
