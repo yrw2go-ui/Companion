@@ -236,7 +236,7 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrompt('smooth natural motion, sensual movement')
+    setVideoPrompt('smooth natural motion, sensual movement'')
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideo(true)
@@ -498,6 +498,9 @@ export default function Gallery() {
     }
   }
 
+  // clear the copied indicator whenever the detail selection changes
+  // (kept simple: reset on close/open via the button timeout is enough)
+
   const remove = async (item) => {
     if (!confirm('Delete this permanently?')) return
     await supabase.from(item.source).delete().eq('id', item.id)
@@ -507,7 +510,13 @@ export default function Gallery() {
     load()
   }
 
+  const [copiedUrl, setCopiedUrl] = useState(false)
   const copy = (val) => navigator.clipboard?.writeText(String(val))
+  const copyUrl = (val) => {
+    navigator.clipboard?.writeText(String(val))
+    setCopiedUrl(true)
+    setTimeout(() => setCopiedUrl(false), 1500)
+  }
 
   const shown = (() => {
     let list = media.filter(m => {
@@ -810,6 +819,18 @@ export default function Gallery() {
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">Created</span>
                 <span className="text-gray-400">{new Date(selected.created_at).toLocaleString()}</span>
+              </div>
+              <div className="pt-2 border-t border-gray-800">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-gray-500">URL</span>
+                  <button
+                    onClick={() => copyUrl(selected.url)}
+                    className="text-purple-400 hover:text-purple-300 font-semibold"
+                  >
+                    {copiedUrl ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-600 font-mono break-all leading-snug">{selected.url}</p>
               </div>
               {selected.source === 'cards' && (
                 <div className="flex items-center justify-between">
