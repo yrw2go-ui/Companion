@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
 import { makePoster } from '../lib/posterFrame'
 
-const DEFAULT_NEGATIVE = 'blurry, big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, (asian), mature woman, wide hips, unattractive female, big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -22,6 +22,12 @@ const IMAGE_MODELS = [
 ]
 
 const familyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
+
+const VIDEO_MODELS = [
+  { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
+  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Turbo Spicy (fast, 5s)' },
+  { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
+]
 
 const ART_STYLES = [
   { value: '', label: 'None (use prompt as-is)' },
@@ -124,6 +130,7 @@ export default function Cards() {
   const [animPrompt, setAnimPrompt] = useState('Smooth movement, eyes alive,')
   const [animDuration, setAnimDuration] = useState(5)
   const [animRes, setAnimRes] = useState('720p')
+  const [animModel, setAnimModel] = useState('alibaba/wan-2.6/image-to-video')
   const [animating, setAnimating] = useState(false)
   const [view, setView] = useState('static')
 
@@ -359,6 +366,7 @@ export default function Cards() {
           prompt: animPrompt,
           duration: animDuration,
           resolution: animRes,
+          model: animModel,
         }),
       })
       const data = await res.json()
@@ -964,6 +972,12 @@ export default function Cards() {
             <label className="block text-xs text-gray-400 mb-1">Motion Prompt</label>
             <textarea value={animPrompt} onChange={e => setAnimPrompt(e.target.value)} rows={3}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+
+            <label className="block text-xs text-gray-400 mb-1">Video Model</label>
+            <select value={animModel} onChange={e => setAnimModel(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              {VIDEO_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
 
             <label className="block text-xs text-gray-400 mb-1">Length</label>
             <select value={animDuration} onChange={e => setAnimDuration(parseInt(e.target.value))}
