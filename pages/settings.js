@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
+import { makePoster } from '../lib/posterFrame'
 
 export default function Settings() {
   const router = useRouter()
@@ -20,6 +21,9 @@ export default function Settings() {
 
   const [clearingAudio, setClearingAudio] = useState(false)
   const [audioResult, setAudioResult] = useState(null)
+
+  const [posterizing, setPosterizing] = useState(false)
+  const [posterStatus, setPosterStatus] = useState('')
 
   useEffect(() => {
     load()
@@ -90,20 +94,29 @@ export default function Settings() {
     setScanning(false)
   }
 
-  const runImport = async () => {
+  const runOrphans = async (mode) => {
     if (importing) return
-    if (!confirm(`Import ${orphanInfo?.orphanCount || 0} file(s) into the gallery?`)) return
+    const count = orphanInfo?.orphanCount || 0
+    const question = mode === 'delete'
+      ? `Permanently delete ${count} orphaned file(s) from storage? This cannot be undone.`
+      : `Import ${count} file(s) into the gallery?`
+    if (!confirm(question)) return
+
     setImporting(true)
     setImportResult(null)
     try {
       const res = await fetch('/api/import-orphans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dryRun: false }),
+        body: JSON.stringify({ dryRun: false, mode }),
       })
       const data = await res.json()
-      if (data.error) setImportResult('Error: ' + data.error)
-      else {
+      if (data.error) {
+        setImportResult('Error: ' + data.error)
+      } else if (mode === 'delete') {
+        setImportResult(`Deleted ${data.deleted} orphaned file(s).`)
+        setOrphanInfo(null)
+      } else {
         setImportResult(`Imported ${data.imported} file(s) into the gallery.`)
         setOrphanInfo(null)
       }
@@ -111,6 +124,66 @@ export default function Settings() {
       setImportResult('Error: ' + err.message)
     }
     setImporting(false)
+  }
+
+  const backfillPosters = async () => {
+    if (posterizing) return
+    setPosterizing(true)
+    setPosterStatus('Finding videos without posters...')
+
+    try {
+      // gallery videos missing a poster
+      const { data: gal } = await supabase
+        .from('gallery_media')
+        .select('id, url, poster_url')
+        .eq('type', 'video')
+
+      const galMissing = (gal || []).filter(g => g.url && !g.poster_url)
+
+      // animated cards missing a poster
+      const { data: cards } = await supabase
+        .from('cards')
+        .select('id, video_url, poster_url')
+
+      const cardMissing = (cards || []).filter(c => c.video_url && !c.poster_url)
+
+      const total = galMissing.length + cardMissing.length
+      if (total === 0) {
+        setPosterStatus('All videos already have posters.')
+        setPosterizing(false)
+        return
+      }
+
+      let done = 0
+      let failed = 0
+
+      for (const g of galMissing) {
+        setPosterStatus(`Generating posters... ${done + 1} of ${total}`)
+        const poster = await makePoster(g.url)
+        if (poster) {
+          await supabase.from('gallery_media').update({ poster_url: poster }).eq('id', g.id)
+        } else {
+          failed++
+        }
+        done++
+      }
+
+      for (const c of cardMissing) {
+        setPosterStatus(`Generating posters... ${done + 1} of ${total}`)
+        const poster = await makePoster(c.video_url)
+        if (poster) {
+          await supabase.from('cards').update({ poster_url: poster }).eq('id', c.id)
+        } else {
+          failed++
+        }
+        done++
+      }
+
+      setPosterStatus(`Done. Created ${done - failed} poster(s)${failed ? `, ${failed} could not be read` : ''}.`)
+    } catch (err) {
+      setPosterStatus('Error: ' + err.message)
+    }
+    setPosterizing(false)
   }
 
   const clearAudio = async () => {
@@ -189,8 +262,9 @@ export default function Settings() {
       <div className="mt-10 border-t border-gray-800 pt-6">
         <h2 className="font-semibold mb-1">Import Orphaned Media</h2>
         <p className="text-xs text-gray-600 mb-3">
-          Finds files in storage that aren't showing anywhere in the app, such as videos made on the test page,
-          and adds them to the gallery.
+          Finds files in storage that nothing in the app points at. These are usually leftovers from
+          earlier deletions, or clips made on the test page. Import the ones worth keeping, or delete
+          them to free up storage.
         </p>
 
         <button
@@ -215,18 +289,45 @@ export default function Settings() {
               </ul>
             )}
             {orphanInfo.orphanCount > 0 && (
-              <button
-                onClick={runImport}
-                disabled={importing}
-                className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-2 text-sm font-semibold"
-              >
-                {importing ? 'Importing...' : `Import ${orphanInfo.orphanCount} into gallery`}
-              </button>
+              <div className="space-y-2">
+                <button
+                  onClick={() => runOrphans('import')}
+                  disabled={importing}
+                  className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-2 text-sm font-semibold"
+                >
+                  {importing ? 'Working...' : `Import ${orphanInfo.orphanCount} into gallery`}
+                </button>
+                <button
+                  onClick={() => runOrphans('delete')}
+                  disabled={importing}
+                  className="w-full bg-red-900 hover:bg-red-800 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold"
+                >
+                  {importing ? 'Working...' : `Delete ${orphanInfo.orphanCount} from storage`}
+                </button>
+              </div>
             )}
           </div>
         )}
 
         {importResult && <p className="text-xs text-gray-400 mt-3">{importResult}</p>}
+      </div>
+
+      <div className="mt-10 border-t border-gray-800 pt-6">
+        <h2 className="font-semibold mb-1">Video Thumbnails</h2>
+        <p className="text-xs text-gray-600 mb-3">
+          Generates still thumbnails for existing videos so the gallery no longer loads full videos
+          just to show them. This is the main fix for high storage bandwidth. Keep this tab open while it runs.
+        </p>
+
+        <button
+          onClick={backfillPosters}
+          disabled={posterizing}
+          className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-semibold"
+        >
+          {posterizing ? 'Working...' : 'Generate thumbnails for existing videos'}
+        </button>
+
+        {posterStatus && <p className="text-xs text-gray-400 mt-3">{posterStatus}</p>}
       </div>
 
       <div className="mt-10 border-t border-gray-800 pt-6">
