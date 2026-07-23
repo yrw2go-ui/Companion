@@ -6,54 +6,103 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+const BASE_URL = 'https://api.atlascloud.ai/api/v1'
+const DEFAULT_MODEL = 'z-image/turbo'
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { prompt, negativePrompt, seed, size, referenceImageUrl } = req.body
+  const {
+    prompt, negativePrompt, seed, size, referenceImageUrl,
+    model, aspectRatio, resolution, outputFormat, thinking, guidance, steps,
+  } = req.body
 
   if (!prompt) {
     return res.status(400).json({ error: 'No prompt provided' })
   }
 
-  const BASE_URL = 'https://api.atlascloud.ai/api/v1'
-  const MODEL = referenceImageUrl ? 'alibaba/wan-2.7-pro/image-edit' : 'z-image/turbo'
-
   const safeJson = async (response) => {
     const text = await response.text()
-    try {
-      return { ok: true, data: JSON.parse(text) }
-    } catch {
-      return { ok: false, raw: text }
-    }
+    try { return { ok: true, data: JSON.parse(text) } }
+    catch { return { ok: false, raw: text } }
   }
 
-  const usedSeed = (seed !== undefined && seed !== null && seed !== '')
-    ? parseInt(seed)
-    : Math.floor(Math.random() * 2147483647)
+  const randSeed = () => Math.floor(Math.random() * 2147483647)
 
-  const usedSize = size || '768*1024'
+  // A reference image forces the Wan image-edit model (image-to-image),
+  // regardless of any selected text-to-image model.
+  const useModel = referenceImageUrl
+    ? 'alibaba/wan-2.7-pro/image-edit'
+    : (model || DEFAULT_MODEL)
 
-  try {
-    const body = {
-      model: MODEL,
-      prompt: prompt,
-      size: usedSize,
-      num_images: 1,
-      guidance_scale: 6.5,
-      num_inference_steps: 28,
+  let body
+  let usedSeed = null
+  let usedSize = size || '768*1024'
+
+  if (referenceImageUrl) {
+    // Wan 2.7 Pro image-edit: images[], size is "1K"/"2K", seed, thinking_mode
+    usedSeed = (seed !== undefined && seed !== null && seed !== '') ? parseInt(seed) : -1
+    body = {
+      model: useModel,
+      prompt,
+      images: [referenceImageUrl],
+      size: '2K',
+      n: 1,
+      thinking_mode: true,
       seed: usedSeed,
     }
-
-    if (referenceImageUrl) {
-      body.images = [referenceImageUrl]
+  } else if (useModel.startsWith('xai/grok-imagine')) {
+    body = {
+      model: useModel,
+      prompt,
+      num_images: 1,
+      aspect_ratio: aspectRatio || '2:3',
+      resolution: resolution || '1k',
+      enable_base64_output: false,
     }
-
-    if (negativePrompt && negativePrompt.trim()) {
-      body.negative_prompt = negativePrompt.trim()
+    usedSize = aspectRatio || '2:3'
+  } else if (useModel.startsWith('bytedance/seedream')) {
+    usedSize = size || '2048*2048'
+    body = {
+      model: useModel,
+      prompt,
+      size: usedSize,
+      output_format: outputFormat || 'jpeg',
+      thinking: thinking || 'disabled',
+      enable_base64_output: false,
     }
+  } else if (useModel === 'black-forest-labs/flux-schnell') {
+    usedSeed = (seed !== undefined && seed !== null && seed !== '') ? parseInt(seed) : randSeed()
+    usedSize = size || '1024*1024'
+    body = {
+      model: useModel,
+      prompt,
+      size: usedSize,
+      seed: usedSeed,
+      num_images: 1,
+      enable_base64_output: false,
+    }
+    if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
+  } else {
+    // z-image, flux-dev, and similar classic models
+    usedSeed = (seed !== undefined && seed !== null && seed !== '') ? parseInt(seed) : randSeed()
+    let g = parseFloat(guidance); if (isNaN(g)) g = 6.5; g = Math.max(1, Math.min(12, g))
+    let st = parseInt(steps); if (isNaN(st)) st = 28; st = Math.max(10, Math.min(50, st))
+    body = {
+      model: useModel,
+      prompt,
+      size: usedSize,
+      num_images: 1,
+      guidance_scale: g,
+      num_inference_steps: st,
+      seed: usedSeed,
+    }
+    if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
+  }
 
+  try {
     const submitRes = await fetch(`${BASE_URL}/model/generateImage`, {
       method: 'POST',
       headers: {
@@ -74,7 +123,7 @@ export default async function handler(req, res) {
     }
 
     let atlasUrl = null
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 60; i++) {
       await new Promise(r => setTimeout(r, 1500))
 
       const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
@@ -102,11 +151,12 @@ export default async function handler(req, res) {
     const imgRes = await fetch(atlasUrl)
     const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
 
-    const fileName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpeg`
+    const ext = outputFormat === 'png' ? 'png' : 'jpeg'
+    const fileName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
     const { error: uploadError } = await supabaseAdmin.storage
       .from('character-images')
       .upload(fileName, imgBuffer, {
-        contentType: 'image/jpeg',
+        contentType: `image/${ext}`,
         upsert: false,
       })
 
@@ -118,7 +168,12 @@ export default async function handler(req, res) {
       .from('character-images')
       .getPublicUrl(fileName)
 
-    return res.status(200).json({ imageUrl: publicData.publicUrl, seed: usedSeed, size: usedSize })
+    return res.status(200).json({
+      imageUrl: publicData.publicUrl,
+      seed: usedSeed,
+      size: usedSize,
+      model: useModel,
+    })
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
