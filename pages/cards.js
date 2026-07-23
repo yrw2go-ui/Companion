@@ -24,6 +24,7 @@ const ART_STYLES = [
   { value: 'cinematic film still, anamorphic look, moody colour grade, shallow focus, narrative feel', label: 'Cinematic' },
   { value: 'analog film photography, 35mm grain, muted colour, slight halation, nostalgic tone', label: 'Film Photography' },
   { value: 'high fashion runway photography, backstage energy, motion, professional lighting', label: 'Runway' },
+  { value: 'highly sensual photography, erotic energy, strong sensualism, professional lighting', label: 'Seductive' },
 ]
 
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'ultra elite', 'after hours']
