@@ -5,7 +5,15 @@ import { supabase } from '../lib/supabaseClient'
 const MODELS = [
   { id: 'z-image/turbo', label: 'Z-Image-Turbo', family: 'flux' },
   { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux' },
+  { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell' },
+  { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro', family: 'seedream' },
   { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok' },
+]
+
+const SEEDREAM_SIZES = [
+  '2048*2048', '2304*1728', '1728*2304', '2720*1530', '1530*2720',
+  '2496*1664', '1664*2496', '1024*1024', '1536*1536',
+  '1776*1328', '1328*1776', '2048*1152', '1152*2048',
 ]
 
 const FLUX_SIZES = [
@@ -29,6 +37,9 @@ export default function ImageTest() {
   const [steps, setSteps] = useState(28)
   const [aspectRatio, setAspectRatio] = useState('2:3')
   const [resolution, setResolution] = useState('1k')
+  const [seedreamSize, setSeedreamSize] = useState('2048*2048')
+  const [outputFormat, setOutputFormat] = useState('jpeg')
+  const [thinking, setThinking] = useState('disabled')
   const [imageUrl, setImageUrl] = useState('')
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
@@ -52,6 +63,8 @@ export default function ImageTest() {
           negativePrompt: negative,
           seed, size, guidance, steps,
           aspectRatio, resolution,
+          size: family === 'seedream' ? seedreamSize : size,
+          outputFormat, thinking,
         }),
       })
       const data = await res.json()
@@ -92,7 +105,7 @@ export default function ImageTest() {
         placeholder="describe the image..."
         className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3 text-sm" />
 
-      {family === 'flux' ? (
+      {(family === 'flux' || family === 'schnell') && (
         <>
           <label className="block text-xs text-gray-400 mb-1">Negative Prompt</label>
           <textarea value={negative} onChange={e => setNegative(e.target.value)} rows={2}
@@ -104,21 +117,55 @@ export default function ImageTest() {
             {FLUX_SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
 
-          <label className="block text-xs text-gray-400 mb-1">Guidance: {guidance}</label>
-          <input type="range" min="1" max="10" step="0.5" value={guidance}
-            onChange={e => setGuidance(parseFloat(e.target.value))}
-            className="w-full mb-3 accent-purple-500" />
+          {family === 'flux' && (
+            <>
+              <label className="block text-xs text-gray-400 mb-1">Guidance: {guidance}</label>
+              <input type="range" min="1" max="10" step="0.5" value={guidance}
+                onChange={e => setGuidance(parseFloat(e.target.value))}
+                className="w-full mb-3 accent-purple-500" />
 
-          <label className="block text-xs text-gray-400 mb-1">Steps: {steps}</label>
-          <input type="range" min="10" max="50" step="1" value={steps}
-            onChange={e => setSteps(parseInt(e.target.value))}
-            className="w-full mb-3 accent-purple-500" />
+              <label className="block text-xs text-gray-400 mb-1">Steps: {steps}</label>
+              <input type="range" min="10" max="50" step="1" value={steps}
+                onChange={e => setSteps(parseInt(e.target.value))}
+                className="w-full mb-3 accent-purple-500" />
+            </>
+          )}
+          {family === 'schnell' && (
+            <p className="text-[10px] text-gray-600 mb-3">Flux Schnell is fixed few-step (very fast). No guidance/steps controls.</p>
+          )}
 
           <label className="block text-xs text-gray-400 mb-1">Seed (optional)</label>
           <input value={seed} onChange={e => setSeed(e.target.value)} placeholder="random if blank"
             className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-4 text-sm" />
         </>
-      ) : (
+      )}
+
+      {family === 'seedream' && (
+        <>
+          <label className="block text-xs text-gray-400 mb-1">Size</label>
+          <select value={seedreamSize} onChange={e => setSeedreamSize(e.target.value)}
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3 text-sm">
+            {SEEDREAM_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+
+          <label className="block text-xs text-gray-400 mb-1">Format</label>
+          <select value={outputFormat} onChange={e => setOutputFormat(e.target.value)}
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-3 text-sm">
+            <option value="jpeg">JPEG</option>
+            <option value="png">PNG</option>
+          </select>
+
+          <label className="block text-xs text-gray-400 mb-1">Thinking</label>
+          <select value={thinking} onChange={e => setThinking(e.target.value)}
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-4 text-sm">
+            <option value="disabled">Disabled (faster)</option>
+            <option value="enabled">Enabled (higher quality)</option>
+          </select>
+          <p className="text-[10px] text-gray-600 -mt-3 mb-4">Seedream has no negative prompt or seed. Sizes are large (up to 2048).</p>
+        </>
+      )}
+
+      {family === 'grok' && (
         <>
           <label className="block text-xs text-gray-400 mb-1">Aspect Ratio</label>
           <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)}
@@ -129,8 +176,8 @@ export default function ImageTest() {
           <label className="block text-xs text-gray-400 mb-1">Resolution</label>
           <select value={resolution} onChange={e => setResolution(e.target.value)}
             className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 mb-4 text-sm">
-            <option value="1k">1K ($0.05)</option>
-            <option value="2k">2K ($0.07)</option>
+            <option value="1k">1K</option>
+            <option value="2k">2K</option>
           </select>
           <p className="text-[10px] text-gray-600 -mt-3 mb-4">Grok Imagine has no negative prompt or seed.</p>
         </>
