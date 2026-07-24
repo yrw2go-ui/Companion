@@ -34,10 +34,11 @@ export default function Chat() {
   const [guidance, setGuidance] = useState(3.5)
   const [steps, setSteps] = useState(28)
   const [imageModel, setImageModel] = useState('z-image/turbo')
+  const [preparingPrompt, setPreparingPrompt] = useState(false)
   const [autoPlay, setAutoPlay] = useState(false)
   const [speakingIdx, setSpeakingIdx] = useState(null)
   const [showVideoModal, setShowVideoModal] = useState(false)
-  const [videoPrompt, setVideoPrompt] = useState('smooth natural motion, sensual movement')
+  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
   const [videoSourceUrl, setVideoSourceUrl] = useState('')
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
@@ -166,17 +167,38 @@ export default function Chat() {
     setLoading(false)
   }
 
-  const openPromptModal = (includeUser) => {
-    const recent = messages.filter(m => m.role !== 'image' && m.role !== 'video').slice(-4).map(m => m.content).join(' ')
-    const sceneContext = recent ? `current scene: ${recent.slice(0, 300)}` : ''
-    setPromptText(buildImagePrompt(character, sceneContext, includeUser, userDescription))
+  const openPromptModal = async (includeUser) => {
     setNegativeText(DEFAULT_NEGATIVE)
     setSeedText('')
     setGuidance(3.5)
     setSteps(28)
     setImageModel(character?.image_model || 'z-image/turbo')
+    // show the modal right away with a base prompt, then refine with scene params
+    setPromptText(buildImagePrompt(character, {}, includeUser, userDescription))
     setShowPromptModal(true)
+
+    setPreparingPrompt(true)
+    try {
+      const recent = messages
+        .filter(m => m.role !== 'image' && m.role !== 'video')
+        .slice(-6)
+        .map(m => `${m.role === 'user' ? 'You' : character.name}: ${m.content}`)
+        .join('\n')
+
+      const r = await fetch('/api/extract-scene', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversation: recent, model: character?.chat_model }),
+      })
+      const scene = await r.json()
+      setPromptText(buildImagePrompt(character, scene, includeUser, userDescription))
+    } catch (err) {
+      // keep the base prompt on failure
+    }
+    setPreparingPrompt(false)
   }
+
+
 
   const confirmGenerate = async () => {
     setShowPromptModal(false)
@@ -646,7 +668,9 @@ export default function Chat() {
         <div className="fixed inset-0 bg-black/70 flex items-start justify-center p-5 z-50 overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
             <h2 className="font-bold text-lg mb-2">Edit Image Prompt</h2>
-            <p className="text-xs text-gray-500 mb-3">Tweak the scene, outfit, or details before generating.</p>
+            <p className="text-xs text-gray-500 mb-3">
+              {preparingPrompt ? 'Reading the current scene...' : 'Tweak the scene, outfit, or details before generating.'}
+            </p>
 
             <label className="block text-xs text-gray-400 mb-1">Image Model</label>
             <select value={imageModel} onChange={e => setImageModel(e.target.value)}
