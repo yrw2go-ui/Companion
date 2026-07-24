@@ -42,6 +42,61 @@ export default async function handler(req, res) {
       if (f) protectedFiles.add(f)
     }
 
+    // favorited gallery media is kept regardless of age
+    const { data: favs } = await supabaseAdmin
+      .from('gallery_media')
+      .select('url, poster_url')
+      .eq('is_favorite', true)
+    for (const g of favs || []) {
+      for (const u of [g.url, g.poster_url]) {
+        const f = fileFromUrl(u)
+        if (f) protectedFiles.add(f)
+      }
+    }
+
+    // anything filed into a folder is kept, whatever its source.
+    // resolve each folder_items key back to its actual file URL.
+    const { data: filed } = await supabaseAdmin
+      .from('folder_items')
+      .select('source, item_key')
+    if (filed && filed.length) {
+      // gather the ids we need per source
+      const galIds = []
+      const msgIds = []
+      const cardIds = []
+      for (const fi of filed) {
+        const key = fi.item_key || ''
+        if (key.startsWith('gal_')) galIds.push(key.slice(4))
+        else if (key.startsWith('msg_')) msgIds.push(key.slice(4))
+        else if (key.startsWith('card_front_')) cardIds.push(key.slice(11))
+        else if (key.startsWith('card_back_')) cardIds.push(key.slice(10))
+        else if (key.startsWith('card_video_')) cardIds.push(key.slice(11))
+      }
+
+      if (galIds.length) {
+        const { data: rows } = await supabaseAdmin
+          .from('gallery_media').select('url, poster_url').in('id', galIds)
+        for (const r of rows || []) for (const u of [r.url, r.poster_url]) {
+          const f = fileFromUrl(u); if (f) protectedFiles.add(f)
+        }
+      }
+      if (msgIds.length) {
+        const { data: rows } = await supabaseAdmin
+          .from('messages').select('content, poster_url').in('id', msgIds)
+        for (const r of rows || []) for (const u of [r.content, r.poster_url]) {
+          const f = fileFromUrl(u); if (f) protectedFiles.add(f)
+        }
+      }
+      // card files are already protected above, but include for completeness
+      if (cardIds.length) {
+        const { data: rows } = await supabaseAdmin
+          .from('cards').select('image_url, back_image_url, video_url, poster_url').in('id', cardIds)
+        for (const r of rows || []) for (const u of [r.image_url, r.back_image_url, r.video_url, r.poster_url]) {
+          const f = fileFromUrl(u); if (f) protectedFiles.add(f)
+        }
+      }
+    }
+
     // 2. list every file in the bucket (paginated)
     const cutoff = Date.now() - CUTOFF_DAYS * 24 * 60 * 60 * 1000
     const toDelete = []
