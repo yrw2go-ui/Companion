@@ -1,12 +1,12 @@
 // pages/gallery.js
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 import { makePoster } from '../lib/posterFrame'
 
 const VIDEO_MODELS = [
   { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
-  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Turbo Spicy (fast, 5s)' },
+  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
 ]
 
@@ -47,6 +47,7 @@ export default function Gallery() {
   const [activeFolder, setActiveFolder] = useState('all')  // 'all' | 'unfiled' | folderId
   const [folderModal, setFolderModal] = useState(null)  // { mode:'create'|'rename', id?, name }
   const [folderMap, setFolderMap] = useState({})  // item_key -> folder_id
+  const downloadCounter = useRef(0)
   const [gSort, setGSort] = useState('date_desc')
   const [gSearch, setGSearch] = useState('')
   const [favOnly, setFavOnly] = useState(false)
@@ -64,7 +65,7 @@ export default function Gallery() {
 
   const [showVideo, setShowVideo] = useState(false)
   const [videoSource, setVideoSource] = useState('')
-  const [videoPrompt, setVideoPrompt] = useState('smooth natural motion, sensual movement')
+  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
   const [videoModel, setVideoModel] = useState('alibaba/wan-2.6/image-to-video')
@@ -300,7 +301,7 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrombody('smooth natural motion, subtle movement')
+    setVideoPrompt('gentle natural motion, subtle movement')
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideo(true)
@@ -777,8 +778,10 @@ export default function Gallery() {
       const stamp = new Date(item.created_at || Date.now()).toISOString().slice(0, 10)
       const base = (item.prompt ? item.prompt.slice(0, 30).replace(/[^a-z0-9]+/gi, '_') : item.type) || 'media'
       const ext = isVideo ? 'mp4' : (item.url.toLowerCase().includes('.png') ? 'png' : 'jpeg')
+      downloadCounter.current += 1
+      const seq = String(downloadCounter.current).padStart(3, '0')
       a.href = objUrl
-      a.download = `${base}_${stamp}.${ext}`
+      a.download = `${base}_${stamp}_${seq}.${ext}`
       document.body.appendChild(a)
       a.click()
       a.remove()
