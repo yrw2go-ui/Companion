@@ -129,10 +129,22 @@ export default function Settings() {
     setImporting(false)
   }
 
+  // does this image URL actually load? broken/blank posters return false
+  const posterLoads = (url) => new Promise((resolve) => {
+    if (!url) { resolve(false); return }
+    const img = new Image()
+    let done = false
+    const finish = (ok) => { if (!done) { done = true; resolve(ok) } }
+    img.onload = () => finish(img.naturalWidth > 0)
+    img.onerror = () => finish(false)
+    setTimeout(() => finish(false), 6000)
+    img.src = url
+  })
+
   const backfillPosters = async () => {
     if (posterizing) return
     setPosterizing(true)
-    setPosterStatus('Finding videos without posters...')
+    setPosterStatus('Checking existing thumbnails...')
 
     try {
       // gallery videos missing a poster
@@ -141,18 +153,31 @@ export default function Settings() {
         .select('id, url, poster_url')
         .eq('type', 'video')
 
-      const galMissing = (gal || []).filter(g => g.url && !g.poster_url)
+      // include videos with no poster AND those whose poster no longer loads
+      const galCandidates = (gal || []).filter(g => g.url)
+      const galMissing = []
+      for (const g of galCandidates) {
+        if (!g.poster_url) { galMissing.push(g); continue }
+        const ok = await posterLoads(g.poster_url)
+        if (!ok) galMissing.push(g)
+      }
 
       // animated cards missing a poster
       const { data: cards } = await supabase
         .from('cards')
         .select('id, video_url, poster_url')
 
-      const cardMissing = (cards || []).filter(c => c.video_url && !c.poster_url)
+      const cardCandidates = (cards || []).filter(c => c.video_url)
+      const cardMissing = []
+      for (const c of cardCandidates) {
+        if (!c.poster_url) { cardMissing.push(c); continue }
+        const ok = await posterLoads(c.poster_url)
+        if (!ok) cardMissing.push(c)
+      }
 
       const total = galMissing.length + cardMissing.length
       if (total === 0) {
-        setPosterStatus('All videos already have posters.')
+        setPosterStatus('All videos already have working thumbnails.')
         setPosterizing(false)
         return
       }
