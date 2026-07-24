@@ -4,7 +4,16 @@ import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabaseClient'
 import { buildImagePrompt } from '../../lib/buildImagePrompt'
 
-const DEFAULT_NEGATIVE = 'blurry, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+
+const IMAGE_MODELS = [
+  { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux' },
+  { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux' },
+  { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell' },
+  { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream' },
+  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok' },
+]
+const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
 
 export default function Chat() {
   const router = useRouter()
@@ -24,6 +33,7 @@ export default function Chat() {
   const [seedText, setSeedText] = useState('')
   const [guidance, setGuidance] = useState(3.5)
   const [steps, setSteps] = useState(28)
+  const [imageModel, setImageModel] = useState('z-image/turbo')
   const [autoPlay, setAutoPlay] = useState(false)
   const [speakingIdx, setSpeakingIdx] = useState(null)
   const [showVideoModal, setShowVideoModal] = useState(false)
@@ -164,6 +174,7 @@ export default function Chat() {
     setSeedText('')
     setGuidance(3.5)
     setSteps(28)
+    setImageModel(character?.image_model || 'z-image/turbo')
     setShowPromptModal(true)
   }
 
@@ -175,16 +186,22 @@ export default function Chat() {
     setMessages(prev => [...prev, { role: 'image', content: 'generating' }])
 
     try {
+      const fam = imgFamilyOf(imageModel)
+      const payload = { model: imageModel, prompt: promptText }
+      if (fam === 'grok') {
+        payload.aspectRatio = '3:4'; payload.resolution = '2k'
+      } else if (fam === 'seedream') {
+        payload.size = '1328*1776'; payload.thinking = 'disabled'
+      } else if (fam === 'schnell') {
+        payload.negativePrompt = negativeText; payload.seed = seedText || undefined
+      } else {
+        payload.negativePrompt = negativeText; payload.seed = seedText || undefined
+        payload.guidance = guidance; payload.steps = steps
+      }
       const res = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: promptText,
-          negativePrompt: negativeText,
-          seed: seedText || undefined,
-          guidance,
-          steps,
-        }),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (data.imageUrl) {
@@ -631,29 +648,49 @@ export default function Chat() {
             <h2 className="font-bold text-lg mb-2">Edit Image Prompt</h2>
             <p className="text-xs text-gray-500 mb-3">Tweak the scene, outfit, or details before generating.</p>
 
+            <label className="block text-xs text-gray-400 mb-1">Image Model</label>
+            <select value={imageModel} onChange={e => setImageModel(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-1">
+              {IMAGE_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+            <p className="text-[10px] text-gray-600 mb-3">
+              {imgFamilyOf(imageModel) === 'seedream' && 'Highest resolution. No seed or negative prompt.'}
+              {imgFamilyOf(imageModel) === 'grok' && 'Stylized. No seed or negative prompt.'}
+              {imgFamilyOf(imageModel) === 'schnell' && 'Fast, lower cost. Uses seed + negative.'}
+              {imgFamilyOf(imageModel) === 'flux' && 'Balanced. Full control.'}
+            </p>
+
             <label className="block text-xs text-gray-400 mb-1">Prompt</label>
             <textarea value={promptText} onChange={e => setPromptText(e.target.value)} rows={7}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3" />
 
-            <label className="block text-xs text-gray-400 mb-1">Negative Prompt</label>
-            <textarea value={negativeText} onChange={e => setNegativeText(e.target.value)} rows={3}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3" />
+            {(imgFamilyOf(imageModel) === 'flux' || imgFamilyOf(imageModel) === 'schnell') && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Negative Prompt</label>
+                <textarea value={negativeText} onChange={e => setNegativeText(e.target.value)} rows={3}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3" />
 
-            <label className="block text-xs text-gray-400 mb-1">Seed (optional)</label>
-            <input value={seedText} onChange={e => setSeedText(e.target.value)} placeholder="leave blank for random"
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3" />
+                <label className="block text-xs text-gray-400 mb-1">Seed (optional)</label>
+                <input value={seedText} onChange={e => setSeedText(e.target.value)} placeholder="leave blank for random"
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3" />
+              </>
+            )}
 
-            <label className="block text-xs text-gray-400 mb-1">Guidance: {guidance}</label>
-            <input type="range" min="1" max="10" step="0.5" value={guidance}
-              onChange={e => setGuidance(parseFloat(e.target.value))}
-              className="w-full mb-1 accent-purple-500" />
-            <p className="text-[10px] text-gray-600 mb-3">Low (2-4) = softer, more natural. High (6+) = rigid, can look over-cooked. Flux likes 3-4.</p>
+            {imgFamilyOf(imageModel) === 'flux' && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Guidance: {guidance}</label>
+                <input type="range" min="1" max="10" step="0.5" value={guidance}
+                  onChange={e => setGuidance(parseFloat(e.target.value))}
+                  className="w-full mb-1 accent-purple-500" />
+                <p className="text-[10px] text-gray-600 mb-3">Low (2-4) = softer, more natural. High (6+) = rigid, can look over-cooked. Flux likes 3-4.</p>
 
-            <label className="block text-xs text-gray-400 mb-1">Steps: {steps}</label>
-            <input type="range" min="10" max="50" step="1" value={steps}
-              onChange={e => setSteps(parseInt(e.target.value))}
-              className="w-full mb-1 accent-purple-500" />
-            <p className="text-[10px] text-gray-600 mb-4">More steps = more detail, slower. 28 is a good default.</p>
+                <label className="block text-xs text-gray-400 mb-1">Steps: {steps}</label>
+                <input type="range" min="10" max="50" step="1" value={steps}
+                  onChange={e => setSteps(parseInt(e.target.value))}
+                  className="w-full mb-1 accent-purple-500" />
+                <p className="text-[10px] text-gray-600 mb-4">More steps = more detail, slower. 28 is a good default.</p>
+              </>
+            )}
 
             <div className="flex gap-2">
               <button onClick={() => setShowPromptModal(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
