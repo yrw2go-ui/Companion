@@ -59,7 +59,7 @@ export default function Settings() {
 
   const cleanup = async () => {
     if (cleaning) return
-    if (!confirm('Delete all images, audio, and video older than 90 days? Cards and character images are kept. This cannot be undone.')) return
+    if (!confirm('Delete all images, audio, and video older than 90 days? Cards and character images are kept along with foldered media. This cannot be undone.')) return
 
     setCleaning(true)
     setCleanResult(null)
@@ -175,7 +175,21 @@ export default function Settings() {
         if (!ok) cardMissing.push(c)
       }
 
-      const total = galMissing.length + cardMissing.length
+      // chat videos missing a poster
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('id, content, poster_url')
+        .eq('role', 'video')
+
+      const msgCandidates = (msgs || []).filter(m => m.content && m.content !== 'generating')
+      const msgMissing = []
+      for (const m of msgCandidates) {
+        if (!m.poster_url) { msgMissing.push(m); continue }
+        const ok = await posterLoads(m.poster_url)
+        if (!ok) msgMissing.push(m)
+      }
+
+      const total = galMissing.length + cardMissing.length + msgMissing.length
       if (total === 0) {
         setPosterStatus('All videos already have working thumbnails.')
         setPosterizing(false)
@@ -201,6 +215,17 @@ export default function Settings() {
         const poster = await makePoster(c.video_url)
         if (poster) {
           await supabase.from('cards').update({ poster_url: poster }).eq('id', c.id)
+        } else {
+          failed++
+        }
+        done++
+      }
+
+      for (const m of msgMissing) {
+        setPosterStatus(`Generating posters... ${done + 1} of ${total}`)
+        const poster = await makePoster(m.content)
+        if (poster) {
+          await supabase.from('messages').update({ poster_url: poster }).eq('id', m.id)
         } else {
           failed++
         }
