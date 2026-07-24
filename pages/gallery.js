@@ -6,7 +6,7 @@ import { makePoster } from '../lib/posterFrame'
 
 const VIDEO_MODELS = [
   { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
-  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
+  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Turbo Spicy (fast, 5s)' },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
 ]
 
