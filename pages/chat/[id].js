@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabaseClient'
 import { buildImagePrompt } from '../../lib/buildImagePrompt'
+import { makePoster } from '../../lib/posterFrame'
 
 const DEFAULT_NEGATIVE = 'blurry, mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
@@ -14,6 +15,12 @@ const IMAGE_MODELS = [
   { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok' },
 ]
 const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
+
+const VIDEO_MODELS = [
+  { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
+  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
+  { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
+]
 
 export default function Chat() {
   const router = useRouter()
@@ -38,10 +45,11 @@ export default function Chat() {
   const [autoPlay, setAutoPlay] = useState(false)
   const [speakingIdx, setSpeakingIdx] = useState(null)
   const [showVideoModal, setShowVideoModal] = useState(false)
-  const [videoPrompt, setVideoPrompt] = useState('smooth natural motion, sensual movement')
+  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
   const [videoSourceUrl, setVideoSourceUrl] = useState('')
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
+  const [videoModel, setVideoModel] = useState('alibaba/wan-2.6/image-to-video')
   const [videoing, setVideoing] = useState(false)
   const [menuIdx, setMenuIdx] = useState(null)
   const [editIdx, setEditIdx] = useState(null)
@@ -277,13 +285,14 @@ export default function Chat() {
       const res = await fetch('/api/generate-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: videoSourceUrl, prompt: videoPrompt, duration: videoDuration, resolution: videoRes }),
+        body: JSON.stringify({ imageUrl: videoSourceUrl, prompt: videoPrompt, duration: videoDuration, resolution: videoRes, model: videoModel }),
       })
       const data = await res.json()
       if (data.videoUrl) {
+        const poster = await makePoster(data.videoUrl)
         setMessages(prev => {
           const copy = [...prev]
-          copy[copy.length - 1] = { role: 'video', content: data.videoUrl }
+          copy[copy.length - 1] = { role: 'video', content: data.videoUrl, poster_url: poster }
           return copy
         })
         await supabase.from('messages').insert([{
@@ -291,11 +300,14 @@ export default function Chat() {
           role: 'video',
           content: data.videoUrl,
           prompt: videoPrompt,
+          poster_url: poster,
         }])
       } else {
         setMessages(prev => {
           const copy = [...prev]
-          copy[copy.length - 1] = { role: 'assistant', content: '[Video error: ' + (data.error || 'failed') + ']' }
+          const dtl = data.atlasResponse ? ' | ' + JSON.stringify(data.atlasResponse).slice(0,200) : ''
+          const snt = data.sentBody ? ' | sent: ' + JSON.stringify(data.sentBody).slice(0,200) : ''
+          copy[copy.length - 1] = { role: 'assistant', content: '[Video error: ' + (data.error || 'failed') + dtl + snt + ']' }
           return copy
         })
       }
@@ -554,7 +566,7 @@ export default function Chat() {
             }
             return (
               <div key={i} className="relative max-w-[80%] mr-auto">
-                <video src={m.content} controls loop className="w-full rounded-2xl" />
+                <video src={m.content} controls loop preload="none" poster={m.poster_url || undefined} className="w-full rounded-2xl" />
                 <button onClick={() => deleteMedia(m.content, 'video')}
                   className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white rounded-full w-7 h-7 flex items-center justify-center text-sm" title="Delete video">✕</button>
               </div>
@@ -735,6 +747,12 @@ export default function Chat() {
             <label className="block text-xs text-gray-400 mb-1">Motion Prompt</label>
             <textarea value={videoPrompt} onChange={e => setVideoPrompt(e.target.value)} rows={3}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3" />
+
+            <label className="block text-xs text-gray-400 mb-1">Video Model</label>
+            <select value={videoModel} onChange={e => setVideoModel(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-purple-500 outline-none text-sm mb-3">
+              {VIDEO_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
 
             <label className="block text-xs text-gray-400 mb-1">Length</label>
             <select value={videoDuration} onChange={e => setVideoDuration(parseInt(e.target.value))}
