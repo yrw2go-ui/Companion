@@ -4,6 +4,29 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 import { makePoster } from '../lib/posterFrame'
 
+const VIDEO_MODELS = [
+  { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
+  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
+  { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
+]
+
+const T2V_MODEL = 'xai/grok-imagine-video/text-to-video'
+
+const IMAGE_MODELS = [
+  { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux' },
+  { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux' },
+  { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell' },
+  { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream' },
+  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok' },
+]
+const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
+
+// image-to-image (transform) models
+const I2I_MODELS = [
+  { id: 'alibaba/wan-2.7-pro/image-edit', label: 'Wan 2.7 Pro (edit)' },
+  { id: 'bytedance/seedream-v5.0-pro/edit', label: 'Seedream 5 Pro (edit)' },
+]
+
 const DEFAULT_NEGATIVE = 'blurry, mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
@@ -40,6 +63,22 @@ export default function Gallery() {
   const [videoPrompt, setVideoPrompt] = useState('smooth natural motion, sensual movement')
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
+  const [videoModel, setVideoModel] = useState('alibaba/wan-2.6/image-to-video')
+
+  const [createModel, setCreateModel] = useState('z-image/turbo')
+
+  const [showTransform, setShowTransform] = useState(false)
+  const [transformSource, setTransformSource] = useState(null)
+  const [transformPrompt, setTransformPrompt] = useState('')
+  const [transformModel, setTransformModel] = useState('alibaba/wan-2.7-pro/image-edit')
+  const [transforming, setTransforming] = useState(false)
+
+  const [showT2V, setShowT2V] = useState(false)
+  const [t2vPrompt, setT2vPrompt] = useState('')
+  const [t2vDuration, setT2vDuration] = useState(8)
+  const [t2vRes, setT2vRes] = useState('720p')
+  const [t2vAspect, setT2vAspect] = useState('9:16')
+  const [t2vBusy, setT2vBusy] = useState(false)
   const [animating, setAnimating] = useState(false)
 
   const [showExtend, setShowExtend] = useState(false)
@@ -175,6 +214,7 @@ export default function Gallery() {
     setCharId('')
     setGuidance(3.5)
     setSteps(28)
+    setCreateModel('z-image/turbo')
     setShowCreate(true)
   }
 
@@ -187,6 +227,7 @@ export default function Gallery() {
     setCharId('')
     setGuidance(3.5)
     setSteps(28)
+    setCreateModel('z-image/turbo')
     setSelected(null)
     setShowCreate(true)
   }
@@ -195,17 +236,22 @@ export default function Gallery() {
     if (!prompt.trim() || creating) return
     setCreating(true)
     try {
+      const fam = imgFamilyOf(createModel)
+      const payload = { model: createModel, prompt }
+      if (fam === 'grok') {
+        payload.aspectRatio = '2:3'; payload.resolution = '2k'
+      } else if (fam === 'seedream') {
+        payload.size = '1328*1776'; payload.thinking = 'disabled'
+      } else if (fam === 'schnell') {
+        payload.size = size; payload.seed = seed || undefined; payload.negativePrompt = negative
+      } else {
+        payload.size = size; payload.seed = seed || undefined
+        payload.negativePrompt = negative; payload.guidance = guidance; payload.steps = steps
+      }
       const res = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          negativePrompt: negative,
-          seed: seed || undefined,
-          size,
-          guidance,
-          steps,
-        }),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (!data.imageUrl) {
@@ -251,7 +297,7 @@ export default function Gallery() {
       const res = await fetch('/api/generate-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: videoSource, prompt: videoPrompt, duration: videoDuration, resolution: videoRes }),
+        body: JSON.stringify({ imageUrl: videoSource, prompt: videoPrompt, duration: videoDuration, resolution: videoRes, model: videoModel }),
       })
       const data = await res.json()
       if (!data.videoUrl) {
@@ -501,6 +547,94 @@ export default function Gallery() {
   // clear the copied indicator whenever the detail selection changes
   // (kept simple: reset on close/open via the button timeout is enough)
 
+  const openTransform = (item) => {
+    setTransformSource(item)
+    setTransformPrompt('')
+    setTransformModel('alibaba/wan-2.7-pro/image-edit')
+    setSelected(null)
+    setShowTransform(true)
+  }
+
+  const runTransform = async () => {
+    if (transforming) return
+    if (!transformPrompt.trim()) { alert('Describe the change you want'); return }
+    setShowTransform(false)
+    setTransforming(true)
+    setAnimating(true)   // reuse the busy banner
+    try {
+      // the API routes to Wan edit when referenceImageUrl is present; for
+      // Seedream edit we pass the model explicitly and it also uses images[]
+      const payload = {
+        prompt: transformPrompt,
+        referenceImageUrl: transformSource.url,
+      }
+      if (transformModel === 'bytedance/seedream-v5.0-pro/edit') {
+        payload.model = 'bytedance/seedream-v5.0-pro/edit'
+      }
+      const res = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (!data.imageUrl) {
+        alert('Error: ' + (data.error || 'failed'))
+        setTransforming(false); setAnimating(false)
+        return
+      }
+      await supabase.from('gallery_media').insert([{
+        type: 'image',
+        url: data.imageUrl,
+        prompt: transformPrompt,
+      }])
+      load()
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+    setTransforming(false)
+    setAnimating(false)
+  }
+
+  const runT2V = async () => {
+    if (t2vBusy) return
+    if (!t2vPrompt.trim()) { alert('Describe the video you want'); return }
+    setShowT2V(false)
+    setT2vBusy(true)
+    setAnimating(true)
+    try {
+      const res = await fetch('/api/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: T2V_MODEL,
+          prompt: t2vPrompt,
+          duration: t2vDuration,
+          resolution: t2vRes,
+          aspectRatio: t2vAspect,
+        }),
+      })
+      const data = await res.json()
+      if (!data.videoUrl) {
+        alert('Error: ' + (data.error || 'failed'))
+        setT2vBusy(false); setAnimating(false)
+        return
+      }
+      const poster = await makePoster(data.videoUrl)
+      await supabase.from('gallery_media').insert([{
+        type: 'video',
+        url: data.videoUrl,
+        prompt: t2vPrompt,
+        poster_url: poster,
+      }])
+      setT2vPrompt('')
+      load()
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+    setT2vBusy(false)
+    setAnimating(false)
+  }
+
   const remove = async (item) => {
     if (!confirm('Delete this permanently?')) return
     await supabase.from(item.source).delete().eq('id', item.id)
@@ -559,9 +693,14 @@ export default function Gallery() {
       <div className="flex items-center justify-between mb-4">
         <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <h1 className="text-xl font-bold">Gallery</h1>
-        <button onClick={openCreate} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">
-          + Create
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowT2V(true)} className="bg-gray-800 hover:bg-gray-700 rounded-full px-3 py-2 text-sm font-semibold" title="Video from text">
+            🎬 Text
+          </button>
+          <button onClick={openCreate} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">
+            + Create
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-2 mb-3">
@@ -645,14 +784,24 @@ export default function Gallery() {
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
             <h2 className="font-bold text-lg mb-3">Create Image</h2>
 
+            <label className="block text-xs text-gray-400 mb-1">Model</label>
+            <select value={createModel} onChange={e => setCreateModel(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              {IMAGE_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+
             <label className="block text-xs text-gray-400 mb-1">Prompt</label>
             <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={5}
               placeholder="describe the image..."
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
 
-            <label className="block text-xs text-gray-400 mb-1">Negative Prompt</label>
-            <textarea value={negative} onChange={e => setNegative(e.target.value)} rows={3}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+            {(imgFamilyOf(createModel) === 'flux' || imgFamilyOf(createModel) === 'schnell') && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Negative Prompt</label>
+                <textarea value={negative} onChange={e => setNegative(e.target.value)} rows={3}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+              </>
+            )}
 
             <label className="block text-xs text-gray-400 mb-1">Aspect Ratio</label>
             <select value={size} onChange={e => setSize(e.target.value)}
@@ -660,21 +809,33 @@ export default function Gallery() {
               {SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
 
-            <label className="block text-xs text-gray-400 mb-1">Seed (optional)</label>
-            <input value={seed} onChange={e => setSeed(e.target.value)} placeholder="leave blank for random"
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+            {(imgFamilyOf(createModel) === 'flux' || imgFamilyOf(createModel) === 'schnell') && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Seed (optional)</label>
+                <input value={seed} onChange={e => setSeed(e.target.value)} placeholder="leave blank for random"
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+              </>
+            )}
 
-            <label className="block text-xs text-gray-400 mb-1">Guidance: {guidance}</label>
-            <input type="range" min="1" max="10" step="0.5" value={guidance}
-              onChange={e => setGuidance(parseFloat(e.target.value))}
-              className="w-full mb-1 accent-purple-500" />
-            <p className="text-[10px] text-gray-600 mb-3">Low (2-4) = softer, more natural. High (6+) = rigid, can look over-cooked. Flux likes 3-4.</p>
+            {imgFamilyOf(createModel) === 'flux' && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Guidance: {guidance}</label>
+                <input type="range" min="1" max="10" step="0.5" value={guidance}
+                  onChange={e => setGuidance(parseFloat(e.target.value))}
+                  className="w-full mb-1 accent-purple-500" />
+                <p className="text-[10px] text-gray-600 mb-3">Low (2-4) = softer, more natural. High (6+) = rigid, can look over-cooked. Flux likes 3-4.</p>
+              </>
+            )}
 
-            <label className="block text-xs text-gray-400 mb-1">Steps: {steps}</label>
-            <input type="range" min="10" max="50" step="1" value={steps}
-              onChange={e => setSteps(parseInt(e.target.value))}
-              className="w-full mb-1 accent-purple-500" />
-            <p className="text-[10px] text-gray-600 mb-3">More steps = more detail, slower. 28 is a good default.</p>
+            {imgFamilyOf(createModel) === 'flux' && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Steps: {steps}</label>
+                <input type="range" min="10" max="50" step="1" value={steps}
+                  onChange={e => setSteps(parseInt(e.target.value))}
+                  className="w-full mb-1 accent-purple-500" />
+                <p className="text-[10px] text-gray-600 mb-3">More steps = more detail, slower. 28 is a good default.</p>
+              </>
+            )}
 
             <label className="block text-xs text-gray-400 mb-1">Tag to Character (optional)</label>
             <select value={charId} onChange={e => setCharId(e.target.value)}
@@ -704,6 +865,12 @@ export default function Gallery() {
             <textarea value={videoPrompt} onChange={e => setVideoPrompt(e.target.value)} rows={3}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
 
+            <label className="block text-xs text-gray-400 mb-1">Video Model</label>
+            <select value={videoModel} onChange={e => setVideoModel(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              {VIDEO_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+
             <label className="block text-xs text-gray-400 mb-1">Length</label>
             <select value={videoDuration} onChange={e => setVideoDuration(parseInt(e.target.value))}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
@@ -723,6 +890,84 @@ export default function Gallery() {
             <div className="flex gap-2">
               <button onClick={() => setShowVideo(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
               <button onClick={animate} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Animate</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TRANSFORM (image-to-image) */}
+      {showTransform && transformSource && (
+        <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-[60] overflow-y-auto">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
+            <h2 className="font-bold text-lg mb-2">Transform Image</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Feeds this image into an edit model and changes it by your instruction, keeping the
+              subject and composition. Good for tweaks and for keeping a face consistent. Saves as a new image.
+            </p>
+
+            <img src={transformSource.url} alt="" className="w-32 rounded-lg mb-3 border border-gray-700" />
+
+            <label className="block text-xs text-gray-400 mb-1">Edit Model</label>
+            <select value={transformModel} onChange={e => setTransformModel(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              {I2I_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+
+            <label className="block text-xs text-gray-400 mb-1">What should change?</label>
+            <textarea value={transformPrompt} onChange={e => setTransformPrompt(e.target.value)} rows={4}
+              placeholder="e.g. change the background to a sunlit beach; keep the person exactly the same"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500" />
+
+            <div className="flex gap-2">
+              <button onClick={() => setShowTransform(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={runTransform} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Transform</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TEXT TO VIDEO */}
+      {showT2V && (
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-5 z-[60]">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
+            <h2 className="font-bold text-lg mb-2">Video from Text</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Generates a video from a description alone, no starting image. Uses Grok Imagine. 1-3 min.
+            </p>
+
+            <label className="block text-xs text-gray-400 mb-1">Describe the video</label>
+            <textarea value={t2vPrompt} onChange={e => setT2vPrompt(e.target.value)} rows={4}
+              placeholder="e.g. a woman walking along a rainy neon-lit street at night, cinematic, slow motion"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+
+            <label className="block text-xs text-gray-400 mb-1">Aspect Ratio</label>
+            <select value={t2vAspect} onChange={e => setT2vAspect(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              <option value="9:16">9:16 (portrait)</option>
+              <option value="16:9">16:9 (landscape)</option>
+              <option value="1:1">1:1 (square)</option>
+              <option value="3:4">3:4</option>
+              <option value="4:3">4:3</option>
+            </select>
+
+            <label className="block text-xs text-gray-400 mb-1">Length</label>
+            <select value={t2vDuration} onChange={e => setT2vDuration(parseInt(e.target.value))}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              <option value={5}>5 seconds</option>
+              <option value={8}>8 seconds</option>
+            </select>
+
+            <label className="block text-xs text-gray-400 mb-1">Resolution</label>
+            <select value={t2vRes} onChange={e => setT2vRes(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500">
+              <option value="480p">480p</option>
+              <option value="720p">720p</option>
+            </select>
+            <p className="text-[10px] text-gray-600 -mt-3 mb-4">Grok text-to-video maxes at 720p.</p>
+
+            <div className="flex gap-2">
+              <button onClick={() => setShowT2V(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={runT2V} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Generate</button>
             </div>
           </div>
         </div>
@@ -863,6 +1108,13 @@ export default function Gallery() {
               <button onClick={() => openAnimate(selected.url)}
                 className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
                 🎬 Animate
+              </button>
+            )}
+
+            {selected.type === 'image' && (
+              <button onClick={() => openTransform(selected)}
+                className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
+                ✎ Transform (edit this image)
               </button>
             )}
 
