@@ -6,7 +6,7 @@ import { makePoster } from '../lib/posterFrame'
 
 const VIDEO_MODELS = [
   { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
-  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
+  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Turbo Spicy (fast, 5s)' },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
 ]
 
@@ -60,7 +60,7 @@ export default function Gallery() {
 
   const [showVideo, setShowVideo] = useState(false)
   const [videoSource, setVideoSource] = useState('')
-  const [videoPrompt, setVideoPrompt] = useState('smooth natural motion, sensual movement')
+  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
   const [videoModel, setVideoModel] = useState('alibaba/wan-2.6/image-to-video')
@@ -282,7 +282,7 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrompt('smooth natural motion, sensual movement')
+    setVideoPrompt('gentle natural motion, subtle movement')
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideo(true)
@@ -560,7 +560,6 @@ export default function Gallery() {
     if (!transformPrompt.trim()) { alert('Describe the change you want'); return }
     setShowTransform(false)
     setTransforming(true)
-    setAnimating(true)   // reuse the busy banner
     try {
       // the API routes to Wan edit when referenceImageUrl is present; for
       // Seedream edit we pass the model explicitly and it also uses images[]
@@ -579,7 +578,7 @@ export default function Gallery() {
       const data = await res.json()
       if (!data.imageUrl) {
         alert('Error: ' + (data.error || 'failed'))
-        setTransforming(false); setAnimating(false)
+        setTransforming(false)
         return
       }
       await supabase.from('gallery_media').insert([{
@@ -592,7 +591,6 @@ export default function Gallery() {
       alert('Error: ' + err.message)
     }
     setTransforming(false)
-    setAnimating(false)
   }
 
   const runT2V = async () => {
@@ -733,6 +731,12 @@ export default function Gallery() {
       {animating && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-sm text-gray-400">
           Animating... (1-2 min)
+        </div>
+      )}
+
+      {transforming && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-sm text-gray-400">
+          Transforming image... (1-2 min)
         </div>
       )}
 
