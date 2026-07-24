@@ -46,6 +46,7 @@ export default function Gallery() {
   const [folders, setFolders] = useState([])
   const [activeFolder, setActiveFolder] = useState('all')  // 'all' | 'unfiled' | folderId
   const [folderModal, setFolderModal] = useState(null)  // { mode:'create'|'rename', id?, name }
+  const [folderMap, setFolderMap] = useState({})  // item_key -> folder_id
   const [gSort, setGSort] = useState('date_desc')
   const [gSearch, setGSearch] = useState('')
   const [favOnly, setFavOnly] = useState(false)
@@ -113,6 +114,13 @@ export default function Gallery() {
       .select('*')
       .order('created_at', { ascending: true })
     setFolders(folderRows || [])
+
+    const { data: folderItemRows } = await supabase
+      .from('folder_items')
+      .select('*')
+    const fmap = {}
+    for (const fi of folderItemRows || []) fmap[fi.item_key] = fi.folder_id
+    setFolderMap(fmap)
 
     const { data: cardRows } = await supabase
       .from('cards')
@@ -677,18 +685,36 @@ export default function Gallery() {
     const { error } = await supabase.from('gallery_folders').delete().eq('id', folder.id)
     if (error) { alert('Could not delete: ' + error.message); return }
     setFolders(prev => prev.filter(f => f.id !== folder.id))
+    setFolderMap(prev => {
+      const next = { ...prev }
+      for (const k of Object.keys(next)) if (next[k] === folder.id) delete next[k]
+      return next
+    })
     if (activeFolder === folder.id) setActiveFolder('all')
-    load()
   }
 
   const assignFolder = async (item, folderId) => {
-    if (item.source !== 'gallery_media') return
-    setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, folder_id: folderId } : m)))
-    setSelected(prev => (prev && prev.key === item.key ? { ...prev, folder_id: folderId } : prev))
+    // update the local map immediately
+    setFolderMap(prev => {
+      const next = { ...prev }
+      if (folderId) next[item.key] = folderId
+      else delete next[item.key]
+      return next
+    })
+
+    if (!folderId) {
+      const { error } = await supabase
+        .from('folder_items')
+        .delete()
+        .eq('source', item.source)
+        .eq('item_key', item.key)
+      if (error) alert('Could not unfile: ' + error.message)
+      return
+    }
+
     const { error } = await supabase
-      .from('gallery_media')
-      .update({ folder_id: folderId })
-      .eq('id', item.id)
+      .from('folder_items')
+      .upsert({ source: item.source, item_key: item.key, folder_id: folderId }, { onConflict: 'source,item_key' })
     if (error) alert('Could not move: ' + error.message)
   }
 
@@ -745,11 +771,11 @@ export default function Gallery() {
       list = list.filter(m => m.is_favorite)
     }
 
-    if (activeFolder !== 'all' && filter !== 'cards') {
+    if (activeFolder !== 'all') {
       if (activeFolder === 'unfiled') {
-        list = list.filter(m => m.source !== 'gallery_media' ? true : !m.folder_id)
+        list = list.filter(m => !folderMap[m.key])
       } else {
-        list = list.filter(m => m.source === 'gallery_media' && m.folder_id === activeFolder)
+        list = list.filter(m => folderMap[m.key] === activeFolder)
       }
     }
 
@@ -817,7 +843,7 @@ export default function Gallery() {
         </button>
       </div>
 
-      {filter !== 'cards' && (
+      {(
         <div className="flex gap-2 mb-5 overflow-x-auto pb-1 items-center">
           {[['all', 'All'], ['unfiled', 'Unfiled']].map(([val, label]) => (
             <button key={val} onClick={() => setActiveFolder(val)}
@@ -1196,18 +1222,16 @@ export default function Gallery() {
               </button>
             )}
 
-            {selected.source === 'gallery_media' && (
-              <div className="mt-3">
-                <label className="block text-xs text-gray-500 mb-1">Folder</label>
-                <select
-                  value={selected.folder_id || ''}
-                  onChange={e => assignFolder(selected, e.target.value || null)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500">
-                  <option value="">Unfiled</option>
-                  {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                </select>
-              </div>
-            )}
+            <div className="mt-3">
+              <label className="block text-xs text-gray-500 mb-1">Folder</label>
+              <select
+                value={folderMap[selected.key] || ''}
+                onChange={e => assignFolder(selected, e.target.value || null)}
+                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500">
+                <option value="">Unfiled</option>
+                {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </div>
 
             <div className="mt-3 bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2 text-xs">
               <div className="flex items-center justify-between">
