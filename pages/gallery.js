@@ -6,7 +6,7 @@ import { makePoster } from '../lib/posterFrame'
 
 const VIDEO_MODELS = [
   { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
-  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Turbo Spicy (fast, 5s)' },
+  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
 ]
 
@@ -43,6 +43,8 @@ export default function Gallery() {
   const [characters, setCharacters] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
+  const [folders, setFolders] = useState([])
+  const [activeFolder, setActiveFolder] = useState('all')  // 'all' | 'unfiled' | folderId
   const [gSort, setGSort] = useState('date_desc')
   const [gSearch, setGSearch] = useState('')
   const [favOnly, setFavOnly] = useState(false)
@@ -105,6 +107,12 @@ export default function Gallery() {
       .select('*')
       .order('created_at', { ascending: false })
 
+    const { data: folderRows } = await supabase
+      .from('gallery_folders')
+      .select('*')
+      .order('created_at', { ascending: true })
+    setFolders(folderRows || [])
+
     const { data: cardRows } = await supabase
       .from('cards')
       .select('id, name, card_number, image_url, back_image_url, video_url, image_prompt, back_image_prompt, video_prompt, seed, back_seed, created_at')
@@ -131,6 +139,7 @@ export default function Gallery() {
       source: 'gallery_media',
       is_favorite: !!g.is_favorite,
       poster_url: g.poster_url ?? null,
+      folder_id: g.folder_id ?? null,
       type: g.type,
       url: g.url,
       seed: g.seed ?? null,
@@ -282,7 +291,7 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrompt('smooth natural motion, sensual movement')
+    setVideoPrompt('gentle natural motion, subtle movement')
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideo(true)
@@ -635,6 +644,50 @@ export default function Gallery() {
     setAnimating(false)
   }
 
+  const createFolder = async () => {
+    const name = prompt('Folder name?')
+    if (!name || !name.trim()) return
+    const { data, error } = await supabase
+      .from('gallery_folders')
+      .insert([{ name: name.trim() }])
+      .select()
+      .single()
+    if (error) { alert('Could not create folder: ' + error.message); return }
+    setFolders(prev => [...prev, data])
+    setActiveFolder(data.id)
+  }
+
+  const renameFolder = async (folder) => {
+    const name = prompt('Rename folder', folder.name)
+    if (!name || !name.trim()) return
+    const { error } = await supabase
+      .from('gallery_folders')
+      .update({ name: name.trim() })
+      .eq('id', folder.id)
+    if (error) { alert('Could not rename: ' + error.message); return }
+    setFolders(prev => prev.map(f => (f.id === folder.id ? { ...f, name: name.trim() } : f)))
+  }
+
+  const deleteFolder = async (folder) => {
+    if (!confirm(`Delete folder "${folder.name}"? The images inside stay, they just become unfiled.`)) return
+    const { error } = await supabase.from('gallery_folders').delete().eq('id', folder.id)
+    if (error) { alert('Could not delete: ' + error.message); return }
+    setFolders(prev => prev.filter(f => f.id !== folder.id))
+    if (activeFolder === folder.id) setActiveFolder('all')
+    load()
+  }
+
+  const assignFolder = async (item, folderId) => {
+    if (item.source !== 'gallery_media') return
+    setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, folder_id: folderId } : m)))
+    setSelected(prev => (prev && prev.key === item.key ? { ...prev, folder_id: folderId } : prev))
+    const { error } = await supabase
+      .from('gallery_media')
+      .update({ folder_id: folderId })
+      .eq('id', item.id)
+    if (error) alert('Could not move: ' + error.message)
+  }
+
   const remove = async (item) => {
     if (!confirm('Delete this permanently?')) return
     await supabase.from(item.source).delete().eq('id', item.id)
@@ -664,6 +717,14 @@ export default function Gallery() {
 
     if (favOnly) {
       list = list.filter(m => m.is_favorite)
+    }
+
+    if (activeFolder !== 'all' && filter !== 'cards') {
+      if (activeFolder === 'unfiled') {
+        list = list.filter(m => m.source !== 'gallery_media' ? true : !m.folder_id)
+      } else {
+        list = list.filter(m => m.source === 'gallery_media' && m.folder_id === activeFolder)
+      }
     }
 
     const q = gSearch.trim().toLowerCase()
@@ -729,6 +790,35 @@ export default function Gallery() {
           ★ Favorites
         </button>
       </div>
+
+      {filter !== 'cards' && (
+        <div className="flex gap-2 mb-5 overflow-x-auto pb-1 items-center">
+          {[['all', 'All'], ['unfiled', 'Unfiled']].map(([val, label]) => (
+            <button key={val} onClick={() => setActiveFolder(val)}
+              className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${activeFolder === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
+              {label}
+            </button>
+          ))}
+          {folders.map(f => (
+            <button key={f.id}
+              onClick={() => setActiveFolder(f.id)}
+              onDoubleClick={() => renameFolder(f)}
+              className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${activeFolder === f.id ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
+              📁 {f.name}
+            </button>
+          ))}
+          <button onClick={createFolder}
+            className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-900 text-blue-400 border border-blue-900">
+            ＋ Folder
+          </button>
+          {activeFolder !== 'all' && activeFolder !== 'unfiled' && (
+            <button onClick={() => { const f = folders.find(x => x.id === activeFolder); if (f) deleteFolder(f) }}
+              className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 text-red-300">
+              🗑 Delete
+            </button>
+          )}
+        </div>
+      )}
 
       {animating && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-sm text-gray-400">
@@ -1057,6 +1147,19 @@ export default function Gallery() {
                 className={`w-full rounded-lg py-2 text-sm font-semibold mt-3 ${selected.is_favorite ? 'bg-amber-500 text-black hover:bg-amber-400' : 'bg-gray-800 hover:bg-gray-700'}`}>
                 {selected.is_favorite ? '★ Favorited' : '☆ Add to favorites'}
               </button>
+            )}
+
+            {selected.source === 'gallery_media' && (
+              <div className="mt-3">
+                <label className="block text-xs text-gray-500 mb-1">Folder</label>
+                <select
+                  value={selected.folder_id || ''}
+                  onChange={e => assignFolder(selected, e.target.value || null)}
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500">
+                  <option value="">Unfiled</option>
+                  {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+              </div>
             )}
 
             <div className="mt-3 bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2 text-xs">
