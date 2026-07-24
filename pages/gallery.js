@@ -27,7 +27,7 @@ const I2I_MODELS = [
   { id: 'bytedance/seedream-v5.0-pro/edit', label: 'Seedream 5 Pro (edit)' },
 ]
 
-const DEFAULT_NEGATIVE = 'blurry, mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, (Asian), mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4' },
@@ -45,6 +45,7 @@ export default function Gallery() {
   const [filter, setFilter] = useState('all')
   const [folders, setFolders] = useState([])
   const [activeFolder, setActiveFolder] = useState('all')  // 'all' | 'unfiled' | folderId
+  const [folderModal, setFolderModal] = useState(null)  // { mode:'create'|'rename', id?, name }
   const [gSort, setGSort] = useState('date_desc')
   const [gSearch, setGSearch] = useState('')
   const [favOnly, setFavOnly] = useState(false)
@@ -62,7 +63,7 @@ export default function Gallery() {
 
   const [showVideo, setShowVideo] = useState(false)
   const [videoSource, setVideoSource] = useState('')
-  const [videoPrompt, setVideoPrompt] = useState('smooth natural motion, sensual movement')
+  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
   const [videoModel, setVideoModel] = useState('alibaba/wan-2.6/image-to-video')
@@ -644,28 +645,31 @@ export default function Gallery() {
     setAnimating(false)
   }
 
-  const createFolder = async () => {
-    const name = prompt('Folder name?')
-    if (!name || !name.trim()) return
-    const { data, error } = await supabase
-      .from('gallery_folders')
-      .insert([{ name: name.trim() }])
-      .select()
-      .single()
-    if (error) { alert('Could not create folder: ' + error.message); return }
-    setFolders(prev => [...prev, data])
-    setActiveFolder(data.id)
-  }
+  const createFolder = () => setFolderModal({ mode: 'create', name: '' })
+  const renameFolder = (folder) => setFolderModal({ mode: 'rename', id: folder.id, name: folder.name })
 
-  const renameFolder = async (folder) => {
-    const name = prompt('Rename folder', folder.name)
-    if (!name || !name.trim()) return
-    const { error } = await supabase
-      .from('gallery_folders')
-      .update({ name: name.trim() })
-      .eq('id', folder.id)
-    if (error) { alert('Could not rename: ' + error.message); return }
-    setFolders(prev => prev.map(f => (f.id === folder.id ? { ...f, name: name.trim() } : f)))
+  const saveFolderModal = async () => {
+    const name = (folderModal?.name || '').trim()
+    if (!name) { alert('Enter a folder name'); return }
+
+    if (folderModal.mode === 'create') {
+      const { data, error } = await supabase
+        .from('gallery_folders')
+        .insert([{ name }])
+        .select()
+        .single()
+      if (error) { alert('Could not create folder: ' + error.message); return }
+      setFolders(prev => [...prev, data])
+      setActiveFolder(data.id)
+    } else {
+      const { error } = await supabase
+        .from('gallery_folders')
+        .update({ name })
+        .eq('id', folderModal.id)
+      if (error) { alert('Could not rename: ' + error.message); return }
+      setFolders(prev => prev.map(f => (f.id === folderModal.id ? { ...f, name } : f)))
+    }
+    setFolderModal(null)
   }
 
   const deleteFolder = async (folder) => {
@@ -699,6 +703,28 @@ export default function Gallery() {
 
   const [copiedUrl, setCopiedUrl] = useState(false)
   const copy = (val) => navigator.clipboard?.writeText(String(val))
+  const downloadItem = async (item) => {
+    try {
+      const res = await fetch(item.url)
+      const blob = await res.blob()
+      const objUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      // build a friendly filename
+      const isVideo = item.type === 'video'
+      const stamp = new Date(item.created_at || Date.now()).toISOString().slice(0, 10)
+      const base = (item.prompt ? item.prompt.slice(0, 30).replace(/[^a-z0-9]+/gi, '_') : item.type) || 'media'
+      const ext = isVideo ? 'mp4' : (item.url.toLowerCase().includes('.png') ? 'png' : 'jpeg')
+      a.href = objUrl
+      a.download = `${base}_${stamp}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(objUrl)
+    } catch (err) {
+      alert('Download failed: ' + err.message)
+    }
+  }
+
   const copyUrl = (val) => {
     navigator.clipboard?.writeText(String(val))
     setCopiedUrl(true)
@@ -991,6 +1017,27 @@ export default function Gallery() {
         </div>
       )}
 
+      {/* FOLDER NAME */}
+      {folderModal && (
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-5 z-[70]">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-sm">
+            <h2 className="font-bold text-lg mb-3">{folderModal.mode === 'create' ? 'New Folder' : 'Rename Folder'}</h2>
+            <input
+              autoFocus
+              value={folderModal.name}
+              onChange={e => setFolderModal({ ...folderModal, name: e.target.value })}
+              onKeyDown={e => { if (e.key === 'Enter') saveFolderModal() }}
+              placeholder="Folder name"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-blue-500"
+            />
+            <div className="flex gap-2">
+              <button onClick={() => setFolderModal(null)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={saveFolderModal} className="flex-1 bg-blue-600 hover:bg-blue-700 rounded-lg py-3 font-semibold">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TRANSFORM (image-to-image) */}
       {showTransform && transformSource && (
         <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-[60] overflow-y-auto">
@@ -1185,6 +1232,10 @@ export default function Gallery() {
                   </button>
                 </div>
                 <p className="text-[10px] text-gray-600 font-mono break-all leading-snug">{selected.url}</p>
+                <button onClick={() => downloadItem(selected)}
+                  className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-3">
+                  ⬇ Download {selected.type === 'video' ? 'video' : 'image'}
+                </button>
               </div>
               {selected.source === 'cards' && (
                 <div className="flex items-center justify-between">
