@@ -64,7 +64,7 @@ export default function Gallery() {
 
   const [showVideo, setShowVideo] = useState(false)
   const [videoSource, setVideoSource] = useState('')
-  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
+  const [videoPrompt, setVideoPrompt] = useState('smooth natural motion, sensual movement')
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
   const [videoModel, setVideoModel] = useState('alibaba/wan-2.6/image-to-video')
@@ -300,7 +300,7 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrompt('gentle natural motion, subtle movement')
+    setVideoPrombody('smooth natural motion, subtle movement')
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideo(true)
@@ -718,11 +718,48 @@ export default function Gallery() {
     if (error) alert('Could not move: ' + error.message)
   }
 
+  const fileNameFrom = (url) => {
+    if (!url) return null
+    const part = String(url).split('/character-images/')[1]
+    if (!part) return null
+    // strip any query string
+    return part.split('?')[0]
+  }
+
   const remove = async (item) => {
+    if (item.source === 'cards') {
+      alert('This is card art. Delete or replace it from the Cards page.')
+      return
+    }
     if (!confirm('Delete this permanently?')) return
-    await supabase.from(item.source).delete().eq('id', item.id)
-    const fileName = item.url.split('/character-images/')[1]
-    if (fileName) await supabase.storage.from('character-images').remove([fileName])
+
+    // collect every file this item owns (main + poster)
+    const files = []
+    const mainFile = fileNameFrom(item.url)
+    if (mainFile) files.push(mainFile)
+    const posterFile = fileNameFrom(item.poster_url)
+    if (posterFile) files.push(posterFile)
+
+    // 1. remove the storage files first
+    if (files.length) {
+      const { error: sErr } = await supabase.storage.from('character-images').remove(files)
+      if (sErr) {
+        alert('Could not remove file(s) from storage: ' + sErr.message)
+        return
+      }
+    }
+
+    // 2. remove the database row from the correct table
+    // gallery -> gallery_media, chat -> messages
+    const table = item.source === 'messages' ? 'messages' : 'gallery_media'
+    const { error: rErr } = await supabase.from(table).delete().eq('id', item.id)
+    if (rErr) {
+      alert('File removed, but the record could not be deleted: ' + rErr.message)
+    }
+
+    // 3. clear any folder mapping for this item
+    await supabase.from('folder_items').delete().eq('source', item.source).eq('item_key', item.key)
+
     setSelected(null)
     load()
   }
