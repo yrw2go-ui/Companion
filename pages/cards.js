@@ -128,7 +128,7 @@ export default function Cards() {
   const [variantOf, setVariantOf] = useState(null)
 
   const [showAnimate, setShowAnimate] = useState(false)
-  const [animPrompt, setAnimPrompt] = useState('Smooth movement, eyes alive,')
+  const [animPrompt, setAnimPrompt] = useState('Smooth natural movement, sensual motion, eyes alive,')
   const [animDuration, setAnimDuration] = useState(5)
   const [animRes, setAnimRes] = useState('720p')
   const [animModel, setAnimModel] = useState('alibaba/wan-2.6/image-to-video')
@@ -360,7 +360,7 @@ export default function Cards() {
 
   const openAnimate = () => {
     if (!selected?.image_url) return
-    setAnimPrompt(selected.video_prompt || 'Smooth movement, eyes alive,')
+    setAnimPrompt(selected.video_prompt || 'Smooth natural movement, sensual motion, eyes alive,')
     setAnimDuration(5)
     setAnimRes('720p')
     setShowAnimate(true)
