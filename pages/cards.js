@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
 import { makePoster } from '../lib/posterFrame'
 
-const DEFAULT_NEGATIVE = 'blurry, wide hips, big breasts, unattractive female, (asian), mature woman, big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, (asian), wide hips, mature woman, unattractive female, big breasts, big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -109,7 +109,7 @@ export default function Cards() {
   const [draft, setDraft] = useState(null)
   const [negative, setNegative] = useState(DEFAULT_NEGATIVE)
   const [size, setSize] = useState('768*1024')
-  const [artStyle, setArtStyle] = useState(ART_STYLES[1].value)
+  const [artStyle, setArtStyle] = useState((ART_STYLES.find(s => s.label === 'Studio Beauty') || ART_STYLES[1]).value)
   const [imageModel, setImageModel] = useState(IMAGE_MODELS[0].id)
   const [seedInput, setSeedInput] = useState('')
   const [guidance, setGuidance] = useState(3.5)
