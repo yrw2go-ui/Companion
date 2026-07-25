@@ -130,12 +130,36 @@ export default function Settings() {
   }
 
   // does this image URL actually load? broken/blank posters return false
+  // a poster is "good" only if it loads AND isn't a flat black/blank frame
   const posterLoads = (url) => new Promise((resolve) => {
     if (!url) { resolve(false); return }
     const img = new Image()
+    img.crossOrigin = 'anonymous'
     let done = false
     const finish = (ok) => { if (!done) { done = true; resolve(ok) } }
-    img.onload = () => finish(img.naturalWidth > 0)
+    img.onload = () => {
+      if (!img.naturalWidth) { finish(false); return }
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0)
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+        let min = 255, max = 0
+        const step = Math.max(4, Math.floor((canvas.width * canvas.height) / 2000)) * 4
+        for (let i = 0; i < data.length; i += step) {
+          const lum = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
+          if (lum < min) min = lum
+          if (lum > max) max = lum
+        }
+        // flat frame (black/blank) => treat as bad so it gets regenerated
+        finish((max - min) >= 12)
+      } catch {
+        // tainted canvas: can't inspect, assume it's fine so we don't loop forever
+        finish(true)
+      }
+    }
     img.onerror = () => finish(false)
     setTimeout(() => finish(false), 6000)
     img.src = url
