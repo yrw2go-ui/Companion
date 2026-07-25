@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
 import { makePoster } from '../lib/posterFrame'
 
-const DEFAULT_NEGATIVE = 'blurry, wide hips, big breasts, unattractive female, (Asian), big hips, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, (Asian), mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const SIZES = [
   { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
@@ -105,6 +105,7 @@ export default function Cards() {
 
   const [showCreate, setShowCreate] = useState(false)
   const [concept, setConcept] = useState('')
+  const [conceptRarity, setConceptRarity] = useState('random')
   const [drafting, setDrafting] = useState(false)
   const [draft, setDraft] = useState(null)
   const [negative, setNegative] = useState(DEFAULT_NEGATIVE)
@@ -167,11 +168,13 @@ export default function Cards() {
       const res = await fetch('/api/generate-card', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ concept }),
+        body: JSON.stringify({ concept, rarity: conceptRarity }),
       })
       const data = await res.json()
       if (data.card) {
-        const rarity = (data.card.rarity || 'common').toLowerCase()
+        const rarity = (conceptRarity && conceptRarity !== 'random')
+          ? conceptRarity
+          : (data.card.rarity || 'common').toLowerCase()
         const labels = Array.isArray(data.card.stats) && data.card.stats.length
           ? data.card.stats.map(s => s.label)
           : ['Star Power', 'Physique', 'Allure', 'Charisma']
@@ -722,6 +725,14 @@ export default function Cards() {
                 <textarea value={concept} onChange={e => setConcept(e.target.value)} rows={3}
                   placeholder="e.g. a sprinter who came up through club athletics, quiet and intense"
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+
+                <label className="block text-xs text-gray-400 mb-1">Rarity</label>
+                <select value={conceptRarity} onChange={e => setConceptRarity(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+                  <option value="random">Random</option>
+                  {RARITIES.map(r => <option key={r} value={r}>{rarityLabel(r)}</option>)}
+                </select>
+
                 <button onClick={() => setDraft(emptyDraft())} className="text-xs text-gray-500 hover:text-gray-300 mb-4">or build it manually →</button>
                 <div className="flex gap-2">
                   <button onClick={() => { setShowCreate(false); setConcept(''); setVariantOf(null) }} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
