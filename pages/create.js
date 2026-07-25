@@ -12,7 +12,7 @@ const IMAGE_MODELS = [
 ]
 const familyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
 
-const DEFAULT_NEGATIVE = 'blurry, (Asian), big breasts, big hips, wide hips, mature woman, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, (Asian), big hips, wide hips, mature woman, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 export default function CreateCharacter() {
   const router = useRouter()
@@ -141,7 +141,11 @@ export default function CreateCharacter() {
 
   return (
     <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Create Character</h1>
+      <div className="flex items-center justify-between mb-6">
+        <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Cancel</button>
+        <h1 className="text-2xl font-bold">Create Character</h1>
+        <span className="w-12" />
+      </div>
 
       {field('Name', 'name', 'e.g. Aria')}
       {field('Age', 'age', 'e.g. 28')}
