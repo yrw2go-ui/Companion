@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'No concept provided' })
   }
 
-  const prompt = `You are designing a collectible card for a contemporary lifestyle series. The characters are ORIGINAL FICTIONAL PEOPLE in a modern real-world setting: models, athletes, performers, artists, entrepreneurs. This is NOT fantasy. No magic, no swords, no mythical creatures, no supernatural powers, no sci-fi.
+  const prompt = `You are designing a sexy collectible card for a contemporary lifestyle series. The characters are ORIGINAL FICTIONAL PEOPLE in a modern real-world setting: models, athletes, performers, artists, entrepreneurs. This is NOT fantasy. No magic, no swords, no mythical creatures, no supernatural powers, no sci-fi.
 
 Concept: ${concept}
 
