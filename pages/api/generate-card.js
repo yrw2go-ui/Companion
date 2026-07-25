@@ -4,13 +4,17 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { concept } = req.body
+  const { concept, rarity: chosenRarity } = req.body
 
   if (!concept || !concept.trim()) {
     return res.status(400).json({ error: 'No concept provided' })
   }
 
-  const prompt = `You are designing a sexy collectible card for a contemporary lifestyle series. The characters are ORIGINAL FICTIONAL PEOPLE in a modern real-world setting: models, athletes, performers, artists, entrepreneurs. This is NOT fantasy. No magic, no swords, no mythical creatures, no supernatural powers, no sci-fi.
+  const rarityInstruction = (chosenRarity && chosenRarity !== 'random')
+    ? `The rarity MUST be exactly "${chosenRarity}". Do not choose a different rarity.`
+    : 'Choose a fitting rarity from the allowed list.'
+
+  const prompt = `You are designing a sensual collectible card for a contemporary lifestyle series. The characters are ORIGINAL FICTIONAL PEOPLE in a modern real-world setting: models, athletes, performers, artists, entrepreneurs. This is NOT fantasy. No magic, no swords, no mythical creatures, no supernatural powers, no sci-fi.
 
 Concept: ${concept}
 
@@ -21,14 +25,15 @@ Return ONLY a JSON object with no markdown, no backticks, no preamble, in exactl
   "description": "2 sentences about who they are, their discipline, and what sets them apart",
   "flavor_text": "one memorable line they might say, max 15 words",
   "rarity": "one of: common, uncommon, rare, epic, legendary, ultra elite, after hours",
+  // RARITY RULE: ${rarityInstruction}
   "stats": [
     { "label": "Star Power", "value": 20-100 },
     { "label": "Physique", "value": 20-100 },
     { "label": "Allure", "value": 20-100 },
     { "label": "Charisma", "value": 20-100 }
   ],
-  "image_prompt": "FRONT art: a portrait of this person. Give SPECIFIC physical details: approximate age, hair colour and style, eye colour, skin tone, build, and sensualized outfit. Then the pose, location and mood. Do NOT specify a photography style, lighting style, or camera treatment; leave that open. Modern real-world settings only: studio, city street, gym, track, rooftop, cafe, beach, backstage",
-  "back_image_prompt": "BACK art: the SAME person, different shot. REPEAT the physical description word for word from the front prompt, then change only the pose, location and framing. Do NOT specify a photography or lighting style."
+  "image_prompt": "FRONT art: one concise line covering the key appearance (age, hair, build, outfit) and a modern setting. No photography or lighting style.",
+  "back_image_prompt": "BACK art: one concise line. The SAME person (repeat the key appearance words) in a different pose and setting. No photography or lighting style."
 }
 
 AFTER HOURS: if the concept asks for an "after hours" card, this is the rarest type and works differently.
@@ -44,8 +49,9 @@ Only the values change from card to card. Choose values that fit the character a
 APPEARANCE RULES, these matter:
 - The person must be a completely invented individual, not based on or resembling any real public figure. Never reference a real person's name or likeness.
 - Vary ethnicity, features, body type and age naturally across cards. Be specific rather than defaulting.
-- Everyone depicted is a healthy adult, clearly over 20. Clothing is everyday, athletic, business, or fashion modeling attire or can be somewhat NSFW.
-Both art prompts must describe the same person, with the physical description copied verbatim between them but not the same outfit or location.
+- Everyone depicted is a healthy adult, clearly over 19. Clothing is everyday, athletic, or fashion-editorial and can be sensual and sexual for adult audiences.
+
+Both art prompts must describe the same person, with the physical description copied verbatim between them.
 
 Higher rarity should mean stronger overall stat values.`
 
@@ -81,6 +87,9 @@ Higher rarity should mean stronger overall stat values.`
     }
 
     const STANDARD_LABELS = ['Star Power', 'Physique', 'Allure', 'Charisma']
+    if (chosenRarity && chosenRarity !== 'random') {
+      card.rarity = chosenRarity
+    }
     const rarityLower = String(card.rarity || '').toLowerCase()
 
     // After Hours cards carry no ratings
