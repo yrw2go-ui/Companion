@@ -27,14 +27,14 @@ Return ONLY a JSON object with no markdown, no backticks, no preamble, in exactl
     { "label": "Allure", "value": 20-100 },
     { "label": "Charisma", "value": 20-100 }
   ],
-  "image_prompt": "FRONT art: a portrait of this person. Give SPECIFIC physical details: approximate age, hair colour and style, eye colour, skin tone, build, and outfit. Then the pose, location and mood. Do NOT specify a photography style, lighting style, or camera treatment; leave that open. Modern real-world settings only: studio, city street, gym, track, rooftop, cafe, beach, backstage",
+  "image_prompt": "FRONT art: a portrait of this person. Give SPECIFIC physical details: approximate age, hair colour and style, eye colour, skin tone, build, and sensualized outfit. Then the pose, location and mood. Do NOT specify a photography style, lighting style, or camera treatment; leave that open. Modern real-world settings only: studio, city street, gym, track, rooftop, cafe, beach, backstage",
   "back_image_prompt": "BACK art: the SAME person, different shot. REPEAT the physical description word for word from the front prompt, then change only the pose, location and framing. Do NOT specify a photography or lighting style."
 }
 
 AFTER HOURS: if the concept asks for an "after hours" card, this is the rarest type and works differently.
-It shows the person away from work, in an ordinary private moment: at home reading, cooking, walking a dog,
-at a late diner, on a balcony, at the laundromat, playing an instrument, with friends. Relaxed everyday
-clothing. The mood is quiet and human rather than glamorous. The description should reveal something
+It shows the person away from work, in an ordinary intimate private moment: at home reading naked, cooking in underwear, walking a dog in revealing clothes,
+at a late diner, on a balcony topless, at the laundromat, playing an instrument while half naked. Relaxed but sensual everyday
+revealing clothing or unclothed or underclothes. The mood is quiet, sensual and human rather than glamorous. The description should reveal something
 personal about who they are off duty. After Hours cards have NO stats, so return "stats": [] for them.
 
 STATS: always use exactly these four labels, in this order, with no substitutions and no additions:
@@ -44,9 +44,8 @@ Only the values change from card to card. Choose values that fit the character a
 APPEARANCE RULES, these matter:
 - The person must be a completely invented individual, not based on or resembling any real public figure. Never reference a real person's name or likeness.
 - Vary ethnicity, features, body type and age naturally across cards. Be specific rather than defaulting.
-- Everyone depicted is a healthy adult, clearly over 21. Clothing is everyday, athletic, or fashion-editorial and fully appropriate for a general audience.
-
-Both art prompts must describe the same person, with the physical description copied verbatim between them.
+- Everyone depicted is a healthy adult, clearly over 20. Clothing is everyday, athletic, business, or fashion modeling attire or can be somewhat NSFW.
+Both art prompts must describe the same person, with the physical description copied verbatim between them but not the same outfit or location.
 
 Higher rarity should mean stronger overall stat values.`
 
