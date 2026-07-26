@@ -1515,7 +1515,15 @@ export default function Gallery() {
               )}
               {selected.prompt && (
                 <div className="pt-1 border-t border-gray-800">
-                  <p className="text-gray-500 mb-1">Prompt</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-gray-500">Prompt</p>
+                    <button
+                      onClick={() => copyUrl(selected.prompt)}
+                      className="text-purple-400 hover:text-purple-300 font-semibold"
+                    >
+                      {copiedUrl ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
                   <p className="text-gray-400 leading-snug">{selected.prompt}</p>
                 </div>
               )}
