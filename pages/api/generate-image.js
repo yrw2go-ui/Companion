@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   // one was passed (e.g. Seedream edit), else default to Wan edit.
   const isEdit = !!referenceImageUrl
   const useModel = isEdit
-    ? (model && model.includes('edit') ? model : 'alibaba/wan-2.7-pro/image-edit')
+    ? (model && (model.includes('edit') || model.includes('/edit')) ? model : 'alibaba/wan-2.7-pro/image-edit')
     : (model || DEFAULT_MODEL)
 
   let body
@@ -53,6 +53,18 @@ export default async function handler(req, res) {
       thinking: 'disabled',
       enable_base64_output: false,
     }
+  } else if (isEdit && useModel.startsWith('xai/grok-imagine')) {
+    // Grok Imagine edit: image_urls[] (note: plural, different from i2v's image_url)
+    body = {
+      model: useModel,
+      prompt,
+      image_urls: [referenceImageUrl],
+      num_images: 1,
+      aspect_ratio: aspectRatio || 'auto',
+      resolution: resolution || '1k',
+      enable_base64_output: false,
+    }
+    usedSize = aspectRatio || 'auto'
   } else if (isEdit) {
     // Wan 2.7 Pro image-edit: images[], size "1K"/"2K", n, thinking_mode, seed
     usedSeed = (seed !== undefined && seed !== null && seed !== '') ? parseInt(seed) : -1
