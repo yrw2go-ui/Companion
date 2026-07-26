@@ -4,6 +4,9 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 import { makePoster } from '../lib/posterFrame'
 
+// prices are only shown where Atlas's docs confirmed a figure.
+// null means the price wasn't listed in the schema we have, so we say so
+// rather than guess.
 const VIDEO_MODELS = [
   { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
   { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
@@ -12,22 +15,31 @@ const VIDEO_MODELS = [
 ]
 
 const T2V_MODEL = 'xai/grok-imagine-video/text-to-video'
+const T2V_PRICE = null
 
 const IMAGE_MODELS = [
-  { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux' },
-  { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux' },
-  { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell' },
-  { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream' },
-  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok' },
+  { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux', price: null },
+  { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux', price: null },
+  { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell', price: null },
+  { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream', price: null },
+  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok', price: { '1k': 0.05, '2k': 0.07 } },
 ]
 const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
 
 // image-to-image (transform) models
 const I2I_MODELS = [
-  { id: 'alibaba/wan-2.7-pro/image-edit', label: 'Wan 2.7 Pro (edit)' },
-  { id: 'bytedance/seedream-v5.0-pro/edit', label: 'Seedream 5 Pro (edit)' },
-  { id: 'xai/grok-imagine-image-quality/edit', label: 'Grok Imagine (edit)' },
+  { id: 'alibaba/wan-2.7-pro/image-edit', label: 'Wan 2.7 Pro (edit)', price: null },
+  { id: 'bytedance/seedream-v5.0-pro/edit', label: 'Seedream 5 Pro (edit)', price: null },
+  { id: 'xai/grok-imagine-image-quality/edit', label: 'Grok Imagine (edit)', price: 0.01 },
 ]
+
+// small helper to render a price, or an honest "not listed" note
+const priceLabel = (model, resolution) => {
+  if (!model || model.price == null) return 'price not listed'
+  if (typeof model.price === 'number') return `~$${model.price.toFixed(2)}/image`
+  const p = model.price[resolution] ?? Object.values(model.price)[0]
+  return `~$${p.toFixed(2)}/image`
+}
 
 const DEFAULT_NEGATIVE = 'blurry, (Asian), mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
@@ -971,9 +983,12 @@ export default function Gallery() {
 
             <label className="block text-xs text-gray-400 mb-1">Model</label>
             <select value={createModel} onChange={e => setCreateModel(e.target.value)}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500">
               {IMAGE_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
+            <p className="text-[10px] text-gray-600 mb-3">
+              {priceLabel(IMAGE_MODELS.find(m => m.id === createModel), '2k')}
+            </p>
 
             <label className="block text-xs text-gray-400 mb-1">Prompt</label>
             <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={5}
@@ -1055,6 +1070,9 @@ export default function Gallery() {
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
               {VIDEO_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
+            <p className="text-[10px] text-gray-600 mb-3">
+              {priceLabel(VIDEO_MODELS.find(m => m.id === videoModel))}
+            </p>
 
             <label className="block text-xs text-gray-400 mb-1">Length</label>
             <select value={videoDuration} onChange={e => setVideoDuration(parseInt(e.target.value))}
@@ -1118,6 +1136,9 @@ export default function Gallery() {
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
               {I2I_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
+            <p className="text-[10px] text-gray-600 mb-3">
+              {priceLabel(I2I_MODELS.find(m => m.id === transformModel))}
+            </p>
 
             <label className="block text-xs text-gray-400 mb-1">What should change?</label>
             <textarea value={transformPrompt} onChange={e => setTransformPrompt(e.target.value)} rows={4}
@@ -1169,7 +1190,7 @@ export default function Gallery() {
               <option value="480p">480p</option>
               <option value="720p">720p</option>
             </select>
-            <p className="text-[10px] text-gray-600 -mt-3 mb-4">Grok text-to-video maxes at 720p.</p>
+            <p className="text-[10px] text-gray-600 -mt-3 mb-4">Grok text-to-video maxes at 720p. {priceLabel({ price: T2V_PRICE })}</p>
 
             <div className="flex gap-2">
               <button onClick={() => setShowT2V(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
@@ -1220,6 +1241,9 @@ export default function Gallery() {
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
               {VIDEO_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
+            <p className="text-[10px] text-gray-600 mb-3">
+              {priceLabel(VIDEO_MODELS.find(m => m.id === extendModel))}
+            </p>
 
             <label className="block text-xs text-gray-400 mb-1">Length</label>
             <select value={extendDuration} onChange={e => setExtendDuration(parseInt(e.target.value))}
