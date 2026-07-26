@@ -6,8 +6,9 @@ import { makePoster } from '../lib/posterFrame'
 
 const VIDEO_MODELS = [
   { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
-  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Turbo Spicy (fast, 5s)' },
+  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
+  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy' },
 ]
 
 const T2V_MODEL = 'xai/grok-imagine-video/text-to-video'
@@ -66,7 +67,7 @@ export default function Gallery() {
 
   const [showVideo, setShowVideo] = useState(false)
   const [videoSource, setVideoSource] = useState('')
-  const [videoPrompt, setVideoPrompt] = useState('smooth natural motion,')
+  const [videoPrompt, setVideoPrompt] = useState(gentle natural motion, subtle movement)
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
   const [videoModel, setVideoModel] = useState('alibaba/wan-2.6/image-to-video')
@@ -92,6 +93,7 @@ export default function Gallery() {
   const [extendPrompt, setExtendPrompt] = useState('')
   const [extendDuration, setExtendDuration] = useState(5)
   const [extendRes, setExtendRes] = useState('720p')
+  const [extendModel, setExtendModel] = useState('alibaba/wan-2.6/image-to-video')
   const [extending, setExtending] = useState(false)
   const [extendStatus, setExtendStatus] = useState('')
   const [framePreview, setFramePreview] = useState('')
@@ -302,7 +304,7 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrompt('smooth natural motion,')
+    setVideoPrompt(gentle natural motion, subtle movement)
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideo(true)
@@ -465,6 +467,7 @@ export default function Gallery() {
   }
 
   const openExtend = (item) => {
+    setExtendModel('alibaba/wan-2.6/image-to-video')
     setExtendSource(item)
     setExtendPrompt('')
     setExtendDuration(5)
@@ -511,6 +514,7 @@ export default function Gallery() {
           prompt: extendPrompt,
           duration: extendDuration,
           resolution: extendRes,
+          model: extendModel,
         }),
       })
       const vidData = await vidRes.json()
@@ -1210,6 +1214,12 @@ export default function Gallery() {
             <textarea value={extendPrompt} onChange={e => setExtendPrompt(e.target.value)} rows={3}
               placeholder="e.g. she turns toward the window and smiles"
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+
+            <label className="block text-xs text-gray-400 mb-1">Video Model</label>
+            <select value={extendModel} onChange={e => setExtendModel(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              {VIDEO_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
 
             <label className="block text-xs text-gray-400 mb-1">Length</label>
             <select value={extendDuration} onChange={e => setExtendDuration(parseInt(e.target.value))}
