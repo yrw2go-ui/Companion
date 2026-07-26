@@ -11,7 +11,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { text, voiceId } = req.body
+  const { text, voiceId, speed } = req.body
 
   if (!text || !text.trim()) {
     return res.status(400).json({ error: 'No text provided' })
@@ -43,7 +43,7 @@ export default async function handler(req, res) {
         codec: 'mp3',
         sample_rate: 24000,
         bit_rate: 128000,
-        speed: 1,
+        speed: Math.max(0.7, Math.min(1.5, parseFloat(speed) || 1)),
       }),
     })
 
