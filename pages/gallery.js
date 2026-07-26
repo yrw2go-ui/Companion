@@ -25,6 +25,7 @@ const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS
 const I2I_MODELS = [
   { id: 'alibaba/wan-2.7-pro/image-edit', label: 'Wan 2.7 Pro (edit)' },
   { id: 'bytedance/seedream-v5.0-pro/edit', label: 'Seedream 5 Pro (edit)' },
+  { id: 'xai/grok-imagine-image-quality/edit', label: 'Grok Imagine (edit)' },
 ]
 
 const DEFAULT_NEGATIVE = 'blurry, (Asian), mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
@@ -582,14 +583,11 @@ export default function Gallery() {
     setShowTransform(false)
     setTransforming(true)
     try {
-      // the API routes to Wan edit when referenceImageUrl is present; for
-      // Seedream edit we pass the model explicitly and it also uses images[]
+      // always pass the chosen edit model explicitly, whichever it is
       const payload = {
         prompt: transformPrompt,
         referenceImageUrl: transformSource.url,
-      }
-      if (transformModel === 'bytedance/seedream-v5.0-pro/edit') {
-        payload.model = 'bytedance/seedream-v5.0-pro/edit'
+        model: transformModel,
       }
       const res = await fetch('/api/generate-image', {
         method: 'POST',
