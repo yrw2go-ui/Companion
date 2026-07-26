@@ -14,7 +14,7 @@ const MODELS = [
 
 export default function VideoTest() {
   const [imageUrl, setImageUrl] = useState('')
-  const [prompt, setPrompt] = useState('smooth natural motion, sensual movement,')
+  const [prompt, setPrompt] = useState('smooth natural motion, sensual movement, eyes blinking naturally')
   const [model, setModel] = useState(MODELS[0].value)
   const [duration, setDuration] = useState(5)
   const [resolution, setResolution] = useState('720p')
