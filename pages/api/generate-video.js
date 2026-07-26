@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   if (dur < 5) dur = 5
   if (dur > 15) dur = 15
 
-  const motionPrompt = prompt || 'smooth natural motion, sensual movement'
+  const motionPrompt = prompt || 'smooth natural motion, sensual movement, eyes blinking naturally'
 
   const safeJson = async (response) => {
     const t = await response.text()
