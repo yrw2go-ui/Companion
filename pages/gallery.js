@@ -1,6 +1,7 @@
 // pages/gallery.js
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
+import Script from 'next/script'
 import { supabase } from '../lib/supabaseClient'
 import { makePoster } from '../lib/posterFrame'
 
@@ -92,6 +93,15 @@ export default function Gallery() {
   const [transformModel, setTransformModel] = useState('alibaba/wan-2.7-pro/image-edit')
   const [transforming, setTransforming] = useState(false)
 
+  const [show3D, setShow3D] = useState(false)
+  const [prompt3D, setPrompt3D] = useState('')
+  const [enablePbr, setEnablePbr] = useState(false)
+  const [enableGeometry, setEnableGeometry] = useState(false)
+  const [busy3D, setBusy3D] = useState(false)
+  const [provider3D, setProvider3D] = useState('hunyuan')
+  const [imgProvider3D, setImgProvider3D] = useState('hunyuan')
+  const [show3DFromImage, setShow3DFromImage] = useState(null)  // holds the source item, or null
+
   const [showT2V, setShowT2V] = useState(false)
   const [t2vPrompt, setT2vPrompt] = useState('')
   const [t2vDuration, setT2vDuration] = useState(8)
@@ -164,6 +174,7 @@ export default function Gallery() {
       source: 'gallery_media',
       is_favorite: !!g.is_favorite,
       poster_url: g.poster_url ?? null,
+      thumbnail_url: g.thumbnail_url ?? null,
       folder_id: g.folder_id ?? null,
       type: g.type,
       url: g.url,
@@ -628,6 +639,76 @@ export default function Gallery() {
     setTransforming(false)
   }
 
+  const openImage3D = (item) => {
+    setShow3DFromImage(item)
+    setSelected(null)
+  }
+
+  const run3DFromImage = async () => {
+    const item = show3DFromImage
+    if (!item || busy3D) return
+    setShow3DFromImage(null)
+    setBusy3D(true)
+    setAnimating(true)
+    try {
+      const res = await fetch('/api/generate-3d', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: item.url, enablePbr: true, enableGeometry: false, provider: imgProvider3D }),
+      })
+      const data = await res.json()
+      if (!data.modelUrl) {
+        alert('Error: ' + (data.error || 'failed'))
+        setBusy3D(false); setAnimating(false)
+        return
+      }
+      await supabase.from('gallery_media').insert([{
+        type: 'model',
+        url: data.modelUrl,
+        prompt: item.prompt || '3D from image',
+        thumbnail_url: data.thumbnailUrl || null,
+      }])
+      load()
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+    setBusy3D(false)
+    setAnimating(false)
+  }
+
+  const run3D = async () => {
+    if (busy3D) return
+    if (!prompt3D.trim()) { alert('Describe the 3D object you want'); return }
+    setShow3D(false)
+    setBusy3D(true)
+    setAnimating(true)  // reuse the generic "working" banner
+    try {
+      const res = await fetch('/api/generate-3d', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt3D, enablePbr, enableGeometry, provider: provider3D }),
+      })
+      const data = await res.json()
+      if (!data.modelUrl) {
+        alert('Error: ' + (data.error || 'failed'))
+        setBusy3D(false); setAnimating(false)
+        return
+      }
+      await supabase.from('gallery_media').insert([{
+        type: 'model',
+        url: data.modelUrl,
+        prompt: prompt3D,
+        thumbnail_url: data.thumbnailUrl || null,
+      }])
+      setPrompt3D('')
+      load()
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+    setBusy3D(false)
+    setAnimating(false)
+  }
+
   const runT2V = async () => {
     if (t2vBusy) return
     if (!t2vPrompt.trim()) { alert('Describe the video you want'); return }
@@ -757,7 +838,7 @@ export default function Gallery() {
           id: item.id,
           itemKey: item.key,
           url: item.url,
-          posterUrl: item.poster_url || null,
+          posterUrl: item.poster_url || item.thumbnail_url || null,
         }),
       })
       const data = await res.json()
@@ -784,9 +865,10 @@ export default function Gallery() {
       const a = document.createElement('a')
       // build a friendly filename
       const isVideo = item.type === 'video'
+      const isModel = item.type === 'model'
       const stamp = new Date(item.created_at || Date.now()).toISOString().slice(0, 10)
       const base = (item.prompt ? item.prompt.slice(0, 30).replace(/[^a-z0-9]+/gi, '_') : item.type) || 'media'
-      const ext = isVideo ? 'mp4' : (item.url.toLowerCase().includes('.png') ? 'png' : 'jpeg')
+      const ext = isModel ? 'glb' : isVideo ? 'mp4' : (item.url.toLowerCase().includes('.png') ? 'png' : 'jpeg')
       downloadCounter.current += 1
       const seq = String(downloadCounter.current).padStart(3, '0')
       a.href = objUrl
@@ -813,6 +895,7 @@ export default function Gallery() {
       if (m.source === 'cards') return false
       if (filter === 'images') return m.type === 'image'
       if (filter === 'videos') return m.type === 'video'
+      if (filter === 'models') return m.type === 'model'
       return true
     })
 
@@ -852,12 +935,20 @@ export default function Gallery() {
 
   return (
     <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
+      <Script
+        type="module"
+        src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"
+        strategy="lazyOnload"
+      />
       <div className="flex items-center justify-between mb-4">
         <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <h1 className="text-xl font-bold">Gallery</h1>
         <div className="flex gap-2">
           <button onClick={() => setShowT2V(true)} className="bg-gray-800 hover:bg-gray-700 rounded-full px-3 py-2 text-sm font-semibold" title="Video from text">
             🎬 Text
+          </button>
+          <button onClick={() => setShow3D(true)} className="bg-gray-800 hover:bg-gray-700 rounded-full px-3 py-2 text-sm font-semibold" title="3D model from text">
+            🧊 3D
           </button>
           <button onClick={openCreate} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">
             + Create
@@ -869,6 +960,7 @@ export default function Gallery() {
         {tab('all', 'All')}
         {tab('images', 'Images')}
         {tab('videos', 'Videos')}
+        {tab('models', '3D')}
         {tab('cards', 'Cards')}
       </div>
 
@@ -950,6 +1042,17 @@ export default function Gallery() {
               className="relative aspect-square rounded-xl overflow-hidden bg-gray-900">
               {item.type === 'image' ? (
                 <img src={item.url} alt="" className="w-full h-full object-cover" />
+              ) : item.type === 'model' ? (
+                <>
+                  {item.thumbnail_url ? (
+                    <img src={item.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
+                      <span className="text-3xl text-gray-600">🧊</span>
+                    </div>
+                  )}
+                  <span className="absolute bottom-1.5 right-1.5 bg-black/70 rounded-full px-2 py-0.5 text-[10px]">🧊 3D</span>
+                </>
               ) : (
                 <>
                   {item.poster_url ? (
@@ -1153,6 +1256,73 @@ export default function Gallery() {
         </div>
       )}
 
+      {/* 3D FROM IMAGE: provider choice */}
+      {show3DFromImage && (
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-5 z-[65]">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-sm">
+            <h2 className="font-bold text-lg mb-2">Make 3D Model</h2>
+            <p className="text-xs text-gray-500 mb-3">Takes a couple of minutes.</p>
+
+            <img src={show3DFromImage.url} alt="" className="w-24 rounded-lg mb-3 border border-gray-700" />
+
+            <label className="block text-xs text-gray-400 mb-1">Provider</label>
+            <select value={imgProvider3D} onChange={e => setImgProvider3D(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500">
+              <option value="hunyuan">Hunyuan 3D Rapid</option>
+              <option value="seed3d">Seed3D v2.0 (higher detail)</option>
+            </select>
+            <p className="text-[10px] text-gray-600 mb-4">
+              Works best on a simple background with the subject filling most of the frame.
+            </p>
+
+            <div className="flex gap-2">
+              <button onClick={() => setShow3DFromImage(null)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={run3DFromImage} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Generate</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TEXT TO 3D */}
+      {show3D && (
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-5 z-[60]">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
+            <h2 className="font-bold text-lg mb-2">3D Model from Text</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Generates a rotatable 3D model (GLB) from a description. Takes a couple of minutes.
+            </p>
+
+            <label className="block text-xs text-gray-400 mb-1">Describe the object</label>
+            <textarea value={prompt3D} onChange={e => setPrompt3D(e.target.value)} rows={3}
+              placeholder="e.g. a worn leather messenger bag with brass buckles"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+
+            <label className="block text-xs text-gray-400 mb-1">Provider</label>
+            <select value={provider3D} onChange={e => setProvider3D(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              <option value="hunyuan">Hunyuan 3D Rapid</option>
+              <option value="tripo">Tripo H3.1</option>
+            </select>
+
+            <label className="flex items-center gap-2 text-xs text-gray-400 mb-2">
+              <input type="checkbox" checked={enablePbr} onChange={e => setEnablePbr(e.target.checked)} />
+              Realistic materials (PBR textures)
+            </label>
+            <label className="flex items-center gap-2 text-xs text-gray-400 mb-4">
+              <input type="checkbox" checked={enableGeometry} onChange={e => setEnableGeometry(e.target.checked)} />
+              Also generate an untextured mesh
+            </label>
+
+            <p className="text-[10px] text-gray-600 -mt-2 mb-4">price not listed</p>
+
+            <div className="flex gap-2">
+              <button onClick={() => setShow3D(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={run3D} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Generate</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TEXT TO VIDEO */}
       {showT2V && (
         <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-5 z-[60]">
@@ -1278,6 +1448,15 @@ export default function Gallery() {
           <div className="w-full max-w-md my-8" onClick={e => e.stopPropagation()}>
             {selected.type === 'image' ? (
               <img src={selected.url} alt="" className="w-full rounded-2xl" />
+            ) : selected.type === 'model' ? (
+              /* eslint-disable-next-line react/no-unknown-property */
+              <model-viewer
+                src={selected.url}
+                camera-controls
+                auto-rotate
+                shadow-intensity="1"
+                style={{ width: '100%', height: '360px', borderRadius: '1rem', background: '#111' }}
+              />
             ) : (
               <video src={selected.url} controls loop preload="none" playsInline poster={selected.poster_url || undefined} className="w-full rounded-2xl" />
             )}
@@ -1367,6 +1546,16 @@ export default function Gallery() {
                 className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
                 ✎ Transform (edit this image)
               </button>
+            )}
+
+            {selected.type === 'image' && (
+              <>
+                <button onClick={() => openImage3D(selected)} disabled={busy3D}
+                  className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2">
+                  🧊 Make 3D Model
+                </button>
+
+              </>
             )}
 
             {selected.type === 'video' && (
