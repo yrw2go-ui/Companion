@@ -10,6 +10,7 @@ const VIDEO_MODELS = [
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
   { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy' },
 ]
+
 const T2V_MODEL = 'xai/grok-imagine-video/text-to-video'
 
 const IMAGE_MODELS = [
@@ -303,7 +304,7 @@ export default function Gallery() {
 
   const openAnimate = (url) => {
     setVideoSource(url)
-    setVideoPrompt(gentle natural motion, subtle movement)
+    setVideoPrompt('gentle natural motion, subtle movement')
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideo(true)
