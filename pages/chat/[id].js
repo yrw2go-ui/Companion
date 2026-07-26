@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { buildImagePrompt } from '../../lib/buildImagePrompt'
 import { makePoster } from '../../lib/posterFrame'
 
-const DEFAULT_NEGATIVE = 'blurry, mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, mature woman, big hips, wide hips, unattractive female, (Asian), low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const IMAGE_MODELS = [
   { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux' },
@@ -18,7 +18,7 @@ const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS
 
 const VIDEO_MODELS = [
   { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
-  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Turbo Spicy (fast, 5s)' },
+  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
 ]
 
@@ -123,7 +123,7 @@ export default function Chat() {
       const res = await fetch('/api/generate-speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: spokenOnly, voiceId: character.voice_id }),
+        body: JSON.stringify({ text: spokenOnly, voiceId: character.voice_id, speed: character.voice_speed || 1 }),
       })
       const data = await res.json()
       if (data.audioUrl && audioRef.current) {
