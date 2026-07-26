@@ -44,7 +44,7 @@ export default function EditCharacter() {
   const [form, setForm] = useState({
     name: '', age: '', appearance: '', personality: '',
     speaking_style: '', backstory: '', relationship: '', sample_dialogue: '',
-    response_rules: '', image_style: '', voice_id: 'eve', chat_model: 'deepseek-ai/deepseek-v4-pro',
+    response_rules: '', image_style: '', voice_id: 'eve', voice_speed: 1, chat_model: 'deepseek-ai/deepseek-v4-pro',
     user_appearance_override: '',
   })
   const [memories, setMemories] = useState([])
@@ -78,6 +78,7 @@ export default function EditCharacter() {
         response_rules: data.response_rules || '',
         image_style: data.image_style || '',
         voice_id: data.voice_id || 'eve',
+        voice_speed: data.voice_speed ?? 1,
         chat_model: data.chat_model || 'deepseek-ai/deepseek-v4-pro',
         user_appearance_override: data.user_appearance_override || '',
       })
@@ -156,6 +157,7 @@ export default function EditCharacter() {
         response_rules: form.response_rules,
         image_style: form.image_style,
         voice_id: form.voice_id,
+        voice_speed: form.voice_speed,
         chat_model: form.chat_model,
         user_appearance_override: form.user_appearance_override,
         avatar_url: avatarUrl || null,
@@ -328,6 +330,12 @@ export default function EditCharacter() {
             <option key={v.id} value={v.id}>{v.label}</option>
           ))}
         </select>
+
+        <label className="block text-xs text-gray-400 mt-3 mb-1">Speed: {form.voice_speed}x</label>
+        <input type="range" min="0.7" max="1.5" step="0.05" value={form.voice_speed}
+          onChange={e => update('voice_speed', parseFloat(e.target.value))}
+          className="w-full accent-purple-500" />
+        <p className="text-[10px] text-gray-600 mt-1">0.7 = slower, 1.5 = faster. 1.0 is natural pace.</p>
       </div>
 
       <div className="mb-4">
