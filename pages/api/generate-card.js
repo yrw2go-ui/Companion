@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     ? `The rarity MUST be exactly "${chosenRarity}". Do not choose a different rarity.`
     : 'Choose a fitting rarity from the allowed list.'
 
-  const prompt = `You are designing a sensual collectible card for a contemporary lifestyle series. The characters are ORIGINAL FICTIONAL PEOPLE in a modern real-world setting: models, athletes, performers, artists, entrepreneurs. This is NOT fantasy. No magic, no swords, no mythical creatures, no supernatural powers, no sci-fi.
+  const prompt = `You are designing a collectible card for a contemporary lifestyle series. The characters are ORIGINAL FICTIONAL PEOPLE in a modern real-world setting: models, athletes, performers, artists, entrepreneurs. This is NOT fantasy. No magic, no swords, no mythical creatures, no supernatural powers, no sci-fi.
 
 Concept: ${concept}
 
@@ -33,13 +33,13 @@ Return ONLY a JSON object with no markdown, no backticks, no preamble, in exactl
     { "label": "Charisma", "value": 20-100 }
   ],
   "image_prompt": "FRONT art: one concise line covering the key appearance (age, hair, build, outfit) and a modern setting. No photography or lighting style.",
-  "back_image_prompt": "BACK art: one concise line. The SAME person (repeat the key appearance words) in a different pose and setting. No photography or lighting style."
+  "back_image_prompt": "BACK art: one concise line. The SAME person (repeat the key appearance words) in a different pose and setting. Composition: subject positioned in the upper half of the frame, head and shoulders near the top third, with open space toward the bottom of the image. No photography or lighting style."
 }
 
 AFTER HOURS: if the concept asks for an "after hours" card, this is the rarest type and works differently.
-It shows the person away from work, in an ordinary intimate private moment: at home reading naked, cooking in underwear, walking a dog in revealing clothes,
-at a late diner, on a balcony topless, at the laundromat, playing an instrument while half naked. Relaxed but sensual everyday
-revealing clothing or unclothed or underclothes. The mood is quiet, sensual and human rather than glamorous. The description should reveal something
+It shows the person away from work, in an ordinary private moment: at home reading, cooking, walking a dog,
+at a late diner, on a balcony, at the laundromat, playing an instrument, cooking in the kitchen but all with sensualized outfits or even nude or seminude. Relaxed everyday
+clothing but sensual and revealing. The mood is quiet and sensual rather than glamorous. The description should reveal something
 personal about who they are off duty. After Hours cards have NO stats, so return "stats": [] for them.
 
 STATS: always use exactly these four labels, in this order, with no substitutions and no additions:
@@ -49,7 +49,7 @@ Only the values change from card to card. Choose values that fit the character a
 APPEARANCE RULES, these matter:
 - The person must be a completely invented individual, not based on or resembling any real public figure. Never reference a real person's name or likeness.
 - Vary ethnicity, features, body type and age naturally across cards. Be specific rather than defaulting.
-- Everyone depicted is a healthy adult, clearly over 19. Clothing is everyday, athletic, or fashion-editorial and can be sensual and sexual for adult audiences.
+- Everyone depicted is a healthy adult, clearly over 19. Clothing is everyday, sensual, leisure, athletic, or fashion, modeling or workout attire and can be suited for adult only audiences.
 
 Both art prompts must describe the same person, with the physical description copied verbatim between them.
 
