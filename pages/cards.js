@@ -7,10 +7,11 @@ import { makePoster } from '../lib/posterFrame'
 
 const DEFAULT_NEGATIVE = 'blurry, (Asian), mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
-const SIZES = [
-  { value: '768*1024', label: 'Portrait 3:4 (classic card)' },
-  { value: '1024*1024', label: 'Square 1:1' },
-  { value: '576*1024', label: 'Tall 9:16' },
+const VIDEO_MODELS = [
+  { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
+  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
+  { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
+  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy' },
 ]
 
 const IMAGE_MODELS = [
@@ -25,7 +26,7 @@ const familyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]
 
 const VIDEO_MODELS = [
   { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
-  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Turbo Spicy (fast, 5s)' },
+  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
 ]
 
@@ -128,7 +129,7 @@ export default function Cards() {
   const [variantOf, setVariantOf] = useState(null)
 
   const [showAnimate, setShowAnimate] = useState(false)
-  const [animPrompt, setAnimPrompt] = useState('Smooth natural movement, sensual motion, eyes alive,')
+  const [animPrompt, setAnimPrompt] = useState(Smooth movement, eyes alive,)
   const [animDuration, setAnimDuration] = useState(5)
   const [animRes, setAnimRes] = useState('720p')
   const [animModel, setAnimModel] = useState('alibaba/wan-2.6/image-to-video')
@@ -186,6 +187,8 @@ export default function Cards() {
   }
 
   const withStyle = (base, style) => (!style ? base : `${base}, ${style}`)
+  const BACK_FRAMING = 'subject in the upper half of the frame, head and shoulders near the top third, open space toward the bottom'
+  const withBackFraming = (base) => `${base}, ${BACK_FRAMING}`
 
   const genImage = async (imgPrompt, seedVal, neg, sz, style, modelId) => {
     const useModel = modelId || imageModel
@@ -254,7 +257,7 @@ export default function Cards() {
       let back = { imageUrl: null, seed: null }
       if (draft.back_image_prompt?.trim()) {
         setProgress('Generating back art...')
-        back = await genImage(draft.back_image_prompt, '', negative, size, artStyle)
+        back = await genImage(withBackFraming(draft.back_image_prompt), '', negative, size, artStyle)
         if (!back.imageUrl) { alert('Back image error: ' + (back.error || 'failed')); setGenerating(false); setProgress(''); return }
       }
 
@@ -322,7 +325,8 @@ export default function Cards() {
     if (!promptText?.trim()) { alert('Add an art prompt first'); return }
 
     setRegenProgress(`Regenerating ${which}...`)
-    const result = await genImage(promptText, '', editNegative, editSize, editStyle, editing.image_model || imageModel)
+    const finalPrompt = which === 'back' ? withBackFraming(promptText) : promptText
+    const result = await genImage(finalPrompt, '', editNegative, editSize, editStyle, editing.image_model || imageModel)
     if (!result.imageUrl) { alert('Error: ' + (result.error || 'failed')); setRegenProgress(''); return }
 
     const oldUrl = which === 'front' ? editing.image_url : editing.back_image_url
@@ -360,7 +364,7 @@ export default function Cards() {
 
   const openAnimate = () => {
     if (!selected?.image_url) return
-    setAnimPrompt(selected.video_prompt || 'Smooth natural movement, sensual motion, eyes alive,')
+    setAnimPrompt(selected.video_prompt || Smooth movement, eyes alive,)
     setAnimDuration(5)
     setAnimRes('720p')
     setShowAnimate(true)
@@ -421,8 +425,9 @@ export default function Cards() {
 
   // start a new card for the same character, at a different rarity
   const makeVariant = (card) => {
-    const labels = normalizeStats(card).map(s => s.label)
-    const baseLabels = labels.length ? labels : ['Star Power', 'Physique', 'Allure', 'Charisma']
+    // always use the current standard labels, even if the source card
+    // predates them (e.g. old HP/ATK/DEF/SPD cards)
+    const baseLabels = STANDARD_LABELS
 
     // default the new one a tier up from the source where possible
     const idx = RARITIES.indexOf((card.rarity || 'common').toLowerCase())
@@ -554,7 +559,8 @@ export default function Cards() {
             ) : (
               <div className="absolute inset-0 bg-gray-900 flex items-center justify-center text-gray-700 text-[10px]">no back art</div>
             )}
-            <div className="absolute inset-x-0 bottom-0 h-[58%] bg-gradient-to-t from-black via-black/85 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 h-[68%] bg-gradient-to-t from-black from-45% via-black/90 via-70% to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 h-[38%] bg-black/60" />
             <span className={`badge ${t.badge}`}>{card.rarity}</span>
 
             <div className={`absolute inset-0 z-[4] flex flex-col justify-end ${big ? 'p-5' : 'p-3'}`}>
