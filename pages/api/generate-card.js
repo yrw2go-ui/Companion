@@ -14,13 +14,14 @@ export default async function handler(req, res) {
     ? `The rarity MUST be exactly "${chosenRarity}". Do not choose a different rarity.`
     : 'Choose a fitting rarity from the allowed list.'
 
-  const prompt = `You are designing a collectible card for a contemporary lifestyle series. The characters are ORIGINAL FICTIONAL PEOPLE in a modern real-world setting: models, athletes, performers, artists, entrepreneurs. This is NOT fantasy. No magic, no swords, no mythical creatures, no supernatural powers, no sci-fi.
+  const prompt = `You are designing a sensual collectible card for a contemporary lifestyle series. The characters are ORIGINAL FICTIONAL PEOPLE in a modern real-world setting: models, athletes, performers, artists, entrepreneurs. This is NOT fantasy. No magic, no swords, no mythical creatures, no supernatural powers, no sci-fi.
 
 Concept: ${concept}
 
 Return ONLY a JSON object with no markdown, no backticks, no preamble, in exactly this shape:
 {
-  "name": "a plausible modern first and last name",
+  "name": "a plausible realistic modern first and last name based on race and ethnicity
+  ",
   "title": "a short modern epithet describing their field, e.g. Runway Regular, Sprint Specialist, Studio Veteran",
   "description": "2 sentences about who they are, their discipline, and what sets them apart",
   "flavor_text": "one memorable line they might say, max 15 words",
