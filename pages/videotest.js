@@ -97,7 +97,7 @@ export default function VideoTest() {
       {videoUrl && (
         <>
           <h2 className="text-xl font-semibold mt-8 mb-3">Result</h2>
-          <video controls autoPlay loop src={videoUrl} className="w-full rounded-lg" />
+          <video controls preload="metadata" src={videoUrl} className="w-full rounded-lg" />
           <button onClick={saveToGallery} disabled={saving || saved} className="w-full bg-gray-800 hover:bg-gray-700 mt-4 rounded-lg py-3 font-bold">
             {saved ? 'Saved to Gallery' : saving ? 'Saving...' : 'Save to Gallery'}
           </button>
