@@ -256,6 +256,7 @@ export default function Gallery() {
       prompt: g.prompt ?? null,
       negative_prompt: g.negative_prompt ?? null,
       size: g.size ?? null,
+      model: g.model ?? null,
       created_at: g.created_at,
     }))
 
@@ -387,6 +388,7 @@ export default function Gallery() {
         seed: data.seed,
         size: data.size,
         character_id: charId || null,
+        model: createModel,
       }, 'Your image')
 
       setShowCreate(false)
@@ -444,6 +446,7 @@ export default function Gallery() {
         url: data.videoUrl,
         prompt: videoPrompt,
         poster_url: poster,
+        model: videoModel,
       }, 'Your video')
       load()
     } catch (err) {
@@ -615,6 +618,7 @@ export default function Gallery() {
         prompt: videoEditPrompt,
         poster_url: poster,
         source_prompt: videoEditSource.prompt || null,
+        model: VIDEO_EDIT_MODEL,
       }, 'Your edited video')
       load()
     } catch (err) {
@@ -726,6 +730,7 @@ export default function Gallery() {
         url: vidData.videoUrl,
         prompt: extendPrompt,
         poster_url: poster,
+        model: extendModel,
       }])
 
       setExtendStatus('')
@@ -797,6 +802,7 @@ export default function Gallery() {
         url: data.imageUrl,
         prompt: transformPrompt,
         source_prompt: transformSource.prompt || null,
+        model: transformModel,
       }, 'Your transformed image')
       load()
     } catch (err) {
@@ -907,6 +913,7 @@ export default function Gallery() {
         url: data.videoUrl,
         prompt: t2vPrompt,
         poster_url: poster,
+        model: t2vModel,
       }, 'Your video')
       setT2vPrompt('')
       load()
@@ -1752,6 +1759,18 @@ export default function Gallery() {
             </div>
 
             <div className="mt-3 bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Model</span>
+                <span className="text-gray-300 text-right max-w-[65%] truncate" title={selected.model || ''}>
+                  {selected.model
+                    ? (VIDEO_MODELS.find(m => m.id === selected.model)?.label
+                        || IMAGE_MODELS.find(m => m.id === selected.model)?.label
+                        || I2I_MODELS.find(m => m.id === selected.model)?.label
+                        || T2V_MODELS.find(m => m.id === selected.model)?.label
+                        || selected.model)
+                    : '—'}
+                </span>
+              </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">Seed</span>
                 <div className="flex items-center gap-2">
