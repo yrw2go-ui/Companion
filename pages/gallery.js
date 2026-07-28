@@ -1078,9 +1078,9 @@ export default function Gallery() {
 
   const downloadAll = async () => {
     if (bulkBusy) return
-    const list = media.filter(m => m.url && m.source !== 'cards')
+    const list = media.filter(m => m.url)
     if (!list.length) { alert('Nothing to download'); return }
-    if (!confirm(`Download ${list.length} items? Browser may block multiple downloads — allow popups if asked.`)) return
+    if (!confirm(`Download ${list.length} items (including card art)? Browser may block multiple downloads — allow popups if asked.`)) return
     setBulkBusy(true)
     let ok = 0
     for (let i = 0; i < list.length; i++) {
