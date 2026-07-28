@@ -131,7 +131,7 @@ export default function EditCharacter() {
       setAvatarSeed(data.seed ?? null)
 
       // also keep a copy in the gallery, since this is a real generation
-      await supabase.from('gallery_media').insert([{
+      const galRes = await supabase.from('gallery_media').insert([{
         type: 'image',
         url: data.imageUrl,
         prompt: promptToUse,
@@ -139,6 +139,10 @@ export default function EditCharacter() {
         seed: data.seed ?? null,
         character_id: id || null,
       }])
+      if (galRes.error) {
+        console.error('Gallery save failed:', galRes.error.message)
+        alert('Avatar created, but could not add it to the gallery: ' + galRes.error.message)
+      }
     } catch (err) {
       alert('Error: ' + err.message)
     }
