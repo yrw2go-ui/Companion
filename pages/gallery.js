@@ -9,10 +9,9 @@ import { makePoster } from '../lib/posterFrame'
 // null means the price wasn't listed in the schema we have, so we say so
 // rather than guess.
 const VIDEO_MODELS = [
-  { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
-  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
-  { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
-  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy' },
+  { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)', price: null },
+  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)', price: null },
+  { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)', price: null },
 ]
 
 const T2V_MODEL = 'xai/grok-imagine-video/text-to-video'
@@ -62,6 +61,7 @@ export default function Gallery() {
   const [activeFolder, setActiveFolder] = useState('all')  // 'all' | 'unfiled' | folderId
   const [folderModal, setFolderModal] = useState(null)  // { mode:'create'|'rename', id?, name }
   const [folderMap, setFolderMap] = useState({})  // item_key -> folder_id
+  const [savingFolder, setSavingFolder] = useState(false)
   const downloadCounter = useRef(0)
   const [gSort, setGSort] = useState('date_desc')
   const [gSearch, setGSearch] = useState('')
@@ -167,6 +167,8 @@ export default function Gallery() {
       .select('*')
     const fmap = {}
     for (const fi of folderItemRows || []) fmap[fi.item_key] = fi.folder_id
+    console.log('[DEBUG] folder_items rows loaded:', folderItemRows?.length, folderItemRows)
+    console.log('[DEBUG] folderMap built:', fmap)
     setFolderMap(fmap)
 
     const { data: cardRows } = await supabase
@@ -189,6 +191,8 @@ export default function Gallery() {
         created_at: m.created_at,
       }))
 
+    console.log('[DEBUG] gallery_media rows loaded:', galMedia?.length,
+      (galMedia || []).slice(0, 5).map(g => ({ id: g.id, key: 'gal_' + g.id, created_at: g.created_at })))
     const fromGallery = (galMedia || []).map(g => ({
       key: 'gal_' + g.id,
       id: g.id,
@@ -813,7 +817,9 @@ export default function Gallery() {
   }
 
   const assignFolder = async (item, folderId) => {
-    // update the local map immediately
+    // update the local map immediately so the UI feels instant, but the
+    // actual write below is what makes it durable across a refresh, so we
+    // track "saving" and warn if the tab is closed before it lands.
     setFolderMap(prev => {
       const next = { ...prev }
       if (folderId) next[item.key] = folderId
@@ -821,20 +827,29 @@ export default function Gallery() {
       return next
     })
 
-    if (!folderId) {
+    setSavingFolder(true)
+    const warnBeforeUnload = (e) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+
+    try {
+      if (!folderId) {
+        const { error } = await supabase
+          .from('folder_items')
+          .delete()
+          .eq('source', item.source)
+          .eq('item_key', item.key)
+        if (error) alert('Could not unfile: ' + error.message)
+        return
+      }
+
       const { error } = await supabase
         .from('folder_items')
-        .delete()
-        .eq('source', item.source)
-        .eq('item_key', item.key)
-      if (error) alert('Could not unfile: ' + error.message)
-      return
+        .upsert({ source: item.source, item_key: item.key, folder_id: folderId }, { onConflict: 'source,item_key' })
+      if (error) alert('Could not move: ' + error.message)
+    } finally {
+      window.removeEventListener('beforeunload', warnBeforeUnload)
+      setSavingFolder(false)
     }
-
-    const { error } = await supabase
-      .from('folder_items')
-      .upsert({ source: item.source, item_key: item.key, folder_id: folderId }, { onConflict: 'source,item_key' })
-    if (error) alert('Could not move: ' + error.message)
   }
 
   const fileNameFrom = (url) => {
@@ -930,6 +945,8 @@ export default function Gallery() {
       if (activeFolder === 'unfiled') {
         list = list.filter(m => !folderMap[m.key])
       } else {
+        console.log('[DEBUG] filtering for folder', activeFolder, '| folderMap has', Object.keys(folderMap).length, 'entries')
+        console.log('[DEBUG] candidate keys in this list:', list.slice(0, 10).map(m => ({ key: m.key, mapped: folderMap[m.key] })))
         list = list.filter(m => folderMap[m.key] === activeFolder)
       }
     }
@@ -1492,7 +1509,10 @@ export default function Gallery() {
             )}
 
             <div className="mt-3">
-              <label className="block text-xs text-gray-500 mb-1">Folder</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs text-gray-500">Folder</label>
+                {savingFolder && <span className="text-[10px] text-gray-500">Saving...</span>}
+              </div>
               <select
                 value={folderMap[selected.key] || ''}
                 onChange={e => assignFolder(selected, e.target.value || null)}
