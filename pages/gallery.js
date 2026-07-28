@@ -225,7 +225,7 @@ export default function Gallery() {
 
     const cardRows = await fetchAllRows(
       'cards',
-      'id, name, card_number, image_url, back_image_url, video_url, image_prompt, back_image_prompt, video_prompt, seed, back_seed, created_at',
+      'id, name, card_number, image_url, back_image_url, video_url, image_prompt, back_image_prompt, video_prompt, seed, back_seed, created_at, published, poster_url',
       q => q.order('created_at', { ascending: false })
     )
 
@@ -274,6 +274,7 @@ export default function Gallery() {
           cardId: c.id,
           cardLabel: label,
           protected: true,
+          published: !!c.published,
           type: 'image',
           url: c.image_url,
           seed: c.seed ?? null,
@@ -292,6 +293,7 @@ export default function Gallery() {
           cardId: c.id,
           cardLabel: label,
           protected: true,
+          published: !!c.published,
           type: 'image',
           url: c.back_image_url,
           seed: c.back_seed ?? null,
@@ -310,6 +312,7 @@ export default function Gallery() {
           cardId: c.id,
           cardLabel: label,
           protected: true,
+          published: !!c.published,
           type: 'video',
           url: c.video_url,
           seed: null,
@@ -1008,6 +1011,17 @@ export default function Gallery() {
     if (!part) return null
     // strip any query string
     return part.split('?')[0]
+  }
+
+  const togglePublish = async (item) => {
+    if (item.source !== 'cards' || !item.cardId) return
+    const next = !item.published
+    const { error } = await supabase.from('cards').update({ published: next }).eq('id', item.cardId)
+    if (error) { alert('Publish failed: ' + error.message); return }
+    setMedia(prev => prev.map(m =>
+      m.source === 'cards' && m.cardId === item.cardId ? { ...m, published: next } : m
+    ))
+    setSelected(prev => prev && prev.cardId === item.cardId ? { ...prev, published: next } : prev)
   }
 
   const remove = async (item) => {
@@ -1837,6 +1851,7 @@ export default function Gallery() {
                   <span className="text-gray-300">{selected.cardLabel} ({selected.cardSide})</span>
                 </div>
               )}
+
               {selected.prompt && (
                 <div className="pt-1 border-t border-gray-800">
                   <div className="flex items-center justify-between mb-1">
@@ -1915,6 +1930,15 @@ export default function Gallery() {
               <button onClick={() => openVideoEdit(selected)} disabled={videoEditing}
                 className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2">
                 ✎ Edit This Video
+              </button>
+            )}
+
+            {selected.source === 'cards' && (
+              <button
+                onClick={() => togglePublish(selected)}
+                className={`w-full rounded-lg py-2 text-sm font-semibold mt-2 ${selected.published ? 'bg-pink-600 hover:bg-pink-500 text-white' : 'bg-gray-800 hover:bg-gray-700'}`}
+              >
+                {selected.published ? '✓ Published to game' : 'Publish to game'}
               </button>
             )}
 
