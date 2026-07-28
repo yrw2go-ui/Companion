@@ -23,6 +23,10 @@ export default function Settings() {
   const [dupDeleting, setDupDeleting] = useState(false)
   const [dupResult, setDupResult] = useState(null)
   const [keepChoice, setKeepChoice] = useState({})  // groupIndex -> fileName to KEEP
+
+  const [fixScanning, setFixScanning] = useState(false)
+  const [fixInfo, setFixInfo] = useState(null)
+  const [fixResult, setFixResult] = useState(null)
   const [importResult, setImportResult] = useState(null)
 
   const [clearingAudio, setClearingAudio] = useState(false)
@@ -80,6 +84,48 @@ export default function Settings() {
       setCleanResult('Error: ' + err.message)
     }
     setCleaning(false)
+  }
+
+  const scanBrokenLinks = async () => {
+    if (fixScanning) return
+    setFixScanning(true)
+    setFixInfo(null)
+    setFixResult(null)
+    try {
+      const res = await fetch('/api/fix-broken-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: true }),
+      })
+      const data = await res.json()
+      if (data.error) setFixResult('Error: ' + data.error)
+      else setFixInfo(data)
+    } catch (err) {
+      setFixResult('Error: ' + err.message)
+    }
+    setFixScanning(false)
+  }
+
+  const removeBrokenLinks = async () => {
+    if (!fixInfo?.brokenCount) return
+    if (!confirm(`Remove ${fixInfo.brokenCount} gallery entr${fixInfo.brokenCount === 1 ? 'y' : 'ies'} whose file no longer exists?`)) return
+    setFixScanning(true)
+    try {
+      const res = await fetch('/api/fix-broken-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: false }),
+      })
+      const data = await res.json()
+      if (data.error) setFixResult('Error: ' + data.error)
+      else {
+        setFixResult(`Removed ${data.removed} broken entr${data.removed === 1 ? 'y' : 'ies'}.`)
+        setFixInfo(null)
+      }
+    } catch (err) {
+      setFixResult('Error: ' + err.message)
+    }
+    setFixScanning(false)
   }
 
   const scanDuplicates = async () => {
@@ -428,6 +474,53 @@ export default function Settings() {
       >
         {saving ? 'Saving...' : description === savedValue ? 'Saved' : 'Save'}
       </button>
+
+      <div className="mt-10 border-t border-gray-800 pt-6">
+        <h2 className="font-semibold mb-1">Fix Broken Links</h2>
+        <p className="text-xs text-gray-600 mb-3">
+          Finds gallery entries whose file no longer exists in storage (e.g. deleted by mistake
+          elsewhere) and removes the leftover entry so it stops showing as broken.
+        </p>
+
+        <button
+          onClick={scanBrokenLinks}
+          disabled={fixScanning}
+          className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-semibold"
+        >
+          {fixScanning ? 'Scanning...' : 'Scan for broken links'}
+        </button>
+
+        {fixInfo && (
+          <div className="mt-3 bg-gray-900 border border-gray-800 rounded-lg p-3">
+            {fixInfo.brokenCount === 0 ? (
+              <p className="text-xs text-gray-400">No broken links found.</p>
+            ) : (
+              <>
+                <p className="text-xs text-gray-300 mb-2">
+                  Found {fixInfo.brokenCount} entr{fixInfo.brokenCount === 1 ? 'y' : 'ies'} pointing at missing files.
+                </p>
+                <ul className="text-[10px] text-gray-500 mb-3 space-y-0.5">
+                  {fixInfo.sample.map(s => (
+                    <li key={s.id} className="truncate">{s.type}: {s.prompt || '(no prompt)'}</li>
+                  ))}
+                  {fixInfo.brokenCount > fixInfo.sample.length && (
+                    <li className="text-gray-600">...and {fixInfo.brokenCount - fixInfo.sample.length} more</li>
+                  )}
+                </ul>
+                <button
+                  onClick={removeBrokenLinks}
+                  disabled={fixScanning}
+                  className="w-full bg-red-900 hover:bg-red-800 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold"
+                >
+                  Remove {fixInfo.brokenCount} broken entr{fixInfo.brokenCount === 1 ? 'y' : 'ies'}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {fixResult && <p className="text-xs text-gray-400 mt-3">{fixResult}</p>}
+      </div>
 
       <div className="mt-10 border-t border-gray-800 pt-6">
         <h2 className="font-semibold mb-1">Find Duplicates</h2>
