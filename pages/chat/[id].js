@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { buildImagePrompt } from '../../lib/buildImagePrompt'
 import { makePoster } from '../../lib/posterFrame'
 
-const DEFAULT_NEGATIVE = 'blurry, mature woman, big hips, wide hips, unattractive female, (Asian), low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
+const DEFAULT_NEGATIVE = 'blurry, (Asian), mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 const IMAGE_MODELS = [
   { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux' },
@@ -20,6 +20,7 @@ const VIDEO_MODELS = [
   { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
   { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
+  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy' },
 ]
 
 export default function Chat() {
@@ -42,10 +43,11 @@ export default function Chat() {
   const [steps, setSteps] = useState(28)
   const [imageModel, setImageModel] = useState('z-image/turbo')
   const [preparingPrompt, setPreparingPrompt] = useState(false)
+  const [expandedImage, setExpandedImage] = useState(null)  // holds the message object, or null
   const [autoPlay, setAutoPlay] = useState(false)
   const [speakingIdx, setSpeakingIdx] = useState(null)
   const [showVideoModal, setShowVideoModal] = useState(false)
-  const [videoPrompt, setVideoPrompt] = useState('gentle natural motion, subtle movement')
+  const [videoPrompt, setVideoPrompt] = useState(gentle natural motion, subtle movement)
   const [videoSourceUrl, setVideoSourceUrl] = useState('')
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
@@ -208,6 +210,74 @@ export default function Chat() {
 
 
 
+  const retryExpandedImage = async () => {
+    if (!expandedImage || imaging) return
+    const src = expandedImage
+    setExpandedImage(null)
+    setImaging(true)
+    setMessages(prev => [...prev, { role: 'image', content: 'generating' }])
+
+    try {
+      const fam = imgFamilyOf(src.image_model || imageModel)
+      const useModel = src.image_model || imageModel
+      const payload = { model: useModel, prompt: src.prompt }
+      if (fam === 'grok') {
+        payload.aspectRatio = '3:4'; payload.resolution = '2k'
+      } else if (fam === 'seedream') {
+        payload.size = '1328*1776'; payload.thinking = 'disabled'
+      } else if (fam === 'schnell') {
+        payload.negativePrompt = src.negative_prompt; payload.seed = undefined
+      } else {
+        payload.negativePrompt = src.negative_prompt; payload.seed = undefined
+        payload.guidance = guidance; payload.steps = steps
+      }
+      const res = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (data.imageUrl) {
+        setMessages(prev => {
+          const copy = [...prev]
+          copy[copy.length - 1] = {
+            role: 'image',
+            content: data.imageUrl,
+            seed: data.seed,
+            prompt: src.prompt,
+            negative_prompt: src.negative_prompt,
+            image_model: useModel,
+            size: data.size,
+          }
+          return copy
+        })
+        await supabase.from('messages').insert([{
+          conversation_id: id,
+          role: 'image',
+          content: data.imageUrl,
+          seed: data.seed,
+          prompt: src.prompt,
+          negative_prompt: src.negative_prompt,
+          image_model: useModel,
+          size: data.size,
+        }])
+      } else {
+        setMessages(prev => {
+          const copy = [...prev]
+          copy[copy.length - 1] = { role: 'assistant', content: '[Image error: ' + (data.error || 'failed') + ']' }
+          return copy
+        })
+      }
+    } catch (err) {
+      setMessages(prev => {
+        const copy = [...prev]
+        copy[copy.length - 1] = { role: 'assistant', content: '[Image error: ' + err.message + ']' }
+        return copy
+      })
+    }
+    setImaging(false)
+  }
+
   const confirmGenerate = async () => {
     setShowPromptModal(false)
     if (imaging) return
@@ -237,7 +307,15 @@ export default function Chat() {
       if (data.imageUrl) {
         setMessages(prev => {
           const copy = [...prev]
-          copy[copy.length - 1] = { role: 'image', content: data.imageUrl, seed: data.seed }
+          copy[copy.length - 1] = {
+            role: 'image',
+            content: data.imageUrl,
+            seed: data.seed,
+            prompt: promptText,
+            negative_prompt: negativeText,
+            image_model: imageModel,
+            size: data.size,
+          }
           return copy
         })
         await supabase.from('messages').insert([{
@@ -247,6 +325,7 @@ export default function Chat() {
           seed: data.seed,
           prompt: promptText,
           negative_prompt: negativeText,
+          image_model: imageModel,
           size: data.size,
         }])
       } else {
@@ -268,7 +347,7 @@ export default function Chat() {
 
   const openVideoModal = (imageUrl) => {
     setVideoSourceUrl(imageUrl)
-    setVideoPrompt('gentle natural motion, subtle movement')
+    setVideoPrompt(smooth natural motion, eyes blinking naturally)
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideoModal(true)
@@ -552,7 +631,12 @@ export default function Chat() {
             }
             return (
               <div key={i} className="relative max-w-[80%] mr-auto">
-                <img src={m.content} alt="scene" className="w-full rounded-2xl" />
+                <img
+                  src={m.content}
+                  alt="scene"
+                  className="w-full rounded-2xl cursor-pointer"
+                  onClick={() => setExpandedImage(m)}
+                />
                 <button onClick={() => deleteMedia(m.content, 'image')}
                   className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white rounded-full w-7 h-7 flex items-center justify-center text-sm" title="Delete image">✕</button>
                 <button onClick={() => openVideoModal(m.content)} disabled={videoing}
@@ -670,6 +754,41 @@ export default function Chat() {
               </button>
               <button onClick={saveEdit} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EXPANDED IMAGE */}
+      {expandedImage && (
+        <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-[70] overflow-y-auto" onClick={() => setExpandedImage(null)}>
+          <div className="w-full max-w-md my-8" onClick={e => e.stopPropagation()}>
+            <img src={expandedImage.content} alt="" className="w-full rounded-2xl mb-3" />
+
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2 text-xs mb-3">
+              <div>
+                <p className="text-gray-500 mb-1">Model</p>
+                <p className="text-gray-300">{(IMAGE_MODELS.find(m => m.id === expandedImage.image_model) || {}).label || expandedImage.image_model || 'unknown'}</p>
+              </div>
+              {expandedImage.prompt && (
+                <div className="pt-2 border-t border-gray-800">
+                  <p className="text-gray-500 mb-1">Prompt</p>
+                  <p className="text-gray-400 leading-snug">{expandedImage.prompt}</p>
+                </div>
+              )}
+              {expandedImage.seed != null && (
+                <div className="flex items-center justify-between pt-2 border-t border-gray-800">
+                  <span className="text-gray-500">Seed</span>
+                  <span className="font-mono text-gray-300">{expandedImage.seed}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => setExpandedImage(null)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Close</button>
+              <button onClick={retryExpandedImage} disabled={imaging} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
+                {imaging ? 'Retrying...' : '↻ Retry'}
               </button>
             </div>
           </div>
