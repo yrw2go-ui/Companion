@@ -9,10 +9,9 @@ import { makePoster } from '../lib/posterFrame'
 // null means the price wasn't listed in the schema we have, so we say so
 // rather than guess.
 const VIDEO_MODELS = [
-  { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
-  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
-  { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
-  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy' },
+  { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)', price: null },
+  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)', price: null },
+  { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)', price: null },
 ]
 
 const T2V_MODEL = 'xai/grok-imagine-video/text-to-video'
@@ -90,7 +89,7 @@ export default function Gallery() {
   const [showTransform, setShowTransform] = useState(false)
   const [transformSource, setTransformSource] = useState(null)
   const [transformPrompt, setTransformPrompt] = useState('')
-  const [transformModel, setTransformModel] = useState('alibaba/wan-2.7-pro/image-edit')
+  const [transformModel, setTransformModel] = useState('bytedance/seedream-v5.0-pro/edit')
   const [transforming, setTransforming] = useState(false)
 
   const [show3D, setShow3D] = useState(false)
@@ -122,6 +121,27 @@ export default function Gallery() {
   const [grabbingFrame, setGrabbingFrame] = useState(false)
 
   useEffect(() => { load() }, [])
+
+  // saves a completed generation to gallery_media with retry.
+  // if the media exists (generation succeeded) but the save itself fails,
+  // this surfaces the direct URL instead of a bare error, so nothing is lost.
+  const saveWithRetry = async (row, label) => {
+    const attempt = async () => {
+      const { error } = await supabase.from('gallery_media').insert([row])
+      return !error
+    }
+    if (await attempt()) return true
+    // one retry after a short pause, in case it was a transient network blip
+    await new Promise(r => setTimeout(r, 1500))
+    if (await attempt()) return true
+
+    alert(
+      `${label} was created, but saving it to the gallery failed (likely a connection hiccup). ` +
+      `Nothing was lost — here is the direct link:\n\n${row.url}\n\n` +
+      `You can also find it later via Settings \u2192 Import Orphaned Media.`
+    )
+    return false
+  }
 
   const load = async () => {
     const { data: msgMedia } = await supabase
@@ -175,6 +195,7 @@ export default function Gallery() {
       is_favorite: !!g.is_favorite,
       poster_url: g.poster_url ?? null,
       thumbnail_url: g.thumbnail_url ?? null,
+      source_prompt: g.source_prompt ?? null,
       folder_id: g.folder_id ?? null,
       type: g.type,
       url: g.url,
@@ -305,7 +326,7 @@ export default function Gallery() {
         return
       }
 
-      await supabase.from('gallery_media').insert([{
+      await saveWithRetry({
         type: 'image',
         url: data.imageUrl,
         prompt,
@@ -313,7 +334,7 @@ export default function Gallery() {
         seed: data.seed,
         size: data.size,
         character_id: charId || null,
-      }])
+      }, 'Your image')
 
       setShowCreate(false)
       setPrompt('')
@@ -351,12 +372,12 @@ export default function Gallery() {
         return
       }
       const poster = await makePoster(data.videoUrl)
-      await supabase.from('gallery_media').insert([{
+      await saveWithRetry({
         type: 'video',
         url: data.videoUrl,
         prompt: videoPrompt,
         poster_url: poster,
-      }])
+      }, 'Your video')
       load()
     } catch (err) {
       alert('Error: ' + err.message)
@@ -599,7 +620,7 @@ export default function Gallery() {
   const openTransform = (item) => {
     setTransformSource(item)
     setTransformPrompt('')
-    setTransformModel('alibaba/wan-2.7-pro/image-edit')
+    setTransformModel('bytedance/seedream-v5.0-pro/edit')
     setSelected(null)
     setShowTransform(true)
   }
@@ -627,11 +648,12 @@ export default function Gallery() {
         setTransforming(false)
         return
       }
-      await supabase.from('gallery_media').insert([{
+      await saveWithRetry({
         type: 'image',
         url: data.imageUrl,
         prompt: transformPrompt,
-      }])
+        source_prompt: transformSource.prompt || null,
+      }, 'Your transformed image')
       load()
     } catch (err) {
       alert('Error: ' + err.message)
@@ -662,12 +684,12 @@ export default function Gallery() {
         setBusy3D(false); setAnimating(false)
         return
       }
-      await supabase.from('gallery_media').insert([{
+      await saveWithRetry({
         type: 'model',
         url: data.modelUrl,
         prompt: item.prompt || '3D from image',
         thumbnail_url: data.thumbnailUrl || null,
-      }])
+      }, 'Your 3D model')
       load()
     } catch (err) {
       alert('Error: ' + err.message)
@@ -694,12 +716,12 @@ export default function Gallery() {
         setBusy3D(false); setAnimating(false)
         return
       }
-      await supabase.from('gallery_media').insert([{
+      await saveWithRetry({
         type: 'model',
         url: data.modelUrl,
         prompt: prompt3D,
         thumbnail_url: data.thumbnailUrl || null,
-      }])
+      }, 'Your 3D model')
       setPrompt3D('')
       load()
     } catch (err) {
@@ -734,12 +756,12 @@ export default function Gallery() {
         return
       }
       const poster = await makePoster(data.videoUrl)
-      await supabase.from('gallery_media').insert([{
+      await saveWithRetry({
         type: 'video',
         url: data.videoUrl,
         prompt: t2vPrompt,
         poster_url: poster,
-      }])
+      }, 'Your video')
       setT2vPrompt('')
       load()
     } catch (err) {
@@ -1525,6 +1547,20 @@ export default function Gallery() {
                     </button>
                   </div>
                   <p className="text-gray-400 leading-snug">{selected.prompt}</p>
+                </div>
+              )}
+              {selected.source_prompt && (
+                <div className="pt-1 border-t border-gray-800">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-gray-500">Original Prompt</p>
+                    <button
+                      onClick={() => copyUrl(selected.source_prompt)}
+                      className="text-purple-400 hover:text-purple-300 font-semibold"
+                    >
+                      {copiedUrl ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <p className="text-gray-400 leading-snug">{selected.source_prompt}</p>
                 </div>
               )}
             </div>
