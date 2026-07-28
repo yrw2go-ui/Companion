@@ -47,7 +47,7 @@ export default function Chat() {
   const [autoPlay, setAutoPlay] = useState(false)
   const [speakingIdx, setSpeakingIdx] = useState(null)
   const [showVideoModal, setShowVideoModal] = useState(false)
-  const [videoPrompt, setVideoPrompt] = useState(gentle natural motion, subtle movement)
+  const [videoPrompt, setVideoPrompt] = useState('smooth natural motion, eyes blinking naturally')
   const [videoSourceUrl, setVideoSourceUrl] = useState('')
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
@@ -347,7 +347,7 @@ export default function Chat() {
 
   const openVideoModal = (imageUrl) => {
     setVideoSourceUrl(imageUrl)
-    setVideoPrompt(smooth natural motion, eyes blinking naturally)
+    setVideoPrompt('smooth natural motion, eyes blinking naturally')
     setVideoDuration(5)
     setVideoRes('720p')
     setShowVideoModal(true)
