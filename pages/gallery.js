@@ -9,13 +9,10 @@ import { makePoster } from '../lib/posterFrame'
 // null means the price wasn't listed in the schema we have, so we say so
 // rather than guess.
 const VIDEO_MODELS = [
-  { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
-  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
-  { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
-  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy' },
-  { id: 'atlascloud/wan-2.7-spicy/image-to-video', label: 'Wan 2.7 Spicy' },
-  { id: 'atlascloud/wan-2.7/image-to-video', label: 'Wan 2.7' },
-  { id: 'bytedance/seedance-v1.5-pro/image-to-video-spicy', label: 'Seedance Spicy I2V' },
+  { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)', price: null },
+  { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)', price: null },
+  { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)', price: null },
+  { id: 'alibaba/wan-2.7/image-to-video', label: 'Wan 2.7 (start/end/continue)', price: null },
 ]
 
 const T2V_MODEL = 'xai/grok-imagine-video/text-to-video'
@@ -564,39 +561,61 @@ export default function Gallery() {
     setShowExtend(false)
     setExtending(true)
 
+    const isWan27Extend = extendModel === 'alibaba/wan-2.7/image-to-video'
+
     try {
-      const dataUrl = framePreview || await captureLastFrame(extendSource.url)
+      let vidData
 
-      setExtendStatus('Saving the frame...')
-      const frameRes = await fetch('/api/extract-frame', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl }),
-      })
-      const frameData = await frameRes.json()
-      if (!frameData.imageUrl) {
-        alert('Frame error: ' + (frameData.error || 'failed'))
-        setExtending(false); setExtendStatus('')
-        return
-      }
+      if (isWan27Extend) {
+        // Wan 2.7 can continue a video natively -- no need for the fragile
+        // client-side last-frame capture this feature otherwise relies on
+        setExtendStatus('Continuing the video (1-2 min)...')
+        const vidRes = await fetch('/api/generate-video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sourceVideoUrl: extendSource.url,
+            prompt: extendPrompt,
+            duration: extendDuration,
+            resolution: extendRes,
+            model: extendModel,
+          }),
+        })
+        vidData = await vidRes.json()
+      } else {
+        const dataUrl = framePreview || await captureLastFrame(extendSource.url)
 
-      setExtendStatus('Generating the continuation (1-2 min)...')
-      const vidRes = await fetch('/api/generate-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageUrl: frameData.imageUrl,
-          prompt: extendPrompt,
-          duration: extendDuration,
-          resolution: extendRes,
-          model: extendModel,
-        }),
-      })
-      const vidData = await vidRes.json()
+        setExtendStatus('Saving the frame...')
+        const frameRes = await fetch('/api/extract-frame', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl }),
+        })
+        const frameData = await frameRes.json()
+        if (!frameData.imageUrl) {
+          alert('Frame error: ' + (frameData.error || 'failed'))
+          setExtending(false); setExtendStatus('')
+          return
+        }
 
-      // the frame was only a stepping stone
-      if (frameData.fileName) {
-        await supabase.storage.from('character-images').remove([frameData.fileName])
+        setExtendStatus('Generating the continuation (1-2 min)...')
+        const vidRes = await fetch('/api/generate-video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageUrl: frameData.imageUrl,
+            prompt: extendPrompt,
+            duration: extendDuration,
+            resolution: extendRes,
+            model: extendModel,
+          }),
+        })
+        vidData = await vidRes.json()
+
+        // the frame was only a stepping stone
+        if (frameData.fileName) {
+          await supabase.storage.from('character-images').remove([frameData.fileName])
+        }
       }
 
       if (!vidData.videoUrl) {
