@@ -62,7 +62,6 @@ export default function Gallery() {
   const [folderModal, setFolderModal] = useState(null)  // { mode:'create'|'rename', id?, name }
   const [folderMap, setFolderMap] = useState({})  // item_key -> folder_id
   const [savingFolder, setSavingFolder] = useState(false)
-  const [debugLog, setDebugLog] = useState([])
   const downloadCounter = useRef(0)
   const [gSort, setGSort] = useState('date_desc')
   const [gSearch, setGSearch] = useState('')
@@ -145,21 +144,32 @@ export default function Gallery() {
     return false
   }
 
-  const dlog = (label, data) => {
-    setDebugLog(prev => [...prev.slice(-9), { label, data: JSON.stringify(data), t: new Date().toLocaleTimeString() }])
+  // generic pager for any table read that could exceed Supabase's 1000-row cap
+  const fetchAllRows = async (table, selectCols, applyFilters) => {
+    let rows = []
+    let offset = 0
+    while (true) {
+      let q = supabase.from(table).select(selectCols)
+      if (applyFilters) q = applyFilters(q)
+      const { data: page, error } = await q.range(offset, offset + 999)
+      if (error || !page || page.length === 0) break
+      rows = rows.concat(page)
+      if (page.length < 1000) break
+      offset += 1000
+    }
+    return rows
   }
 
   const load = async () => {
-    const { data: msgMedia } = await supabase
-      .from('messages')
-      .select('*')
-      .in('role', ['image', 'video'])
-      .order('created_at', { ascending: false })
+    const msgMedia = await fetchAllRows(
+      'messages', '*',
+      q => q.in('role', ['image', 'video']).order('created_at', { ascending: false })
+    )
 
-    const { data: galMedia } = await supabase
-      .from('gallery_media')
-      .select('*')
-      .order('created_at', { ascending: false })
+    const galMedia = await fetchAllRows(
+      'gallery_media', '*',
+      q => q.order('created_at', { ascending: false })
+    )
 
     const { data: folderRows } = await supabase
       .from('gallery_folders')
@@ -167,21 +177,29 @@ export default function Gallery() {
       .order('created_at', { ascending: true })
     setFolders(folderRows || [])
 
-    const { data: folderItemRows } = await supabase
-      .from('folder_items')
-      .select('*')
+    // paginate: a plain select() caps at 1000 rows, and this table can
+    // grow well past that as more items get filed
+    let folderItemRows = []
+    let fiOffset = 0
+    while (true) {
+      const { data: page, error } = await supabase
+        .from('folder_items')
+        .select('*')
+        .range(fiOffset, fiOffset + 999)
+      if (error || !page || page.length === 0) break
+      folderItemRows = folderItemRows.concat(page)
+      if (page.length < 1000) break
+      fiOffset += 1000
+    }
     const fmap = {}
-    for (const fi of folderItemRows || []) fmap[fi.item_key] = fi.folder_id
-    console.log('[DEBUG] folder_items rows loaded:', folderItemRows?.length, folderItemRows)
-    dlog('folder_items loaded', { count: folderItemRows?.length, rows: folderItemRows })
-    console.log('[DEBUG] folderMap built:', fmap)
-    dlog('folderMap built', fmap)
+    for (const fi of folderItemRows) fmap[fi.item_key] = fi.folder_id
     setFolderMap(fmap)
 
-    const { data: cardRows } = await supabase
-      .from('cards')
-      .select('id, name, card_number, image_url, back_image_url, video_url, image_prompt, back_image_prompt, video_prompt, seed, back_seed, created_at')
-      .order('created_at', { ascending: false })
+    const cardRows = await fetchAllRows(
+      'cards',
+      'id, name, card_number, image_url, back_image_url, video_url, image_prompt, back_image_prompt, video_prompt, seed, back_seed, created_at',
+      q => q.order('created_at', { ascending: false })
+    )
 
     const fromChats = (msgMedia || [])
       .filter(m => m.content && m.content !== 'generating')
@@ -197,12 +215,6 @@ export default function Gallery() {
         size: m.size ?? null,
         created_at: m.created_at,
       }))
-
-    console.log('[DEBUG] gallery_media rows loaded:', galMedia?.length)
-    dlog('gallery_media loaded', {
-      count: galMedia?.length,
-      newest5: (galMedia || []).slice(0, 5).map(g => ({ id: g.id, key: 'gal_' + g.id, created_at: g.created_at })),
-    })
     const fromGallery = (galMedia || []).map(g => ({
       key: 'gal_' + g.id,
       id: g.id,
@@ -955,11 +967,6 @@ export default function Gallery() {
       if (activeFolder === 'unfiled') {
         list = list.filter(m => !folderMap[m.key])
       } else {
-        console.log('[DEBUG] filtering for folder', activeFolder, '| folderMap has', Object.keys(folderMap).length, 'entries')
-        dlog('filtering folder ' + activeFolder, {
-          folderMapSize: Object.keys(folderMap).length,
-          candidates: list.slice(0, 10).map(m => ({ key: m.key, mapped: folderMap[m.key] })),
-        })
         list = list.filter(m => folderMap[m.key] === activeFolder)
       }
     }
@@ -1652,19 +1659,6 @@ export default function Gallery() {
             )}
             <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
           </div>
-        </div>
-      )}
-
-      {/* TEMPORARY DEBUG PANEL - remove once the folder issue is found */}
-      {debugLog.length > 0 && (
-        <div className="mt-6 bg-red-950/40 border border-red-900 rounded-xl p-3">
-          <p className="text-xs font-bold text-red-300 mb-2">Debug Log (temporary)</p>
-          {debugLog.map((d, i) => (
-            <div key={i} className="mb-2 pb-2 border-b border-red-900/50 last:border-0">
-              <p className="text-[10px] text-red-400 font-mono">{d.t} — {d.label}</p>
-              <p className="text-[9px] text-gray-400 font-mono break-all whitespace-pre-wrap">{d.data}</p>
-            </div>
-          ))}
         </div>
       )}
     </div>
