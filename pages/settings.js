@@ -41,6 +41,9 @@ export default function Settings() {
   const [resetStatus, setResetStatus] = useState('')
   const [resetResult, setResetResult] = useState(null)
 
+  const [emptyingStorage, setEmptyingStorage] = useState(false)
+  const [emptyStorageResult, setEmptyStorageResult] = useState(null)
+
   useEffect(() => {
     load()
   }, [])
@@ -427,14 +430,19 @@ export default function Settings() {
       await supabase.from('characters').delete().neq('id', '00000000-0000-0000-0000-000000000000')
 
       setResetStatus('Wiping storage files...')
-      let offset = 0
+      // Always list from offset 0 after deletes — incrementing offset skips files
       while (true) {
-        const { data: files } = await supabase.storage.from('character-images').list('', { limit: 100, offset })
+        const { data: files, error: listErr } = await supabase.storage
+          .from('character-images')
+          .list('', { limit: 100, offset: 0 })
+        if (listErr) throw new Error('Storage list failed: ' + listErr.message)
         if (!files || files.length === 0) break
-        const paths = files.map(f => f.name)
-        if (paths.length) await supabase.storage.from('character-images').remove(paths)
-        if (files.length < 100) break
-        offset += 100
+        // skip folder placeholders (no id / no metadata size)
+        const paths = files.filter(f => f.id || f.metadata).map(f => f.name)
+        if (!paths.length) break
+        setResetStatus(`Wiping storage... (${paths.length} files this batch)`)
+        const { error: rmErr } = await supabase.storage.from('character-images').remove(paths)
+        if (rmErr) throw new Error('Storage delete failed: ' + rmErr.message)
       }
 
       setResetStatus('')
@@ -447,6 +455,33 @@ export default function Settings() {
       setResetStatus('')
       setResetResult('Error: ' + err.message)
     }
+  }
+
+  const emptyStorageBucket = async () => {
+    if (emptyingStorage) return
+    if (!confirm('Delete EVERY file in the character-images storage bucket? This cannot be undone.')) return
+    setEmptyingStorage(true)
+    setEmptyStorageResult(null)
+    let total = 0
+    try {
+      while (true) {
+        const { data: files, error: listErr } = await supabase.storage
+          .from('character-images')
+          .list('', { limit: 100, offset: 0 })
+        if (listErr) throw new Error(listErr.message)
+        if (!files || files.length === 0) break
+        const paths = files.filter(f => f.id || f.metadata).map(f => f.name)
+        if (!paths.length) break
+        const { error: rmErr } = await supabase.storage.from('character-images').remove(paths)
+        if (rmErr) throw new Error(rmErr.message)
+        total += paths.length
+        setEmptyStorageResult(`Deleted ${total} so far...`)
+      }
+      setEmptyStorageResult(`Done. Removed ${total} file(s) from storage.`)
+    } catch (err) {
+      setEmptyStorageResult('Error: ' + err.message + (total ? ` (removed ${total} before fail)` : ''))
+    }
+    setEmptyingStorage(false)
   }
 
   const clearAudio = async () => {
@@ -749,6 +784,22 @@ export default function Settings() {
         {cleanResult && (
           <p className="text-xs text-gray-400 mt-3">{cleanResult}</p>
         )}
+      </div>
+
+      <div className="mt-10 border-t border-gray-800 pt-6">
+        <h2 className="font-semibold mb-1">Empty Storage Bucket</h2>
+        <p className="text-xs text-gray-600 mb-3">
+          Force-deletes every file in the character-images bucket, even if the app still
+          thinks they are in use. Use this when orphan scan shows files but the gallery is empty.
+        </p>
+        <button
+          onClick={emptyStorageBucket}
+          disabled={emptyingStorage}
+          className="w-full bg-red-900 hover:bg-red-800 disabled:opacity-50 rounded-lg py-3 font-semibold"
+        >
+          {emptyingStorage ? 'Emptying...' : 'Empty storage bucket'}
+        </button>
+        {emptyStorageResult && <p className="text-xs text-gray-400 mt-3">{emptyStorageResult}</p>}
       </div>
 
       <div className="mt-10 border-t border-gray-800 pt-6 mb-10">
