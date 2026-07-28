@@ -47,7 +47,7 @@ export default function Chat() {
   const [copiedPrompt, setCopiedPrompt] = useState(false)
   const [showImageEdit, setShowImageEdit] = useState(false)
   const [editInstruction, setEditInstruction] = useState('')
-  const [editModel, setEditModel] = useState('alibaba/wan-2.7-pro/image-edit')
+  const [editModel, setEditModel] = useState('bytedance/seedream-v5.0-pro/edit')
   const [editingImage, setEditingImage] = useState(false)
   const [autoPlay, setAutoPlay] = useState(false)
   const [speakingIdx, setSpeakingIdx] = useState(null)
@@ -224,7 +224,7 @@ export default function Chat() {
 
   const openImageEdit = () => {
     setEditInstruction('')
-    setEditModel('alibaba/wan-2.7-pro/image-edit')
+    setEditModel('bytedance/seedream-v5.0-pro/edit')
     setShowImageEdit(true)
   }
 
@@ -502,12 +502,23 @@ export default function Chat() {
     if (!confirm('End this conversation? Key moments will be saved to memory, then the conversation will be deleted.')) return
     setEnding(true)
 
-    const mediaFiles = messages
-      .filter(m => (m.role === 'image' || m.role === 'video') && m.content !== 'generating')
-      .map(m => fileNameFromUrl(m.content))
-      .filter(Boolean)
-    if (mediaFiles.length > 0) {
-      await supabase.storage.from('character-images').remove(mediaFiles)
+    // keep any generated images/videos: move them into gallery_media so
+    // they survive the conversation (and its messages) being deleted
+    const mediaMessages = messages.filter(
+      m => (m.role === 'image' || m.role === 'video') && m.content !== 'generating'
+    )
+    if (mediaMessages.length > 0) {
+      const rows = mediaMessages.map(m => ({
+        type: m.role,
+        url: m.content,
+        prompt: m.prompt || null,
+        negative_prompt: m.negative_prompt || null,
+        seed: m.seed ?? null,
+        size: m.size || null,
+        poster_url: m.poster_url || null,
+        character_id: character.id,
+      }))
+      await supabase.from('gallery_media').insert(rows)
     }
 
     try {
