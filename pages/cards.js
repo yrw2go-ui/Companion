@@ -24,10 +24,14 @@ const IMAGE_MODELS = [
 const familyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
 
 const VIDEO_MODELS = [
-  { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
+  { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s) 🔊' },
   { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
-  { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
+  { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p) 🔊' },
+  { id: 'alibaba/wan-2.7/image-to-video', label: 'Wan 2.7 (start/end/continue) 🔊' },
+  { id: 'alibaba/wan-2.2-spicy/image-to-video-lora', label: 'Wan 2.2 Spicy (LoRA support)' },
   { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy' },
+  { id: 'atlascloud/wan-2.7-spicy/image-to-video', label: 'Wan 2.7 Spicy 🔊' },
+  { id: 'bytedance/seedance-v1.5-pro/image-to-video-spicy', label: 'Seedance Spicy I2V 🔊' },
 ]
 
 const ART_STYLES = [
@@ -149,6 +153,14 @@ export default function Cards() {
     setSide('front')
     setExpanded(false)
     setView('static')
+  }
+
+  const togglePublish = async (card) => {
+    const next = !card.published
+    const { error } = await supabase.from('cards').update({ published: next }).eq('id', card.id)
+    if (error) { alert('Publish failed: ' + error.message); return }
+    setCards(prev => prev.map(c => c.id === card.id ? { ...c, published: next } : c))
+    setSelected(prev => prev && prev.id === card.id ? { ...prev, published: next } : prev)
   }
 
   const normalizeStats = (card) => {
@@ -709,6 +721,11 @@ export default function Cards() {
           {visibleCards.map(c => (
             <button key={c.id} onClick={() => openCard(c)} className="text-left relative">
               {cardFront(c)}
+              {c.published && (
+                <span className="absolute top-2 right-2 z-[5] bg-emerald-500 text-black rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold shadow">
+                  ✓
+                </span>
+              )}
               {c.video_url && (
                 <span className="absolute bottom-2 left-2 z-[5] bg-black/70 rounded-full px-2 py-0.5 text-[9px] tracking-wide">
                   🎬
@@ -963,8 +980,12 @@ export default function Cards() {
               </div>
             </div>
 
+            <button onClick={() => togglePublish(selected)}
+              className={`w-full rounded-lg py-2 text-sm font-semibold mt-3 ${selected.published ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-gray-800 hover:bg-gray-700'}`}>
+              {selected.published ? '✓ Published to game' : 'Publish to game'}
+            </button>
             <button onClick={openAnimate} disabled={animating}
-              className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-3">
+              className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2">
               {animating ? 'Animating...' : selected.video_url ? '🎬 Re-animate Front' : '🎬 Animate Front'}
             </button>
             <button onClick={() => handleDownload(selected)} disabled={downloading}
