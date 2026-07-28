@@ -430,20 +430,9 @@ export default function Settings() {
       await supabase.from('characters').delete().neq('id', '00000000-0000-0000-0000-000000000000')
 
       setResetStatus('Wiping storage files...')
-      // Always list from offset 0 after deletes — incrementing offset skips files
-      while (true) {
-        const { data: files, error: listErr } = await supabase.storage
-          .from('character-images')
-          .list('', { limit: 100, offset: 0 })
-        if (listErr) throw new Error('Storage list failed: ' + listErr.message)
-        if (!files || files.length === 0) break
-        // skip folder placeholders (no id / no metadata size)
-        const paths = files.filter(f => f.id || f.metadata).map(f => f.name)
-        if (!paths.length) break
-        setResetStatus(`Wiping storage... (${paths.length} files this batch)`)
-        const { error: rmErr } = await supabase.storage.from('character-images').remove(paths)
-        if (rmErr) throw new Error('Storage delete failed: ' + rmErr.message)
-      }
+      const storageRes = await fetch('/api/empty-storage', { method: 'POST' })
+      const storageData = await storageRes.json()
+      if (storageData.error) throw new Error('Storage wipe failed: ' + storageData.error)
 
       setResetStatus('')
       setResetting(false)
@@ -459,27 +448,16 @@ export default function Settings() {
 
   const emptyStorageBucket = async () => {
     if (emptyingStorage) return
-    if (!confirm('Delete EVERY file in the character-images storage bucket? This cannot be undone.')) return
+    if (!confirm('Delete EVERY file in the character-images storage bucket (including folders)? This cannot be undone.')) return
     setEmptyingStorage(true)
-    setEmptyStorageResult(null)
-    let total = 0
+    setEmptyStorageResult('Working (server-side)...')
     try {
-      while (true) {
-        const { data: files, error: listErr } = await supabase.storage
-          .from('character-images')
-          .list('', { limit: 100, offset: 0 })
-        if (listErr) throw new Error(listErr.message)
-        if (!files || files.length === 0) break
-        const paths = files.filter(f => f.id || f.metadata).map(f => f.name)
-        if (!paths.length) break
-        const { error: rmErr } = await supabase.storage.from('character-images').remove(paths)
-        if (rmErr) throw new Error(rmErr.message)
-        total += paths.length
-        setEmptyStorageResult(`Deleted ${total} so far...`)
-      }
-      setEmptyStorageResult(`Done. Removed ${total} file(s) from storage.`)
+      const res = await fetch('/api/empty-storage', { method: 'POST' })
+      const data = await res.json()
+      if (data.error) setEmptyStorageResult('Error: ' + data.error)
+      else setEmptyStorageResult(`Done. Removed ${data.deleted} file(s) (scanned ${data.scanned}).`)
     } catch (err) {
-      setEmptyStorageResult('Error: ' + err.message + (total ? ` (removed ${total} before fail)` : ''))
+      setEmptyStorageResult('Error: ' + err.message)
     }
     setEmptyingStorage(false)
   }
