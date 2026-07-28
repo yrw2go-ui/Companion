@@ -18,6 +18,11 @@ export default function Settings() {
   const [scanning, setScanning] = useState(false)
   const [importing, setImporting] = useState(false)
   const [orphanInfo, setOrphanInfo] = useState(null)
+  const [dupScanning, setDupScanning] = useState(false)
+  const [dupInfo, setDupInfo] = useState(null)
+  const [dupDeleting, setDupDeleting] = useState(false)
+  const [dupResult, setDupResult] = useState(null)
+  const [keepChoice, setKeepChoice] = useState({})  // groupIndex -> fileName to KEEP
   const [importResult, setImportResult] = useState(null)
 
   const [clearingAudio, setClearingAudio] = useState(false)
@@ -75,6 +80,87 @@ export default function Settings() {
       setCleanResult('Error: ' + err.message)
     }
     setCleaning(false)
+  }
+
+  const scanDuplicates = async () => {
+    if (dupScanning) return
+    setDupScanning(true)
+    setDupInfo(null)
+    setDupResult(null)
+    try {
+      const res = await fetch('/api/find-duplicates', { method: 'POST' })
+      const data = await res.json()
+      if (data.error) {
+        setDupResult('Error: ' + data.error)
+      } else {
+        setDupInfo(data)
+        // default to keeping the oldest file in each group
+        const defaults = {}
+        data.groups?.forEach((g, i) => { defaults[i] = g.files[0].name })
+        setKeepChoice(defaults)
+      }
+    } catch (err) {
+      setDupResult('Error: ' + err.message)
+    }
+    setDupScanning(false)
+  }
+
+  const deleteDuplicateGroup = async (group, groupIndex) => {
+    const keep = keepChoice[groupIndex]
+    const toDelete = group.files.map(f => f.name).filter(n => n !== keep)
+    if (toDelete.length === 0) return
+    if (!confirm(`Delete ${toDelete.length} duplicate file(s), keeping "${keep}"?`)) return
+
+    setDupDeleting(true)
+    try {
+      const res = await fetch('/api/delete-duplicates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileNames: toDelete }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        alert('Error: ' + data.error)
+      } else {
+        // remove this group from the list locally
+        setDupInfo(prev => ({
+          ...prev,
+          groups: prev.groups.filter((_, i) => i !== groupIndex),
+        }))
+      }
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+    setDupDeleting(false)
+  }
+
+  const deleteAllDuplicates = async () => {
+    if (!dupInfo?.groups?.length) return
+    const allToDelete = dupInfo.groups.flatMap((g, i) => {
+      const keep = keepChoice[i]
+      return g.files.map(f => f.name).filter(n => n !== keep)
+    })
+    if (allToDelete.length === 0) return
+    if (!confirm(`Delete ${allToDelete.length} duplicate file(s) across ${dupInfo.groups.length} group(s)? This keeps one copy from each group.`)) return
+
+    setDupDeleting(true)
+    try {
+      const res = await fetch('/api/delete-duplicates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileNames: allToDelete }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setDupResult('Error: ' + data.error)
+      } else {
+        setDupResult(`Deleted ${data.deleted} duplicate file(s), cleared ${data.clearedRows} record(s).`)
+        setDupInfo(null)
+      }
+    } catch (err) {
+      setDupResult('Error: ' + err.message)
+    }
+    setDupDeleting(false)
   }
 
   const scanOrphans = async () => {
@@ -342,6 +428,72 @@ export default function Settings() {
       >
         {saving ? 'Saving...' : description === savedValue ? 'Saved' : 'Save'}
       </button>
+
+      <div className="mt-10 border-t border-gray-800 pt-6">
+        <h2 className="font-semibold mb-1">Find Duplicates</h2>
+        <p className="text-xs text-gray-600 mb-3">
+          Finds files that look like accidental duplicates — same base name with a (1)/(2)-style
+          suffix and matching file size. Pick which copy to keep in each group.
+        </p>
+
+        <button
+          onClick={scanDuplicates}
+          disabled={dupScanning}
+          className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-semibold"
+        >
+          {dupScanning ? 'Scanning...' : 'Scan for duplicates'}
+        </button>
+
+        {dupInfo && (
+          <div className="mt-3 space-y-3">
+            {dupInfo.groupCount === 0 ? (
+              <p className="text-xs text-gray-400">No likely duplicates found.</p>
+            ) : (
+              <>
+                <p className="text-xs text-gray-300">
+                  Found {dupInfo.groupCount} group(s), {dupInfo.totalDuplicateFiles} extra file(s) that could be removed.
+                </p>
+
+                {dupInfo.groups.map((g, i) => (
+                  <div key={g.baseKey} className="bg-gray-900 border border-gray-800 rounded-lg p-3">
+                    <p className="text-[11px] text-gray-500 font-mono mb-2 truncate">{g.baseKey}</p>
+                    {g.files.map(f => (
+                      <label key={f.name} className="flex items-center gap-2 text-xs text-gray-300 mb-1">
+                        <input
+                          type="radio"
+                          name={`keep-${i}`}
+                          checked={keepChoice[i] === f.name}
+                          onChange={() => setKeepChoice(prev => ({ ...prev, [i]: f.name }))}
+                        />
+                        <span className="font-mono truncate flex-1">{f.name}</span>
+                        <span className="text-gray-600">{f.size ? `${Math.round(f.size / 1024)}KB` : ''}</span>
+                      </label>
+                    ))}
+                    <p className="text-[10px] text-gray-600 mt-1 mb-2">Keeping the selected file, deleting the rest in this group.</p>
+                    <button
+                      onClick={() => deleteDuplicateGroup(g, i)}
+                      disabled={dupDeleting}
+                      className="w-full bg-red-900 hover:bg-red-800 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold"
+                    >
+                      Delete duplicates in this group
+                    </button>
+                  </div>
+                ))}
+
+                <button
+                  onClick={deleteAllDuplicates}
+                  disabled={dupDeleting}
+                  className="w-full bg-red-900 hover:bg-red-800 disabled:opacity-50 rounded-lg py-3 font-semibold"
+                >
+                  {dupDeleting ? 'Working...' : `Delete all ${dupInfo.totalDuplicateFiles} duplicate(s)`}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {dupResult && <p className="text-xs text-gray-400 mt-3">{dupResult}</p>}
+      </div>
 
       <div className="mt-10 border-t border-gray-800 pt-6">
         <h2 className="font-semibold mb-1">Import Orphaned Media</h2>
