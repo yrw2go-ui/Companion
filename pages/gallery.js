@@ -13,13 +13,20 @@ const VIDEO_MODELS = [
   { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)', price: null },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)', price: null },
   { id: 'alibaba/wan-2.7/image-to-video', label: 'Wan 2.7 (start/end/continue)', price: null },
-  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy' },
-  { id: 'atlascloud/wan-2.7-spicy/image-to-video', label: 'Wan 2.7 Spicy' },
-  { id: 'bytedance/seedance-v1.5-pro/image-to-video-spicy', label: 'Seedance Spicy I2V' },
+  { id: 'alibaba/wan-2.2/image-to-video-lora', label: 'Wan 2.2 (LoRA support)', price: null },
 ]
 
-const T2V_MODEL = 'xai/grok-imagine-video/text-to-video'
+// text-to-video options
+const T2V_MODELS = [
+  { id: 'xai/grok-imagine-video/text-to-video', label: 'Grok Imagine', price: null },
+  { id: 'kwaivgi/kling-v3.0-pro/text-to-video', label: 'Kling V3.0 Pro (sound, 3-15s)', price: null },
+  { id: 'kwaivgi/kling-video-o3-pro/text-to-video', label: 'Kling O3 Pro (sound, 3-15s)', price: null },
+]
+const T2V_MODEL = T2V_MODELS[0].id
 const T2V_PRICE = null
+
+// video-edit (existing video in, edited video out)
+const VIDEO_EDIT_MODEL = 'kwaivgi/kling-video-o3-pro/video-edit'
 
 const IMAGE_MODELS = [
   { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux', price: null },
@@ -107,11 +114,19 @@ export default function Gallery() {
   const [show3DFromImage, setShow3DFromImage] = useState(null)  // holds the source item, or null
 
   const [showT2V, setShowT2V] = useState(false)
+  const [t2vModel, setT2vModel] = useState(T2V_MODEL)
   const [t2vPrompt, setT2vPrompt] = useState('')
   const [t2vDuration, setT2vDuration] = useState(8)
   const [t2vRes, setT2vRes] = useState('720p')
   const [t2vAspect, setT2vAspect] = useState('9:16')
+  const [t2vSound, setT2vSound] = useState(true)
   const [t2vBusy, setT2vBusy] = useState(false)
+
+  const [showVideoEdit, setShowVideoEdit] = useState(false)
+  const [videoEditSource, setVideoEditSource] = useState(null)
+  const [videoEditPrompt, setVideoEditPrompt] = useState('')
+  const [videoEditKeepSound, setVideoEditKeepSound] = useState(true)
+  const [videoEditing, setVideoEditing] = useState(false)
   const [animating, setAnimating] = useState(false)
 
   const [showExtend, setShowExtend] = useState(false)
@@ -541,6 +556,53 @@ export default function Gallery() {
     setGrabbingFrame(false)
   }
 
+  const openVideoEdit = (item) => {
+    setVideoEditSource(item)
+    setVideoEditPrompt('')
+    setVideoEditKeepSound(true)
+    setSelected(null)
+    setShowVideoEdit(true)
+  }
+
+  const runVideoEdit = async () => {
+    if (!videoEditSource || videoEditing) return
+    if (!videoEditPrompt.trim()) { alert('Describe the change you want'); return }
+    setShowVideoEdit(false)
+    setVideoEditing(true)
+    setAnimating(true)
+    try {
+      const res = await fetch('/api/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: VIDEO_EDIT_MODEL,
+          prompt: videoEditPrompt,
+          sourceVideoUrl: videoEditSource.url,
+          keepOriginalSound: videoEditKeepSound,
+        }),
+      })
+      const data = await res.json()
+      if (!data.videoUrl) {
+        alert('Error: ' + (data.error || 'failed'))
+        setVideoEditing(false); setAnimating(false)
+        return
+      }
+      const poster = await makePoster(data.videoUrl)
+      await saveWithRetry({
+        type: 'video',
+        url: data.videoUrl,
+        prompt: videoEditPrompt,
+        poster_url: poster,
+        source_prompt: videoEditSource.prompt || null,
+      }, 'Your edited video')
+      load()
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+    setVideoEditing(false)
+    setAnimating(false)
+  }
+
   const openExtend = (item) => {
     setExtendModel('alibaba/wan-2.6/image-to-video')
     setExtendSource(item)
@@ -791,15 +853,17 @@ export default function Gallery() {
     setT2vBusy(true)
     setAnimating(true)
     try {
+      const isKlingT2V = t2vModel.startsWith('kwaivgi/kling')
       const res = await fetch('/api/generate-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: T2V_MODEL,
+          model: t2vModel,
           prompt: t2vPrompt,
           duration: t2vDuration,
           resolution: t2vRes,
           aspectRatio: t2vAspect,
+          sound: isKlingT2V ? t2vSound : undefined,
         }),
       })
       const data = await res.json()
@@ -1410,14 +1474,59 @@ export default function Gallery() {
         </div>
       )}
 
+      {/* VIDEO EDIT */}
+      {showVideoEdit && videoEditSource && (
+        <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-[65] overflow-y-auto">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
+            <h2 className="font-bold text-lg mb-2">Edit This Video</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Uses Kling O3 Pro to edit an existing video by instruction. Source video must be 10s or shorter.
+              Saves as a new video; the original is kept.
+            </p>
+
+            <video src={videoEditSource.url} className="w-32 rounded-lg mb-3 border border-gray-700" muted controls />
+
+            <label className="block text-xs text-gray-400 mb-1">What should change?</label>
+            <textarea value={videoEditPrompt} onChange={e => setVideoEditPrompt(e.target.value)} rows={3}
+              placeholder="e.g. change the background to a snowy forest"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+
+            <label className="flex items-center gap-2 text-xs text-gray-400 mb-4">
+              <input type="checkbox" checked={videoEditKeepSound} onChange={e => setVideoEditKeepSound(e.target.checked)} />
+              Keep the original audio
+            </label>
+
+            <div className="flex gap-2">
+              <button onClick={() => setShowVideoEdit(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={runVideoEdit} disabled={videoEditing} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
+                {videoEditing ? 'Editing...' : 'Edit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TEXT TO VIDEO */}
       {showT2V && (
         <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-5 z-[60]">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
             <h2 className="font-bold text-lg mb-2">Video from Text</h2>
             <p className="text-xs text-gray-500 mb-3">
-              Generates a video from a description alone, no starting image. Uses Grok Imagine. 1-3 min.
+              Generates a video from a description alone, no starting image. 1-3 min.
             </p>
+
+            <label className="block text-xs text-gray-400 mb-1">Model</label>
+            <select value={t2vModel} onChange={e => setT2vModel(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              {T2V_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+
+            {t2vModel.startsWith('kwaivgi/kling') && (
+              <label className="flex items-center gap-2 text-xs text-gray-400 mb-3">
+                <input type="checkbox" checked={t2vSound} onChange={e => setT2vSound(e.target.checked)} />
+                Generate sound with the video
+              </label>
+            )}
 
             <label className="block text-xs text-gray-400 mb-1">Describe the video</label>
             <textarea value={t2vPrompt} onChange={e => setT2vPrompt(e.target.value)} rows={4}
@@ -1437,8 +1546,16 @@ export default function Gallery() {
             <label className="block text-xs text-gray-400 mb-1">Length</label>
             <select value={t2vDuration} onChange={e => setT2vDuration(parseInt(e.target.value))}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
-              <option value={5}>5 seconds</option>
-              <option value={8}>8 seconds</option>
+              {t2vModel.startsWith('kwaivgi/kling')
+                ? Array.from({ length: 13 }, (_, i) => i + 3).map(s => (
+                    <option key={s} value={s}>{s} seconds</option>
+                  ))
+                : (
+                  <>
+                    <option value={5}>5 seconds</option>
+                    <option value={8}>8 seconds</option>
+                  </>
+                )}
             </select>
 
             <label className="block text-xs text-gray-400 mb-1">Resolution</label>
@@ -1674,6 +1791,13 @@ export default function Gallery() {
               <button onClick={() => openExtend(selected)} disabled={extending}
                 className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2">
                 ⏭ Extend from last frame
+              </button>
+            )}
+
+            {selected.type === 'video' && (
+              <button onClick={() => openVideoEdit(selected)} disabled={videoEditing}
+                className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2">
+                ✎ Edit This Video
               </button>
             )}
 
