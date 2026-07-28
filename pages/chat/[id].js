@@ -44,6 +44,11 @@ export default function Chat() {
   const [imageModel, setImageModel] = useState('z-image/turbo')
   const [preparingPrompt, setPreparingPrompt] = useState(false)
   const [expandedImage, setExpandedImage] = useState(null)  // holds the message object, or null
+  const [copiedPrompt, setCopiedPrompt] = useState(false)
+  const [showImageEdit, setShowImageEdit] = useState(false)
+  const [editInstruction, setEditInstruction] = useState('')
+  const [editModel, setEditModel] = useState('alibaba/wan-2.7-pro/image-edit')
+  const [editingImage, setEditingImage] = useState(false)
   const [autoPlay, setAutoPlay] = useState(false)
   const [speakingIdx, setSpeakingIdx] = useState(null)
   const [showVideoModal, setShowVideoModal] = useState(false)
@@ -210,7 +215,78 @@ export default function Chat() {
 
 
 
-  const retryExpandedImage = async () => {
+  const copyExpandedPrompt = () => {
+    if (!expandedImage?.prompt) return
+    navigator.clipboard?.writeText(expandedImage.prompt)
+    setCopiedPrompt(true)
+    setTimeout(() => setCopiedPrompt(false), 1500)
+  }
+
+  const openImageEdit = () => {
+    setEditInstruction('')
+    setEditModel('alibaba/wan-2.7-pro/image-edit')
+    setShowImageEdit(true)
+  }
+
+  const runImageEdit = async () => {
+    if (!expandedImage || editingImage) return
+    if (!editInstruction.trim()) { alert('Describe the change you want'); return }
+    const src = expandedImage
+    setShowImageEdit(false)
+    setExpandedImage(null)
+    setEditingImage(true)
+    setImaging(true)
+    setMessages(prev => [...prev, { role: 'image', content: 'generating' }])
+
+    try {
+      const payload = {
+        prompt: editInstruction,
+        referenceImageUrl: src.content,
+        model: editModel,
+      }
+      const res = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (data.imageUrl) {
+        setMessages(prev => {
+          const copy = [...prev]
+          copy[copy.length - 1] = {
+            role: 'image',
+            content: data.imageUrl,
+            prompt: editInstruction,
+            image_model: editModel,
+          }
+          return copy
+        })
+        await supabase.from('messages').insert([{
+          conversation_id: id,
+          role: 'image',
+          content: data.imageUrl,
+          prompt: editInstruction,
+          image_model: editModel,
+        }])
+      } else {
+        setMessages(prev => {
+          const copy = [...prev]
+          copy[copy.length - 1] = { role: 'assistant', content: '[Edit error: ' + (data.error || 'failed') + ']' }
+          return copy
+        })
+      }
+    } catch (err) {
+      setMessages(prev => {
+        const copy = [...prev]
+        copy[copy.length - 1] = { role: 'assistant', content: '[Edit error: ' + err.message + ']' }
+        return copy
+      })
+    }
+    setEditingImage(false)
+    setImaging(false)
+  }
+
+  const retryExpandedImage = async (reuseSeed = false) => {
     if (!expandedImage || imaging) return
     const src = expandedImage
     setExpandedImage(null)
@@ -220,15 +296,16 @@ export default function Chat() {
     try {
       const fam = imgFamilyOf(src.image_model || imageModel)
       const useModel = src.image_model || imageModel
+      const seedToUse = reuseSeed ? src.seed : undefined
       const payload = { model: useModel, prompt: src.prompt }
       if (fam === 'grok') {
         payload.aspectRatio = '3:4'; payload.resolution = '2k'
       } else if (fam === 'seedream') {
         payload.size = '1328*1776'; payload.thinking = 'disabled'
       } else if (fam === 'schnell') {
-        payload.negativePrompt = src.negative_prompt; payload.seed = undefined
+        payload.negativePrompt = src.negative_prompt; payload.seed = seedToUse
       } else {
-        payload.negativePrompt = src.negative_prompt; payload.seed = undefined
+        payload.negativePrompt = src.negative_prompt; payload.seed = seedToUse
         payload.guidance = guidance; payload.steps = steps
       }
       const res = await fetch('/api/generate-image', {
@@ -773,7 +850,12 @@ export default function Chat() {
               </div>
               {expandedImage.prompt && (
                 <div className="pt-2 border-t border-gray-800">
-                  <p className="text-gray-500 mb-1">Prompt</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-gray-500">Prompt</p>
+                    <button onClick={copyExpandedPrompt} className="text-purple-400 hover:text-purple-300 font-semibold">
+                      {copiedPrompt ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
                   <p className="text-gray-400 leading-snug">{expandedImage.prompt}</p>
                 </div>
               )}
@@ -785,10 +867,53 @@ export default function Chat() {
               )}
             </div>
 
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <button onClick={() => retryExpandedImage(false)} disabled={imaging}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold text-sm">
+                {imaging ? 'Working...' : '↻ Retry'}
+              </button>
+              <button onClick={() => retryExpandedImage(true)} disabled={imaging || expandedImage.seed == null}
+                className="bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded-lg py-3 font-semibold text-sm">
+                🎯 Same Seed
+              </button>
+            </div>
+            <button onClick={openImageEdit} disabled={imaging}
+              className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-semibold text-sm mb-2">
+              ✎ Edit This Image
+            </button>
+            <button onClick={() => setExpandedImage(null)} className="w-full bg-gray-900 border border-gray-800 hover:bg-gray-800 rounded-lg py-2.5 text-sm text-gray-400">
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* IMAGE EDIT (from expand view) */}
+      {showImageEdit && expandedImage && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-5 z-[75]">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-md">
+            <h2 className="font-bold text-lg mb-2">Edit This Image</h2>
+            <p className="text-xs text-gray-500 mb-3">Describe the change. Keeps the subject, alters what you ask.</p>
+
+            <img src={expandedImage.content} alt="" className="w-24 rounded-lg mb-3 border border-gray-700" />
+
+            <label className="block text-xs text-gray-400 mb-1">Edit Model</label>
+            <select value={editModel} onChange={e => setEditModel(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              <option value="alibaba/wan-2.7-pro/image-edit">Wan 2.7 Pro (edit)</option>
+              <option value="bytedance/seedream-v5.0-pro/edit">Seedream 5 Pro (edit)</option>
+              <option value="xai/grok-imagine-image-quality/edit">Grok Imagine (edit)</option>
+            </select>
+
+            <label className="block text-xs text-gray-400 mb-1">What should change?</label>
+            <textarea value={editInstruction} onChange={e => setEditInstruction(e.target.value)} rows={3}
+              placeholder="e.g. change the background to a sunlit beach, keep her exactly the same"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500" />
+
             <div className="flex gap-2">
-              <button onClick={() => setExpandedImage(null)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Close</button>
-              <button onClick={retryExpandedImage} disabled={imaging} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
-                {imaging ? 'Retrying...' : '↻ Retry'}
+              <button onClick={() => setShowImageEdit(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={runImageEdit} disabled={editingImage} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
+                {editingImage ? 'Editing...' : 'Edit'}
               </button>
             </div>
           </div>
