@@ -146,6 +146,8 @@ export default function Gallery() {
   const [extendStatus, setExtendStatus] = useState('')
   const [framePreview, setFramePreview] = useState('')
   const [grabbingFrame, setGrabbingFrame] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkStatus, setBulkStatus] = useState('')
 
   useEffect(() => { load() }, [])
 
@@ -1074,6 +1076,26 @@ export default function Gallery() {
     setTimeout(() => setCopiedUrl(false), 1500)
   }
 
+  const downloadAll = async () => {
+    if (bulkBusy) return
+    const list = media.filter(m => m.url && m.source !== 'cards')
+    if (!list.length) { alert('Nothing to download'); return }
+    if (!confirm(`Download ${list.length} items? Browser may block multiple downloads — allow popups if asked.`)) return
+    setBulkBusy(true)
+    let ok = 0
+    for (let i = 0; i < list.length; i++) {
+      setBulkStatus(`Downloading ${i + 1}/${list.length}...`)
+      try {
+        await downloadItem(list[i])
+        ok++
+        await new Promise(r => setTimeout(r, 400))
+      } catch {}
+    }
+    setBulkBusy(false)
+    setBulkStatus('')
+    alert(`Downloaded ${ok} of ${list.length}`)
+  }
+
   const shown = (() => {
     let list = media.filter(m => {
       if (filter === 'cards') return m.source === 'cards'
@@ -1130,7 +1152,13 @@ export default function Gallery() {
       <div className="flex items-center justify-between mb-4">
         <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <h1 className="text-xl font-bold">Gallery</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
+          <button onClick={downloadAll} disabled={bulkBusy} className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 py-2 text-sm font-semibold" title="Download all media">
+            ⬇ All
+          </button>
+          <button onClick={() => router.push('/settings')} className="bg-red-950 hover:bg-red-900 rounded-full px-3 py-2 text-sm font-semibold text-red-300" title="Reset all data in Settings">
+            🗑 Reset
+          </button>
           <button onClick={() => setShowT2V(true)} className="bg-gray-800 hover:bg-gray-700 rounded-full px-3 py-2 text-sm font-semibold" title="Video from text">
             🎬 Text
           </button>
@@ -1142,6 +1170,11 @@ export default function Gallery() {
           </button>
         </div>
       </div>
+      {bulkBusy && bulkStatus && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-sm text-gray-400">
+          {bulkStatus}
+        </div>
+      )}
 
       <div className="flex gap-2 mb-3">
         {tab('all', 'All')}

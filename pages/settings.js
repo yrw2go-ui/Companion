@@ -35,6 +35,12 @@ export default function Settings() {
   const [posterizing, setPosterizing] = useState(false)
   const [posterStatus, setPosterStatus] = useState('')
 
+  const [showResetModal, setShowResetModal] = useState(false)
+  const [resetConfirmText, setResetConfirmText] = useState('')
+  const [resetting, setResetting] = useState(false)
+  const [resetStatus, setResetStatus] = useState('')
+  const [resetResult, setResetResult] = useState(null)
+
   useEffect(() => {
     load()
   }, [])
@@ -395,6 +401,54 @@ export default function Settings() {
     setPosterizing(false)
   }
 
+  const runResetAll = async () => {
+    if (resetting) return
+    if (resetConfirmText.trim().toUpperCase() !== 'RESET') {
+      alert('Type RESET to confirm')
+      return
+    }
+    setResetting(true)
+    setResetStatus('Deleting folders...')
+    setResetResult(null)
+    try {
+      await supabase.from('folder_items').delete().neq('item_key', '')
+      await supabase.from('gallery_folders').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+
+      setResetStatus('Deleting gallery media...')
+      await supabase.from('gallery_media').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+
+      setResetStatus('Deleting chat images/videos...')
+      await supabase.from('messages').delete().in('role', ['image', 'video'])
+
+      setResetStatus('Deleting cards...')
+      await supabase.from('cards').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+
+      setResetStatus('Deleting characters...')
+      await supabase.from('characters').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+
+      setResetStatus('Wiping storage files...')
+      let offset = 0
+      while (true) {
+        const { data: files } = await supabase.storage.from('character-images').list('', { limit: 100, offset })
+        if (!files || files.length === 0) break
+        const paths = files.map(f => f.name)
+        if (paths.length) await supabase.storage.from('character-images').remove(paths)
+        if (files.length < 100) break
+        offset += 100
+      }
+
+      setResetStatus('')
+      setResetting(false)
+      setShowResetModal(false)
+      setResetConfirmText('')
+      setResetResult('All data wiped: gallery, chat media, cards, characters, folders, and storage files.')
+    } catch (err) {
+      setResetting(false)
+      setResetStatus('')
+      setResetResult('Error: ' + err.message)
+    }
+  }
+
   const clearAudio = async () => {
     if (clearingAudio) return
     setClearingAudio(true)
@@ -696,6 +750,69 @@ export default function Settings() {
           <p className="text-xs text-gray-400 mt-3">{cleanResult}</p>
         )}
       </div>
+
+      <div className="mt-10 border-t border-gray-800 pt-6 mb-10">
+        <h2 className="font-semibold mb-1 text-red-400">Reset All Data</h2>
+        <p className="text-xs text-gray-600 mb-3">
+          Permanently deletes <strong>everything</strong>: gallery media, chat images/videos,
+          all cards, all characters, all folders, and all files in storage.
+          This cannot be undone.
+        </p>
+
+        <button
+          onClick={() => { setShowResetModal(true); setResetConfirmText(''); setResetResult(null) }}
+          disabled={resetting}
+          className="w-full bg-red-950 hover:bg-red-900 disabled:opacity-50 border border-red-800 rounded-lg py-3 font-semibold text-red-300"
+        >
+          Wipe everything...
+        </button>
+
+        {resetResult && <p className="text-xs text-gray-400 mt-3">{resetResult}</p>}
+      </div>
+
+      {showResetModal && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-5 z-50">
+          <div className="bg-gray-900 border border-red-900 rounded-2xl p-5 w-full max-w-sm">
+            <h2 className="font-bold text-lg text-red-400 mb-2">Confirm Full Reset</h2>
+            <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+              This will permanently delete:
+              <br />• All gallery images, videos, 3D models
+              <br />• All chat images &amp; videos
+              <br />• All cards
+              <br />• All characters
+              <br />• All folders
+              <br />• All storage files
+              <br /><br />
+              Type <span className="font-mono text-red-300">RESET</span> to confirm.
+            </p>
+            <input
+              autoFocus
+              value={resetConfirmText}
+              onChange={e => setResetConfirmText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') runResetAll() }}
+              placeholder="Type RESET"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-red-500 font-mono"
+            />
+            {resetStatus && <p className="text-xs text-gray-500 mb-3">{resetStatus}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setShowResetModal(false); setResetConfirmText('') }}
+                disabled={resetting}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runResetAll}
+                disabled={resetting || resetConfirmText.trim().toUpperCase() !== 'RESET'}
+                className="flex-1 bg-red-900 hover:bg-red-800 disabled:bg-gray-800 disabled:text-gray-600 rounded-lg py-3 font-semibold"
+              >
+                {resetting ? 'Wiping...' : 'Wipe All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
