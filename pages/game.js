@@ -15,35 +15,26 @@ export default function Game() {
   }, [])
 
   const load = async () => {
-    // published cards for collection + banners
+    // published cards for collection only (not banners)
     const { data: cards } = await supabase
       .from('cards')
-      .select('id, name, card_number, image_url, back_image_url, video_url, poster_url, published')
+      .select('id, name, card_number, image_url, back_image_url, video_url, poster_url, published, rarity')
       .eq('published', true)
       .order('created_at', { ascending: false })
 
-    const list = cards || []
-    setPublishedCards(list)
+    setPublishedCards(cards || [])
 
-    // banners: published card faces first, fill with favorite gallery images
-    const cardFaces = list.filter(c => c.image_url).map(c => ({
-      id: 'card_' + c.id,
-      url: c.image_url,
-      prompt: c.name,
-    }))
+    // banners: gallery images only (favorites first)
+    let banners = []
+    const { data: favs } = await supabase
+      .from('gallery_media')
+      .select('id, url, prompt')
+      .eq('type', 'image')
+      .eq('is_favorite', true)
+      .order('created_at', { ascending: false })
+      .limit(24)
+    banners = (favs || []).map(f => ({ id: 'gal_' + f.id, url: f.url, prompt: f.prompt }))
 
-    let banners = cardFaces
-    if (banners.length < 8) {
-      const { data: favs } = await supabase
-        .from('gallery_media')
-        .select('id, url, prompt')
-        .eq('type', 'image')
-        .eq('is_favorite', true)
-        .order('created_at', { ascending: false })
-        .limit(24)
-      const extra = (favs || []).map(f => ({ id: 'gal_' + f.id, url: f.url, prompt: f.prompt }))
-      banners = [...banners, ...extra].slice(0, 24)
-    }
     if (banners.length < 4) {
       const { data: recent } = await supabase
         .from('gallery_media')
@@ -52,7 +43,11 @@ export default function Game() {
         .order('created_at', { ascending: false })
         .limit(24)
       const extra = (recent || []).map(f => ({ id: 'gal_' + f.id, url: f.url, prompt: f.prompt }))
-      banners = [...banners, ...extra].slice(0, 24)
+      const seen = new Set(banners.map(b => b.id))
+      for (const e of extra) {
+        if (!seen.has(e.id)) banners.push(e)
+      }
+      banners = banners.slice(0, 24)
     }
 
     setBanners(banners)
@@ -172,15 +167,18 @@ export default function Game() {
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {publishedCards.map(c => (
-                <div key={c.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                <div key={c.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden relative">
                   {c.image_url ? (
-                    <img src={c.image_url} alt={c.name || ''} className="w-full aspect-[3/4] object-cover" />
+                    <img src={c.image_url} alt="" className="w-full aspect-[3/4] object-cover blur-md scale-110" />
                   ) : (
                     <div className="w-full aspect-[3/4] bg-gray-800" />
                   )}
-                  <div className="p-2">
-                    <p className="text-xs font-semibold truncate">{c.name || 'Card'}</p>
-                    <p className="text-[10px] text-gray-500">#{c.card_number || '—'}</p>
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                    <span className="text-2xl">🔒</span>
+                  </div>
+                  <div className="p-2 relative bg-gray-900">
+                    <p className="text-xs font-semibold truncate text-gray-400">???</p>
+                    <p className="text-[10px] text-gray-600">{c.rarity || 'card'}</p>
                   </div>
                 </div>
               ))}

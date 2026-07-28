@@ -139,8 +139,23 @@ export default function Cards() {
   const [animModel, setAnimModel] = useState('alibaba/wan-2.6/image-to-video')
   const [animating, setAnimating] = useState(false)
   const [view, setView] = useState('static')
+  const [touchStartX, setTouchStartX] = useState(null)
 
   useEffect(() => { loadCards() }, [])
+
+  const onCardTouchStart = (e) => {
+    setTouchStartX(e.changedTouches?.[0]?.clientX ?? e.clientX)
+  }
+  const onCardTouchEnd = (e) => {
+    if (touchStartX == null) return
+    const endX = e.changedTouches?.[0]?.clientX ?? e.clientX
+    const dx = endX - touchStartX
+    setTouchStartX(null)
+    if (Math.abs(dx) < 50) return
+    // swipe left -> back, swipe right -> front
+    if (dx < 0) setSide('back')
+    else setSide('front')
+  }
 
   const loadCards = async () => {
     const { data } = await supabase.from('cards').select('*').order('created_at', { ascending: false })
@@ -950,10 +965,17 @@ export default function Cards() {
             {sideToggle()}
             {side === 'front' && viewToggle()}
 
-            <button onClick={() => setExpanded(true)} className="block w-full text-left">
+            <button
+              onClick={() => setExpanded(true)}
+              onTouchStart={onCardTouchStart}
+              onTouchEnd={onCardTouchEnd}
+              onMouseDown={onCardTouchStart}
+              onMouseUp={onCardTouchEnd}
+              className="block w-full text-left select-none"
+            >
               {side === 'front' ? cardFront(selected, false, view === 'animated') : cardBack(selected)}
             </button>
-            <p className="text-center text-[10px] text-gray-600 mt-2">tap the card to expand</p>
+            <p className="text-center text-[10px] text-gray-600 mt-2">swipe to flip · tap to expand</p>
 
             {animating && (
               <p className="text-center text-xs text-purple-400 mt-3">Animating... (1-2 min)</p>
@@ -1059,9 +1081,17 @@ export default function Cards() {
           <div className="w-full max-w-md" onClick={e => e.stopPropagation()}>
             {sideToggle()}
             {side === 'front' && viewToggle()}
-            <button onClick={() => setExpanded(false)} className="block w-full text-left">
+            <button
+              onClick={() => setExpanded(false)}
+              onTouchStart={onCardTouchStart}
+              onTouchEnd={onCardTouchEnd}
+              onMouseDown={onCardTouchStart}
+              onMouseUp={onCardTouchEnd}
+              className="block w-full text-left select-none"
+            >
               {side === 'front' ? cardFront(selected, true, view === 'animated') : cardBack(selected, true)}
             </button>
+            <p className="text-center text-[10px] text-gray-600 mt-2">swipe to flip</p>
             <button onClick={() => handleDownload(selected)} disabled={downloading}
               className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-4">
               {downloading ? 'Rendering...' : '⬇ Download PNG'}
