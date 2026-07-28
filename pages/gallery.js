@@ -13,7 +13,11 @@ const VIDEO_MODELS = [
   { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)', price: null },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)', price: null },
   { id: 'alibaba/wan-2.7/image-to-video', label: 'Wan 2.7 (start/end/continue)', price: null },
-  { id: 'alibaba/wan-2.2/image-to-video-lora', label: 'Wan 2.2 (LoRA support)', price: null },
+  { id: 'alibaba/wan-2.2-spicy/image-to-video-lora', label: 'Wan 2.2 Spicy (LoRA support)', price: null },
+  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy', price: null },
+  { id: 'atlascloud/wan-2.7-spicy/image-to-video', label: 'Wan 2.7 Spicy', price: null },
+  { id: 'atlascloud/wan-2.7/image-to-video', label: 'Wan 2.7', price: null },
+  { id: 'bytedance/seedance-v1.5-pro/image-to-video-spicy', label: 'Seedance Spicy I2V', price: null },
 ]
 
 // text-to-video options
