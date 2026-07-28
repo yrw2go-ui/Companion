@@ -99,6 +99,8 @@ export default function Gallery() {
   const [videoDuration, setVideoDuration] = useState(5)
   const [videoRes, setVideoRes] = useState('720p')
   const [videoModel, setVideoModel] = useState('alibaba/wan-2.6/image-to-video')
+  const [highNoiseLoras, setHighNoiseLoras] = useState('')
+  const [lowNoiseLoras, setLowNoiseLoras] = useState('')
 
   const [createModel, setCreateModel] = useState('z-image/turbo')
 
@@ -139,6 +141,8 @@ export default function Gallery() {
   const [extendDuration, setExtendDuration] = useState(5)
   const [extendRes, setExtendRes] = useState('720p')
   const [extendModel, setExtendModel] = useState('alibaba/wan-2.6/image-to-video')
+  const [extendHighNoiseLoras, setExtendHighNoiseLoras] = useState('')
+  const [extendLowNoiseLoras, setExtendLowNoiseLoras] = useState('')
   const [extending, setExtending] = useState(false)
   const [extendStatus, setExtendStatus] = useState('')
   const [framePreview, setFramePreview] = useState('')
@@ -405,15 +409,29 @@ export default function Gallery() {
     setSelected(null)
   }
 
+  const parseLoras = (text) =>
+    String(text || '')
+      .split('\n')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .slice(0, 3)
+
   const animate = async () => {
     if (animating) return
     setAnimating(true)
     setShowVideo(false)
     try {
+      const payload = { imageUrl: videoSource, prompt: videoPrompt, duration: videoDuration, resolution: videoRes, model: videoModel }
+      if (videoModel === 'alibaba/wan-2.2-spicy/image-to-video-lora') {
+        const high = parseLoras(highNoiseLoras)
+        const low = parseLoras(lowNoiseLoras)
+        if (high.length) payload.highNoiseLoras = high
+        if (low.length) payload.lowNoiseLoras = low
+      }
       const res = await fetch('/api/generate-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: videoSource, prompt: videoPrompt, duration: videoDuration, resolution: videoRes, model: videoModel }),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (!data.videoUrl) {
@@ -648,6 +666,10 @@ export default function Gallery() {
             duration: extendDuration,
             resolution: extendRes,
             model: extendModel,
+            ...(extendModel === 'alibaba/wan-2.2-spicy/image-to-video-lora' ? {
+              highNoiseLoras: parseLoras(extendHighNoiseLoras),
+              lowNoiseLoras: parseLoras(extendLowNoiseLoras),
+            } : {}),
           }),
         })
         vidData = await vidRes.json()
@@ -677,6 +699,10 @@ export default function Gallery() {
             duration: extendDuration,
             resolution: extendRes,
             model: extendModel,
+            ...(extendModel === 'alibaba/wan-2.2-spicy/image-to-video-lora' ? {
+              highNoiseLoras: parseLoras(extendHighNoiseLoras),
+              lowNoiseLoras: parseLoras(extendLowNoiseLoras),
+            } : {}),
           }),
         })
         vidData = await vidRes.json()
@@ -1332,6 +1358,24 @@ export default function Gallery() {
               {priceLabel(VIDEO_MODELS.find(m => m.id === videoModel))}
             </p>
 
+            {videoModel === 'alibaba/wan-2.2-spicy/image-to-video-lora' && (
+              <div className="mb-3 space-y-2 border border-purple-900/50 rounded-lg p-3 bg-gray-950">
+                <p className="text-[10px] text-purple-300">LoRA slots (one URL per line, max 3 each)</p>
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-1">High-noise LoRAs</label>
+                  <textarea rows={2} value={highNoiseLoras} onChange={e => setHighNoiseLoras(e.target.value)}
+                    placeholder="https://.../lora.safetensors"
+                    className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-purple-500" />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-1">Low-noise LoRAs</label>
+                  <textarea rows={2} value={lowNoiseLoras} onChange={e => setLowNoiseLoras(e.target.value)}
+                    placeholder="https://.../lora.safetensors"
+                    className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-purple-500" />
+                </div>
+              </div>
+            )}
+
             <label className="block text-xs text-gray-400 mb-1">Length</label>
             <select value={videoDuration} onChange={e => setVideoDuration(parseInt(e.target.value))}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
@@ -1622,6 +1666,24 @@ export default function Gallery() {
             <p className="text-[10px] text-gray-600 mb-3">
               {priceLabel(VIDEO_MODELS.find(m => m.id === extendModel))}
             </p>
+
+            {extendModel === 'alibaba/wan-2.2-spicy/image-to-video-lora' && (
+              <div className="mb-3 space-y-2 border border-purple-900/50 rounded-lg p-3 bg-gray-950">
+                <p className="text-[10px] text-purple-300">LoRA slots (one URL per line, max 3 each)</p>
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-1">High-noise LoRAs</label>
+                  <textarea rows={2} value={extendHighNoiseLoras} onChange={e => setExtendHighNoiseLoras(e.target.value)}
+                    placeholder="https://.../lora.safetensors"
+                    className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-purple-500" />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-1">Low-noise LoRAs</label>
+                  <textarea rows={2} value={extendLowNoiseLoras} onChange={e => setExtendLowNoiseLoras(e.target.value)}
+                    placeholder="https://.../lora.safetensors"
+                    className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-purple-500" />
+                </div>
+              </div>
+            )}
 
             <label className="block text-xs text-gray-400 mb-1">Length</label>
             <select value={extendDuration} onChange={e => setExtendDuration(parseInt(e.target.value))}
