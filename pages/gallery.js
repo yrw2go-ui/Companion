@@ -13,6 +13,9 @@ const VIDEO_MODELS = [
   { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
   { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy' },
+  { id: 'atlascloud/wan-2.7-spicy/image-to-video', label: 'Wan 2.7 Spicy' },
+  { id: 'atlascloud/wan-2.7/image-to-video', label: 'Wan 2.7' },
+  { id: 'bytedance/seedance-v1.5-pro/image-to-video-spicy', label: 'Seedance Spicy I2V' },
 ]
 
 const T2V_MODEL = 'xai/grok-imagine-video/text-to-video'
