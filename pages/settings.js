@@ -11,6 +11,8 @@ export default function Settings() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [savedValue, setSavedValue] = useState('')
+  const [appMode, setAppMode] = useState('creator')  // 'creator' | 'public'
+  const [modeSaving, setModeSaving] = useState(false)
 
   const [cleaning, setCleaning] = useState(false)
   const [cleanResult, setCleanResult] = useState(null)
@@ -51,13 +53,26 @@ export default function Settings() {
   const load = async () => {
     const { data } = await supabase
       .from('user_settings')
-      .select('my_description')
+      .select('my_description, app_mode')
       .eq('id', 1)
       .maybeSingle()
     const loaded = data?.my_description || ''
     setDescription(loaded)
     setSavedValue(loaded)
+    setAppMode(data?.app_mode === 'public' ? 'public' : 'creator')
     setLoading(false)
+  }
+
+  const setMode = async (mode) => {
+    if (modeSaving) return
+    setModeSaving(true)
+    const { error } = await supabase
+      .from('user_settings')
+      .upsert({ id: 1, app_mode: mode })
+    setModeSaving(false)
+    if (error) { alert('Could not switch mode: ' + error.message); return }
+    setAppMode(mode)
+    if (mode === 'public') router.push('/game')
   }
 
   const save = async () => {
@@ -541,6 +556,35 @@ export default function Settings() {
       >
         {saving ? 'Saving...' : description === savedValue ? 'Saved' : 'Save'}
       </button>
+
+      <div className="mt-10 border-t border-gray-800 pt-6">
+        <h2 className="font-semibold mb-1">App Mode</h2>
+        <p className="text-xs text-gray-600 mb-3">
+          Creator = full studio. Public = game-facing UI (banners, packs, collection).
+          Toggle is for you only — no logins yet.
+        </p>
+        <div className="flex gap-2 mb-2">
+          <button
+            onClick={() => setMode('creator')}
+            disabled={modeSaving}
+            className={`flex-1 rounded-lg py-3 font-semibold ${appMode === 'creator' ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+          >
+            Creator
+          </button>
+          <button
+            onClick={() => setMode('public')}
+            disabled={modeSaving}
+            className={`flex-1 rounded-lg py-3 font-semibold ${appMode === 'public' ? 'bg-pink-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+          >
+            Public / Game
+          </button>
+        </div>
+        {appMode === 'public' && (
+          <button onClick={() => router.push('/game')} className="w-full text-sm text-pink-400 hover:text-pink-300 py-2">
+            Open public side →
+          </button>
+        )}
+      </div>
 
       <div className="mt-10 border-t border-gray-800 pt-6">
         <h2 className="font-semibold mb-1">Fix Broken Links</h2>
