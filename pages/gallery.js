@@ -16,7 +16,6 @@ const VIDEO_MODELS = [
   { id: 'alibaba/wan-2.2-spicy/image-to-video-lora', label: 'Wan 2.2 Spicy (LoRA support)', price: null },
   { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy', price: null },
   { id: 'atlascloud/wan-2.7-spicy/image-to-video', label: 'Wan 2.7 Spicy', price: null },
-  { id: 'atlascloud/wan-2.7/image-to-video', label: 'Wan 2.7', price: null },
   { id: 'bytedance/seedance-v1.5-pro/image-to-video-spicy', label: 'Seedance Spicy I2V', price: null },
 ]
 
