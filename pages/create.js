@@ -79,6 +79,15 @@ export default function CreateCharacter() {
       if (!data.imageUrl) { alert('Error: ' + (data.error || 'failed')); setGenning(false); return }
       setAvatarUrl(data.imageUrl)
       setAvatarSeed(data.seed ?? null)
+
+      // also keep a copy in the gallery, since this is a real generation
+      await supabase.from('gallery_media').insert([{
+        type: 'image',
+        url: data.imageUrl,
+        prompt: promptToUse,
+        negative_prompt: avatarNegative,
+        seed: data.seed ?? null,
+      }])
     } catch (err) {
       alert('Error: ' + err.message)
     }
