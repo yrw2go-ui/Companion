@@ -27,7 +27,6 @@ const VIDEO_MODELS = [
   { id: 'alibaba/wan-2.6/image-to-video', label: 'Wan 2.6 (5-15s)' },
   { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)' },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p)' },
-  { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy' },
 ]
 
 const ART_STYLES = [
@@ -129,7 +128,7 @@ export default function Cards() {
   const [variantOf, setVariantOf] = useState(null)
 
   const [showAnimate, setShowAnimate] = useState(false)
-  const [animPrompt, setAnimPrompt] = useState(Smooth movement, eyes alive,)
+  const [animPrompt, setAnimPrompt] = useState('smooth natural motion, eyes blinking naturally')
   const [animDuration, setAnimDuration] = useState(5)
   const [animRes, setAnimRes] = useState('720p')
   const [animModel, setAnimModel] = useState('alibaba/wan-2.6/image-to-video')
@@ -364,7 +363,7 @@ export default function Cards() {
 
   const openAnimate = () => {
     if (!selected?.image_url) return
-    setAnimPrompt(selected.video_prompt || Smooth movement, eyes alive,)
+    setAnimPrompt(selected.video_prompt || 'smooth natural motion, eyes blinking naturally')
     setAnimDuration(5)
     setAnimRes('720p')
     setShowAnimate(true)
