@@ -4,12 +4,15 @@ import { supabase } from '../lib/supabaseClient'
 import { makePoster } from '../lib/posterFrame'
 
 const MODELS = [
-  { label: 'Seedance T2V', value: 'bytedance/seedance-v1-pro-t2v-720p' },
-  { label: 'Grok Imagine', value: 'xai/grok-imagine-video-v1.5/image-to-video' },
-  { label: 'WAN 2.2 Turbo Spicy', value: 'atlascloud/wan-2.2-turbo-spicy/image-to-video' },
-  { label: 'WAN 2.6', value: 'alibaba/wan-2.6/image-to-video' },
-  { label: 'WAN 2.2', value: 'atlascloud/wan-2.2/image-to-video' },
-  { label: 'Seedance v1.5 Pro', value: 'bytedance/seedance-v1.5-pro/image-to-video-spicy' },
+  { label: 'Wan 2.6 (5-15s)', value: 'alibaba/wan-2.6/image-to-video' },
+  { label: 'Wan 2.2 Turbo (fast, 5s)', value: 'atlascloud/wan-2.2-turbo/image-to-video' },
+  { label: 'Grok Imagine (up to 1080p)', value: 'xai/grok-imagine-video-v1.5/image-to-video' },
+  { label: 'Wan 2.7 (start/end/continue)', value: 'alibaba/wan-2.7/image-to-video' },
+  { label: 'Wan 2.2 Spicy (LoRA support)', value: 'alibaba/wan-2.2-spicy/image-to-video-lora' },
+  { label: 'Wan 2.2 Spicy', value: 'atlascloud/wan-2.2-turbo-spicy/image-to-video' },
+  { label: 'Wan 2.7 Spicy', value: 'atlascloud/wan-2.7-spicy/image-to-video' },
+  { label: 'Wan 2.7', value: 'atlascloud/wan-2.7/image-to-video' },
+  { label: 'Seedance Spicy I2V', value: 'bytedance/seedance-v1.5-pro/image-to-video-spicy' },
 ]
 
 export default function VideoTest() {
@@ -18,11 +21,23 @@ export default function VideoTest() {
   const [model, setModel] = useState(MODELS[0].value)
   const [duration, setDuration] = useState(5)
   const [resolution, setResolution] = useState('720p')
+  const [highNoiseLoras, setHighNoiseLoras] = useState('')
+  const [lowNoiseLoras, setLowNoiseLoras] = useState('')
   const [loading, setLoading] = useState(false)
   const [videoUrl, setVideoUrl] = useState('')
   const [result, setResult] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+
+  const isLoraModel = model === 'alibaba/wan-2.2-spicy/image-to-video-lora'
+
+  // turn a textarea (one URL per line) into a clean array of strings
+  const parseLoras = (text) =>
+    text
+      .split('\n')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .slice(0, 3)
 
   async function generate() {
     if (!prompt) { alert('Please enter a prompt'); return }
@@ -31,10 +46,23 @@ export default function VideoTest() {
     setResult('')
     setSaved(false)
     try {
+      const payload = {
+        imageUrl: imageUrl || undefined,
+        prompt,
+        model,
+        duration,
+        resolution,
+      }
+      if (isLoraModel) {
+        const high = parseLoras(highNoiseLoras)
+        const low = parseLoras(lowNoiseLoras)
+        if (high.length) payload.highNoiseLoras = high
+        if (low.length) payload.lowNoiseLoras = low
+      }
       const res = await fetch('/api/generate-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: imageUrl || undefined, prompt, model, duration, resolution }),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (data.videoUrl) setVideoUrl(data.videoUrl)
@@ -69,11 +97,38 @@ export default function VideoTest() {
         {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
       </select>
 
+      {isLoraModel && (
+        <div className="mb-4 space-y-3 border border-purple-900/50 rounded-lg p-3 bg-gray-950">
+          <p className="text-xs text-purple-300">LoRA slots (one URL per line, max 3 each)</p>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">High-noise LoRAs</label>
+            <textarea
+              rows={2}
+              value={highNoiseLoras}
+              onChange={e => setHighNoiseLoras(e.target.value)}
+              placeholder="https://.../lora.safetensors"
+              className="w-full bg-black border border-gray-700 rounded-lg p-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Low-noise LoRAs</label>
+            <textarea
+              rows={2}
+              value={lowNoiseLoras}
+              onChange={e => setLowNoiseLoras(e.target.value)}
+              placeholder="https://.../lora.safetensors"
+              className="w-full bg-black border border-gray-700 rounded-lg p-2 text-sm"
+            />
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
           <label className="block mb-2">Duration</label>
           <select value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3">
             <option value={5}>5 Seconds</option>
+            <option value={8}>8 Seconds</option>
             <option value={10}>10 Seconds</option>
             <option value={15}>15 Seconds</option>
           </select>
@@ -81,6 +136,7 @@ export default function VideoTest() {
         <div>
           <label className="block mb-2">Resolution</label>
           <select value={resolution} onChange={e => setResolution(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3">
+            <option value="480p">480p</option>
             <option value="720p">720p</option>
             <option value="1080p">1080p</option>
           </select>
