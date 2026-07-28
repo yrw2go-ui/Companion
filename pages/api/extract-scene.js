@@ -19,9 +19,9 @@ export default async function handler(req, res) {
 
   const sys = `You extract visual scene details from a roleplay conversation for image generation.
 Read the recent messages and report ONLY the CURRENT state at the end of the conversation:
-- location: where the character physically is right now (short phrase)
+- location: where the character physically is right now (short phrase) like livingroom, hallway, kitchen, on the beach, etc.
 - outfit: what the character is currently wearing, if mentioned or clearly implied (short phrase)
-- mood: the character's current emotional state or expression (one or two words)
+- mood: the character's current emotional state or expression (one or two words) like happy, aroused, sad, etc.
 
 Rules:
 - If something isn't stated or clearly implied, return an empty string for it. Do not invent details.
