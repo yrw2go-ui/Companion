@@ -129,6 +129,16 @@ export default function EditCharacter() {
       if (!data.imageUrl) { alert('Error: ' + (data.error || 'failed')); setGenning(false); return }
       setAvatarUrl(data.imageUrl)
       setAvatarSeed(data.seed ?? null)
+
+      // also keep a copy in the gallery, since this is a real generation
+      await supabase.from('gallery_media').insert([{
+        type: 'image',
+        url: data.imageUrl,
+        prompt: promptToUse,
+        negative_prompt: avatarNegative,
+        seed: data.seed ?? null,
+        character_id: id || null,
+      }])
     } catch (err) {
       alert('Error: ' + err.message)
     }
