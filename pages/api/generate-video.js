@@ -11,7 +11,11 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { imageUrl, prompt, duration, resolution, model, aspectRatio, negativePrompt, lastImageUrl, sourceVideoUrl, audioUrl } = req.body
+  const {
+    imageUrl, prompt, duration, resolution, model, aspectRatio, negativePrompt,
+    lastImageUrl, sourceVideoUrl, audioUrl,
+    sound, referenceImages, keepOriginalSound, highNoiseLoras, lowNoiseLoras,
+  } = req.body
 
   const BASE_URL = 'https://api.atlascloud.ai/api/v1'
   const useModel = model || 'alibaba/wan-2.6/image-to-video'
@@ -19,9 +23,18 @@ export default async function handler(req, res) {
   // text-to-video models don't need a source image; everything else does.
   // Wan 2.7 has its own flexible input rules (image, video, or both), so it
   // is excluded from this generic image-required check.
-  const isT2V = useModel === 'xai/grok-imagine-video/text-to-video'
+  const KLING_T2V_MODELS = ['kwaivgi/kling-v3.0-pro/text-to-video', 'kwaivgi/kling-video-o3-pro/text-to-video']
+  const KLING_EDIT_MODEL = 'kwaivgi/kling-video-o3-pro/video-edit'
+
+  const isT2V = useModel === 'xai/grok-imagine-video/text-to-video' || KLING_T2V_MODELS.includes(useModel)
   const isWan27 = useModel === 'alibaba/wan-2.7/image-to-video'
-  if (!isT2V && !isWan27 && !imageUrl) {
+  const isKlingEdit = useModel === KLING_EDIT_MODEL
+  const isWanLora = useModel === 'alibaba/wan-2.2-spicy/image-to-video-lora'
+
+  if (isKlingEdit) {
+    if (!sourceVideoUrl) return res.status(400).json({ error: 'A source video is required to edit' })
+    if (!prompt || !prompt.trim()) return res.status(400).json({ error: 'A prompt is required to edit' })
+  } else if (!isT2V && !isWan27 && !imageUrl) {
     return res.status(400).json({ error: 'No source image provided' })
   }
   if (isWan27 && !imageUrl && !sourceVideoUrl) {
@@ -99,6 +112,51 @@ export default async function handler(req, res) {
     if (sourceVideoUrl) body.video = sourceVideoUrl
     if (audioUrl) body.audio = audioUrl
     if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
+  } else if (KLING_T2V_MODELS.includes(useModel)) {
+    // Kling t2v (both variants): single-prompt mode only here (no
+    // multi_shot / elements). Duration 3-15s, native sound toggle.
+    let klingDur = parseInt(duration) || 5
+    if (klingDur < 3) klingDur = 3
+    if (klingDur > 15) klingDur = 15
+    dur = klingDur
+    body = {
+      model: useModel,
+      prompt: motionPrompt,
+      duration: klingDur,
+      aspect_ratio: aspectRatio || '16:9',
+      sound: sound !== false,
+    }
+    if (useModel === 'kwaivgi/kling-v3.0-pro/text-to-video') {
+      if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
+      body.cfg_scale = 0.5
+    }
+  } else if (isKlingEdit) {
+    // Kling O3 Pro video-edit: edits an EXISTING video, not a new
+    // generation. Video capped at 10s per the schema.
+    body = {
+      model: useModel,
+      prompt: motionPrompt,
+      video: sourceVideoUrl,
+      keep_original_sound: keepOriginalSound !== false,
+    }
+    if (Array.isArray(referenceImages) && referenceImages.length) {
+      body.images = referenceImages.slice(0, 4)
+    }
+  } else if (isWanLora) {
+    // Wan 2.2 i2v with optional LoRA slots (max 3 each). LoRA item shape
+    // isn't specified beyond "list", so pass through whatever was given.
+    let loraDur = parseInt(duration) === 8 ? 8 : 5
+    dur = loraDur
+    body = {
+      model: useModel,
+      image: imageUrl,
+      prompt: motionPrompt,
+      resolution: resValue === '1080p' ? '720p' : resValue, // only 480p/720p supported
+      duration: loraDur,
+      seed: -1,
+    }
+    if (Array.isArray(highNoiseLoras) && highNoiseLoras.length) body.high_noise_loras = highNoiseLoras.slice(0, 3)
+    if (Array.isArray(lowNoiseLoras) && lowNoiseLoras.length) body.low_noise_loras = lowNoiseLoras.slice(0, 3)
   } else {
     // default: Wan 2.6 i2v (unchanged behavior)
     body = {
@@ -115,6 +173,12 @@ export default async function handler(req, res) {
     // other video model here, which use generateVideo) -- honoring that
     // exactly as documented rather than assuming it's a typo.
     const submitEndpoint = isWan27 ? 'generateImage' : 'generateVideo'
+
+    // Kling and Wan 2.7's schemas poll via /model/result/{id}; the earlier
+    // video models here poll via /model/prediction/{id}. Honoring each
+    // schema exactly rather than assuming they're interchangeable.
+    const isKlingFamily = KLING_T2V_MODELS.includes(useModel) || isKlingEdit
+    const pollPath = (isWan27 || isKlingFamily) ? 'result' : 'prediction'
     const submitRes = await fetch(`${BASE_URL}/model/${submitEndpoint}`, {
       method: 'POST',
       headers: {
@@ -151,7 +215,7 @@ export default async function handler(req, res) {
     for (let i = 0; i < maxPolls; i++) {
       await new Promise(r => setTimeout(r, 2000))
 
-      const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
+      const pollRes = await fetch(`${BASE_URL}/model/${pollPath}/${predictionId}`, {
         headers: { 'Authorization': `Bearer ${process.env.ATLAS_API_KEY}` },
       })
       const pollParsed = await safeJson(pollRes)
