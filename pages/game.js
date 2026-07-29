@@ -15,6 +15,8 @@ export default function Game() {
   const [shopIntroUrl, setShopIntroUrl] = useState('')
   const [showShopIntro, setShowShopIntro] = useState(false)
   const shopVideoRef = useRef(null)
+  const [showSplash, setShowSplash] = useState(true)
+  const splashRef = useRef(null)
 
   useEffect(() => {
     load()
@@ -304,6 +306,22 @@ export default function Game() {
           <div className="max-w-lg mx-auto px-4">
             <p className="text-center text-gray-500 text-sm">Duel stacks — coming soon.</p>
           </div>
+        </div>
+      )}
+
+      {/* Initial load splash — animated logo */}
+      {showSplash && (
+        <div className="fixed inset-0 z-[90] bg-black flex items-center justify-center">
+          <video
+            ref={splashRef}
+            src="/goddess-arena-logo.mp4"
+            autoPlay
+            muted
+            playsInline
+            className="w-full max-w-md px-6 object-contain"
+            onEnded={() => setShowSplash(false)}
+            onError={() => setShowSplash(false)}
+          />
         </div>
       )}
 
