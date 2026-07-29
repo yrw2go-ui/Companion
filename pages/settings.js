@@ -13,6 +13,9 @@ export default function Settings() {
   const [savedValue, setSavedValue] = useState('')
   const [appMode, setAppMode] = useState('creator')  // 'creator' | 'public'
   const [modeSaving, setModeSaving] = useState(false)
+  const [tabBanners, setTabBanners] = useState({ home: '', packs: '', shop: '', collection: '', duel: '' })
+  const [shopIntroUrl, setShopIntroUrl] = useState('')
+  const [bannerSaving, setBannerSaving] = useState(false)
 
   const [cleaning, setCleaning] = useState(false)
   const [cleanResult, setCleanResult] = useState(null)
@@ -53,14 +56,36 @@ export default function Settings() {
   const load = async () => {
     const { data } = await supabase
       .from('user_settings')
-      .select('my_description, app_mode')
+      .select('my_description, app_mode, tab_banners, shop_intro_url')
       .eq('id', 1)
       .maybeSingle()
     const loaded = data?.my_description || ''
     setDescription(loaded)
     setSavedValue(loaded)
     setAppMode(data?.app_mode === 'public' ? 'public' : 'creator')
+    const tb = data?.tab_banners || {}
+    setTabBanners({
+      home: tb.home || '',
+      packs: tb.packs || '',
+      shop: tb.shop || '',
+      collection: tb.collection || '',
+      duel: tb.duel || '',
+    })
+    setShopIntroUrl(data?.shop_intro_url || '')
     setLoading(false)
+  }
+
+  const saveBanners = async () => {
+    if (bannerSaving) return
+    setBannerSaving(true)
+    const { error } = await supabase.from('user_settings').upsert({
+      id: 1,
+      tab_banners: tabBanners,
+      shop_intro_url: shopIntroUrl.trim() || null,
+    })
+    setBannerSaving(false)
+    if (error) alert('Could not save banners: ' + error.message)
+    else alert('Game banners saved')
   }
 
   const setMode = async (mode) => {
@@ -584,6 +609,40 @@ export default function Settings() {
             Open public side →
           </button>
         )}
+      </div>
+
+      <div className="mt-10 border-t border-gray-800 pt-6">
+        <h2 className="font-semibold mb-1">Game Tab Banners</h2>
+        <p className="text-xs text-gray-600 mb-3">
+          Landscape image URL for the top of each public tab (wide crop works best).
+          Paste a public storage URL from your gallery.
+        </p>
+        {['home', 'packs', 'shop', 'collection', 'duel'].map(key => (
+          <div key={key} className="mb-3">
+            <label className="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">{key}</label>
+            <input
+              value={tabBanners[key] || ''}
+              onChange={e => setTabBanners(prev => ({ ...prev, [key]: e.target.value }))}
+              placeholder="https://.../image.jpeg"
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs outline-none focus:border-purple-500"
+            />
+          </div>
+        ))}
+        <label className="block text-[10px] uppercase tracking-wide text-gray-500 mb-1 mt-4">Shop intro video (with audio)</label>
+        <p className="text-[10px] text-gray-600 mb-1">Plays full-screen when Shop opens, then closes automatically.</p>
+        <input
+          value={shopIntroUrl}
+          onChange={e => setShopIntroUrl(e.target.value)}
+          placeholder="https://.../intro.mp4"
+          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs outline-none focus:border-purple-500 mb-3"
+        />
+        <button
+          onClick={saveBanners}
+          disabled={bannerSaving}
+          className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-lg py-3 font-semibold"
+        >
+          {bannerSaving ? 'Saving...' : 'Save game banners'}
+        </button>
       </div>
 
       <div className="mt-10 border-t border-gray-800 pt-6">
