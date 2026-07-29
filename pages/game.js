@@ -160,7 +160,11 @@ export default function Game() {
 
       {tab === 'cards' && (
         <div className="pt-16 max-w-lg mx-auto px-4 pb-24">
-          <h2 className="font-bold text-lg mb-1">Collection</h2>
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => setTab('home')} className="text-sm text-gray-400 hover:text-white">← Back</button>
+            <h2 className="font-bold text-lg">Collection</h2>
+            <button onClick={() => setTab('home')} className="text-gray-400 hover:text-white text-lg leading-none px-1">✕</button>
+          </div>
           <p className="text-xs text-gray-500 mb-4">Cards you published from Studio</p>
           {publishedCards.length === 0 ? (
             <p className="text-sm text-gray-600">No published cards yet. Open a card in Gallery and tap Publish to game.</p>
@@ -189,7 +193,11 @@ export default function Game() {
 
       {tab === 'packs' && (
         <div className="pt-16 max-w-lg mx-auto px-4 pb-24">
-          <h2 className="font-bold text-lg mb-1">Mystery Packs</h2>
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => setTab('home')} className="text-sm text-gray-400 hover:text-white">← Back</button>
+            <h2 className="font-bold text-lg">Mystery Packs</h2>
+            <button onClick={() => setTab('home')} className="text-gray-400 hover:text-white text-lg leading-none px-1">✕</button>
+          </div>
           <p className="text-xs text-gray-500 mb-6">Unlock flow comes next. Packs will pull from published cards + extra media.</p>
           <div className="bg-gradient-to-br from-pink-800 to-purple-900 rounded-2xl p-6 text-center">
             <p className="text-4xl mb-2">🎴</p>
@@ -203,8 +211,13 @@ export default function Game() {
       )}
 
       {tab === 'duel' && (
-        <div className="pt-16 max-w-lg mx-auto px-4 pb-24 text-center text-gray-500 text-sm">
-          Duel stacks — coming soon.
+        <div className="pt-16 max-w-lg mx-auto px-4 pb-24">
+          <div className="flex items-center justify-between mb-6">
+            <button onClick={() => setTab('home')} className="text-sm text-gray-400 hover:text-white">← Back</button>
+            <h2 className="font-bold text-lg">Duel</h2>
+            <button onClick={() => setTab('home')} className="text-gray-400 hover:text-white text-lg leading-none px-1">✕</button>
+          </div>
+          <p className="text-center text-gray-500 text-sm">Duel stacks — coming soon.</p>
         </div>
       )}
 
