@@ -47,6 +47,37 @@ export default function Game() {
   // video chance inside media pack (rest images)
   const MEDIA_VIDEO_CHANCE = 0.18
 
+  // Real-money token packs (display only until payments wired)
+  const TOKEN_PACKS = [
+    { amount: 500, price: '$1.99' },
+    { amount: 1500, price: '$4.99' },
+    { amount: 4000, price: '$9.99' },
+    { amount: 10000, price: '$19.99' },
+  ]
+
+  // P2P sale floor / ceiling. Each completed sale +25 until max.
+  // [nonSeriesBase, nonSeriesMax, seriesBase, seriesMax]
+  const CARD_SALE_TABLE = {
+    common:        [100, 200, 150, 250],
+    uncommon:      [200, 200, 250, 300],
+    rare:          [350, 500, 400, 600],
+    epic:          [500, 800, 600, 1000],
+    legendary:     [750, 1200, 900, 1500],
+    'ultra elite': [900, 1600, 1200, 2000],
+    'after hours': [1000, 2000, 2000, 3000],
+  }
+  const MEDIA_SALE_BASE = 400
+  const MEDIA_SALE_MAX = 800
+  const MEDIA_SALE_STEP = 50  // only when edition_total < 100
+  const CARD_SALE_STEP = 25
+
+  const cardSaleBounds = (rarity, isSeries) => {
+    const row = CARD_SALE_TABLE[String(rarity || 'common').toLowerCase()] || CARD_SALE_TABLE.common
+    return isSeries ? { base: row[2], max: row[3] } : { base: row[0], max: row[1] }
+  }
+  const currentSalePrice = (base, max, saleCount, step = CARD_SALE_STEP) =>
+    Math.min(max, base + (saleCount || 0) * step)
+
   // Mystery skins: public/mystery-card-1.jpg + .mp4 … through N
   const MYSTERY_SKIN_COUNT = 5
   const MYSTERY_SKINS = Array.from({ length: MYSTERY_SKIN_COUNT }, (_, i) => ({
@@ -134,7 +165,7 @@ export default function Game() {
     // owned card instances (Harem)
     const { data: owned } = await supabase
       .from('player_cards')
-      .select('id, instance_id, card_id, purchase_price, acquired_via, edition_number, edition_total, created_at, cards(id, name, card_number, image_url, back_image_url, video_url, poster_url, rarity, title, series_name, edition_size)')
+      .select('id, instance_id, card_id, purchase_price, acquired_via, edition_number, edition_total, sale_count, current_sale_price, created_at, cards(id, name, card_number, image_url, back_image_url, video_url, poster_url, rarity, title, series_name, edition_size)')
       .eq('owner_id', 1)
       .order('created_at', { ascending: false })
     setOwnedCards(owned || [])
@@ -183,75 +214,101 @@ export default function Game() {
     return result
   }
 
-  const buyMysteryTier = async (tier) => {
+  const drawOneCard = async (tier, unitPrice) => {
+    const stock = await cardsWithStock()
+    if (!stock.length) return { error: 'Shop is sold out — no edition stock left.' }
+
+    const weights = { ...TIER_WEIGHTS[tier] }
+    for (const r of Object.keys(weights)) {
+      if (!stock.some(c => String(c.rarity || 'common').toLowerCase() === r)) weights[r] = 0
+    }
+    if (Object.values(weights).every(w => w <= 0)) {
+      for (const r of Object.keys(weights)) weights[r] = 1
+    }
+
+    const pickedRarity = weightedPick(weights)
+    let pool = stock.filter(c => String(c.rarity || 'common').toLowerCase() === pickedRarity)
+    if (!pool.length) pool = stock
+    const card = pool[Math.floor(Math.random() * pool.length)]
+    // re-count sold for accuracy
+    const { count } = await supabase
+      .from('player_cards')
+      .select('id', { count: 'exact', head: true })
+      .eq('card_id', card.id)
+    const editionNumber = (count || 0) + 1
+    const editionTotal = card.edition_size || 500
+    if (editionNumber > editionTotal) return { error: 'That card just sold out.' }
+
+    const instanceId = makeInstanceId()
+    const bounds = cardSaleBounds(card.rarity, !!card.series_name)
+    const { data: row, error } = await supabase
+      .from('player_cards')
+      .insert([{
+        instance_id: instanceId,
+        card_id: card.id,
+        owner_id: 1,
+        purchase_price: unitPrice,
+        acquired_via: 'shop',
+        edition_number: editionNumber,
+        edition_total: editionTotal,
+        sale_count: 0,
+        current_sale_price: bounds.base,
+      }])
+      .select('id, instance_id, card_id, purchase_price, acquired_via, edition_number, edition_total, sale_count, current_sale_price, created_at')
+      .single()
+    if (error) return { error: error.message }
+    return { row, card, instanceId, editionNumber, editionTotal }
+  }
+
+  const buyMysteryTier = async (tier, packSize = 1) => {
     if (buying || reveal) return
-    const price = TIER_PRICE[tier]
+    const unit = TIER_PRICE[tier]
+    const price = unit * packSize
     if (tokens < price) {
       alert(`Need ${price.toLocaleString()} tokens (you have ${tokens.toLocaleString()})`)
       return
     }
-    if (!confirm(`Open ${tier} mystery draw for ${price.toLocaleString()} tokens?`)) return
+    const label = packSize > 1 ? `${packSize}× ${tier} draws` : `${tier} mystery draw`
+    if (!confirm(`Open ${label} for ${price.toLocaleString()} tokens?`)) return
 
     setBuying(true)
     try {
-      const stock = await cardsWithStock()
-      if (!stock.length) {
-        alert('Shop is sold out — no edition stock left.')
-        setBuying(false)
-        return
-      }
-
-      const weights = { ...TIER_WEIGHTS[tier] }
-      // zero out rarities with no stock
-      for (const r of Object.keys(weights)) {
-        if (!stock.some(c => String(c.rarity || 'common').toLowerCase() === r)) weights[r] = 0
-      }
-      if (Object.values(weights).every(w => w <= 0)) {
-        // fallback: any stock
-        for (const r of Object.keys(weights)) weights[r] = 1
-      }
-
-      let pickedRarity = weightedPick(weights)
-      let pool = stock.filter(c => String(c.rarity || 'common').toLowerCase() === pickedRarity)
-      if (!pool.length) pool = stock
-      const card = pool[Math.floor(Math.random() * pool.length)]
-      const editionNumber = (card._sold || 0) + 1
-      const editionTotal = card._total || card.edition_size || 500
-      const instanceId = makeInstanceId()
       const newBalance = tokens - price
-      const skin = randomSkin()
-
       const { error: tokErr } = await supabase.from('user_settings').upsert({ id: 1, tokens: newBalance })
       if (tokErr) throw new Error(tokErr.message)
 
-      const { data: row, error } = await supabase
-        .from('player_cards')
-        .insert([{
-          instance_id: instanceId,
-          card_id: card.id,
-          owner_id: 1,
-          purchase_price: price,
-          acquired_via: 'shop',
-          edition_number: editionNumber,
-          edition_total: editionTotal,
-        }])
-        .select('id, instance_id, card_id, purchase_price, acquired_via, edition_number, edition_total, created_at')
-        .single()
-      if (error) {
-        await supabase.from('user_settings').upsert({ id: 1, tokens })
-        throw new Error(error.message)
+      const won = []
+      for (let i = 0; i < packSize; i++) {
+        const result = await drawOneCard(tier, unit)
+        if (result.error) {
+          // stop early but keep what we got; refund remainder roughly
+          if (!won.length) {
+            await supabase.from('user_settings').upsert({ id: 1, tokens })
+            throw new Error(result.error)
+          }
+          break
+        }
+        won.push(result)
       }
 
       setTokens(newBalance)
-      setOwnedCards(prev => [{ ...row, cards: card }, ...prev])
+      setOwnedCards(prev => [
+        ...won.map(w => ({ ...w.row, cards: w.card })),
+        ...prev,
+      ])
+
+      const last = won[won.length - 1]
+      const skin = randomSkin()
       setReveal({
-        card,
-        instanceId,
-        price,
+        card: last.card,
+        instanceId: last.instanceId,
+        price: unit,
         phase: 'anim',
         video: skin.video,
-        editionNumber,
-        editionTotal,
+        editionNumber: last.editionNumber,
+        editionTotal: last.editionTotal,
+        packWon: won.length,
+        packSize,
       })
     } catch (err) {
       alert('Purchase failed: ' + err.message)
@@ -533,6 +590,18 @@ export default function Game() {
                         ) : null}
                         <p className="text-[9px] text-pink-400/80 font-mono mt-1">{o.instance_id}</p>
                         <p className="text-[9px] text-gray-600">Paid {Number(o.purchase_price || 0).toLocaleString()} tok</p>
+                        {(() => {
+                          const bounds = cardSaleBounds(c.rarity, !!c.series_name)
+                          const saleCount = o.sale_count || 0
+                          const cur = o.current_sale_price != null
+                            ? o.current_sale_price
+                            : currentSalePrice(bounds.base, bounds.max, saleCount)
+                          return (
+                            <p className="text-[9px] text-emerald-400/90 mt-0.5">
+                              Trade value {cur} · max {bounds.max}
+                            </p>
+                          )
+                        })()}
                       </div>
                     </div>
                   )
@@ -554,44 +623,56 @@ export default function Game() {
             </div>
 
             <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Token packs</p>
-            <div className="grid grid-cols-3 gap-2 mb-6">
-              {[
-                { amount: 500, price: '$0.99' },
-                { amount: 3000, price: '$4.99' },
-                { amount: 10000, price: '$14.99' },
-              ].map(p => (
-                <button key={p.amount} disabled className="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center opacity-70">
-                  <p className="text-sm font-bold text-pink-300">{p.amount.toLocaleString()}</p>
-                  <p className="text-[10px] text-gray-500 mt-1">{p.price}</p>
+            <div className="grid grid-cols-2 gap-2 mb-6">
+              {TOKEN_PACKS.map(tp => (
+                <button key={tp.amount} disabled className="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center opacity-70">
+                  <p className="text-sm font-bold text-pink-300">{tp.amount.toLocaleString()} tok</p>
+                  <p className="text-[11px] text-gray-400 mt-1">{tp.price}</p>
                 </button>
               ))}
             </div>
+            <p className="text-[10px] text-gray-600 mb-6 -mt-3">Payments not wired yet — prices shown for store layout.</p>
 
             <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Mystery card draws</p>
             <p className="text-[10px] text-gray-600 mb-3">
               Rarity stays hidden until reveal. Higher tiers weight toward rarer cards. Each copy is numbered (e.g. 12 of 500).
             </p>
-            <div className="grid grid-cols-1 gap-3 mb-8">
+            <div className="space-y-3 mb-8">
               {[
                 { tier: 'low', title: 'Shadow Draw', blurb: 'Mostly commons · slim rare chance', img: '/mystery-card-1.jpg' },
                 { tier: 'mid', title: 'Velvet Draw', blurb: 'Balanced mix · better rare odds', img: '/mystery-card-2.jpg' },
                 { tier: 'high', title: 'Crown Draw', blurb: 'Best shot at epic+ & series cards', img: '/mystery-card-3.jpg' },
               ].map(t => (
-                <button
-                  key={t.tier}
-                  onClick={() => buyMysteryTier(t.tier)}
-                  disabled={buying}
-                  className="flex gap-3 items-center text-left bg-gray-900 border border-gray-800 rounded-2xl p-3 active:scale-[0.99] disabled:opacity-50"
-                >
-                  <img src={t.img} alt="" className="w-16 h-22 rounded-lg object-cover aspect-[3/4]" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-sm">{t.title}</p>
-                    <p className="text-[10px] text-gray-500 mt-0.5">{t.blurb}</p>
-                    <p className="text-pink-400 text-xs font-semibold mt-2">{TIER_PRICE[t.tier]} tokens</p>
+                <div key={t.tier} className="bg-gray-900 border border-gray-800 rounded-2xl p-3">
+                  <div className="flex gap-3 items-center mb-2">
+                    <img src={t.img} alt="" className="w-14 rounded-lg object-cover aspect-[3/4]" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm">{t.title}</p>
+                      <p className="text-[10px] text-gray-500 mt-0.5">{t.blurb}</p>
+                      <p className="text-pink-400 text-xs font-semibold mt-1">{TIER_PRICE[t.tier]} tok each</p>
+                    </div>
                   </div>
-                </button>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[1, 3, 5, 10].map(n => (
+                      <button
+                        key={n}
+                        onClick={() => buyMysteryTier(t.tier, n)}
+                        disabled={buying}
+                        className="bg-pink-600/90 hover:bg-pink-500 disabled:opacity-40 rounded-lg py-2 text-[10px] font-semibold"
+                      >
+                        {n === 1 ? '×1' : `×${n}`}
+                        <span className="block text-[9px] font-normal opacity-80">
+                          {(TIER_PRICE[t.tier] * n).toLocaleString()}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
+            <p className="text-[10px] text-gray-600 mb-6 -mt-4">
+              No specific cards for sale in the shop — only mystery draws. Specific copies trade between players.
+            </p>
 
             <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Character media pack</p>
             <p className="text-[10px] text-gray-600 mb-3">
@@ -706,6 +787,11 @@ export default function Game() {
                 <p className="text-[10px] text-gray-500 mt-1">
                   Acquired for {Number(reveal.price || 0).toLocaleString()} tokens
                 </p>
+                {reveal.packSize > 1 && (
+                  <p className="text-[10px] text-pink-300 mt-2">
+                    Pack: {reveal.packWon}/{reveal.packSize} cards added to Harem
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => { closeReveal(); openTab('collection') }}
