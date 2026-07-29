@@ -30,31 +30,47 @@ export default function Game() {
   const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
   const revealVideoRef = useRef(null)
 
-  const SHOP_PRICE = {
-    common: 100,
-    uncommon: 250,
-    rare: 500,
-    epic: 1000,
-    legendary: 2500,
-    'ultra elite': 5000,
-    'after hours': 3000,
+  // --- tweakable mystery draw weights (must sum conceptually; normalized at roll) ---
+  const TIER_WEIGHTS = {
+    low: { // 200 tok
+      common: 70, uncommon: 20, rare: 8, epic: 1.5, legendary: 0.4, 'ultra elite': 0.1, 'after hours': 0.5,
+    },
+    mid: { // 500 tok
+      common: 40, uncommon: 30, rare: 20, epic: 7, legendary: 2.5, 'ultra elite': 0.5, 'after hours': 1,
+    },
+    high: { // 800 tok
+      common: 15, uncommon: 25, rare: 30, epic: 18, legendary: 8, 'ultra elite': 2.5, 'after hours': 1.5,
+    },
   }
-  const priceOf = (rarity) => SHOP_PRICE[String(rarity || 'common').toLowerCase()] || 100
+  const TIER_PRICE = { low: 200, mid: 500, high: 800 }
+  const MEDIA_PACK_PRICE = 400
+  // video chance inside media pack (rest images)
+  const MEDIA_VIDEO_CHANCE = 0.18
 
-  // Mystery skins: public/mystery-card-1.jpg + mystery-card-1.mp4, … through N
-  // Bump MYSTERY_SKIN_COUNT when you add more matching pairs
+  // Mystery skins: public/mystery-card-1.jpg + .mp4 … through N
   const MYSTERY_SKIN_COUNT = 5
   const MYSTERY_SKINS = Array.from({ length: MYSTERY_SKIN_COUNT }, (_, i) => ({
     image: `/mystery-card-${i + 1}.jpg`,
     video: `/mystery-card-${i + 1}.mp4`,
   }))
-  // stable pick from card id so the same listing always shows the same skin
-  const mysterySkinFor = (cardId) => {
-    if (!cardId) return MYSTERY_SKINS[0]
-    let h = 0
-    const s = String(cardId)
-    for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i) * (i + 1)) % 997
-    return MYSTERY_SKINS[h % MYSTERY_SKINS.length]
+  const randomSkin = () => MYSTERY_SKINS[Math.floor(Math.random() * MYSTERY_SKINS.length)]
+
+  const weightedPick = (weights) => {
+    const entries = Object.entries(weights)
+    const total = entries.reduce((s, [, w]) => s + w, 0)
+    let r = Math.random() * total
+    for (const [key, w] of entries) {
+      r -= w
+      if (r <= 0) return key
+    }
+    return entries[entries.length - 1][0]
+  }
+
+  const mediaTrim = (editionTotal, editionNumber) => {
+    // ≤50 → iridescent, ≤100 → gold, >100 → no special trim
+    if (editionTotal <= 50) return { label: 'iridescent', className: 'ring-2 ring-cyan-300/80 shadow-[0_0_12px_rgba(103,232,249,0.5)]' }
+    if (editionTotal <= 100) return { label: 'gold', className: 'ring-2 ring-amber-400/80 shadow-[0_0_10px_rgba(251,191,36,0.45)]' }
+    return { label: null, className: '' }
   }
 
   const makeInstanceId = () => {
@@ -71,7 +87,7 @@ export default function Game() {
   const load = async () => {
     const { data: cards } = await supabase
       .from('cards')
-      .select('id, name, card_number, image_url, back_image_url, video_url, poster_url, published, rarity')
+      .select('id, name, card_number, image_url, back_image_url, video_url, poster_url, published, rarity, edition_size, series_name, title')
       .eq('published', true)
       .order('created_at', { ascending: false })
 
@@ -118,7 +134,7 @@ export default function Game() {
     // owned card instances (Harem)
     const { data: owned } = await supabase
       .from('player_cards')
-      .select('id, instance_id, card_id, purchase_price, acquired_via, created_at, cards(id, name, card_number, image_url, back_image_url, video_url, poster_url, rarity, title)')
+      .select('id, instance_id, card_id, purchase_price, acquired_via, edition_number, edition_total, created_at, cards(id, name, card_number, image_url, back_image_url, video_url, poster_url, rarity, title, series_name, edition_size)')
       .eq('owner_id', 1)
       .order('created_at', { ascending: false })
     setOwnedCards(owned || [])
@@ -140,58 +156,194 @@ export default function Game() {
     }
   }
 
-  const buyCard = async (card, skin) => {
+  const nextEditionNumber = async (cardId) => {
+    const { count } = await supabase
+      .from('player_cards')
+      .select('id', { count: 'exact', head: true })
+      .eq('card_id', cardId)
+    return (count || 0) + 1
+  }
+
+  const cardsWithStock = async () => {
+    // published cards that still have remaining print run
+    const cards = publishedCards.length
+      ? publishedCards
+      : (await supabase.from('cards').select('id, name, card_number, image_url, back_image_url, video_url, poster_url, published, rarity, edition_size, series_name, title').eq('published', true)).data || []
+
+    const result = []
+    for (const c of cards) {
+      const total = c.edition_size || 500
+      const { count } = await supabase
+        .from('player_cards')
+        .select('id', { count: 'exact', head: true })
+        .eq('card_id', c.id)
+      const sold = count || 0
+      if (sold < total) result.push({ ...c, _sold: sold, _total: total })
+    }
+    return result
+  }
+
+  const buyMysteryTier = async (tier) => {
     if (buying || reveal) return
-    const price = priceOf(card.rarity)
-    const useSkin = skin || mysterySkinFor(card.id)
+    const price = TIER_PRICE[tier]
     if (tokens < price) {
       alert(`Need ${price.toLocaleString()} tokens (you have ${tokens.toLocaleString()})`)
       return
     }
-    if (!confirm(`Buy mystery card for ${price.toLocaleString()} tokens?`)) return
+    if (!confirm(`Open ${tier} mystery draw for ${price.toLocaleString()} tokens?`)) return
 
     setBuying(true)
-    const instanceId = makeInstanceId()
-    const newBalance = tokens - price
+    try {
+      const stock = await cardsWithStock()
+      if (!stock.length) {
+        alert('Shop is sold out — no edition stock left.')
+        setBuying(false)
+        return
+      }
 
-    // deduct tokens
-    const { error: tokErr } = await supabase
-      .from('user_settings')
-      .upsert({ id: 1, tokens: newBalance })
-    if (tokErr) {
-      alert('Payment failed: ' + tokErr.message)
-      setBuying(false)
-      return
+      const weights = { ...TIER_WEIGHTS[tier] }
+      // zero out rarities with no stock
+      for (const r of Object.keys(weights)) {
+        if (!stock.some(c => String(c.rarity || 'common').toLowerCase() === r)) weights[r] = 0
+      }
+      if (Object.values(weights).every(w => w <= 0)) {
+        // fallback: any stock
+        for (const r of Object.keys(weights)) weights[r] = 1
+      }
+
+      let pickedRarity = weightedPick(weights)
+      let pool = stock.filter(c => String(c.rarity || 'common').toLowerCase() === pickedRarity)
+      if (!pool.length) pool = stock
+      const card = pool[Math.floor(Math.random() * pool.length)]
+      const editionNumber = (card._sold || 0) + 1
+      const editionTotal = card._total || card.edition_size || 500
+      const instanceId = makeInstanceId()
+      const newBalance = tokens - price
+      const skin = randomSkin()
+
+      const { error: tokErr } = await supabase.from('user_settings').upsert({ id: 1, tokens: newBalance })
+      if (tokErr) throw new Error(tokErr.message)
+
+      const { data: row, error } = await supabase
+        .from('player_cards')
+        .insert([{
+          instance_id: instanceId,
+          card_id: card.id,
+          owner_id: 1,
+          purchase_price: price,
+          acquired_via: 'shop',
+          edition_number: editionNumber,
+          edition_total: editionTotal,
+        }])
+        .select('id, instance_id, card_id, purchase_price, acquired_via, edition_number, edition_total, created_at')
+        .single()
+      if (error) {
+        await supabase.from('user_settings').upsert({ id: 1, tokens })
+        throw new Error(error.message)
+      }
+
+      setTokens(newBalance)
+      setOwnedCards(prev => [{ ...row, cards: card }, ...prev])
+      setReveal({
+        card,
+        instanceId,
+        price,
+        phase: 'anim',
+        video: skin.video,
+        editionNumber,
+        editionTotal,
+      })
+    } catch (err) {
+      alert('Purchase failed: ' + err.message)
     }
-
-    // create ownership record
-    const { data: row, error } = await supabase
-      .from('player_cards')
-      .insert([{
-        instance_id: instanceId,
-        card_id: card.id,
-        owner_id: 1,
-        purchase_price: price,
-        acquired_via: 'shop',
-      }])
-      .select('id, instance_id, card_id, purchase_price, acquired_via, created_at')
-      .single()
-
-    if (error) {
-      // refund on failure
-      await supabase.from('user_settings').upsert({ id: 1, tokens })
-      alert('Purchase failed: ' + error.message)
-      setBuying(false)
-      return
-    }
-
-    setTokens(newBalance)
-    setOwnedCards(prev => [{
-      ...row,
-      cards: card,
-    }, ...prev])
     setBuying(false)
-    setReveal({ card, instanceId, price, phase: 'anim', video: useSkin.video })
+  }
+
+  const buyMediaPack = async () => {
+    if (buying || reveal) return
+    const price = MEDIA_PACK_PRICE
+    if (tokens < price) {
+      alert(`Need ${price.toLocaleString()} tokens`)
+      return
+    }
+    if (!confirm(`Open media pack for ${price.toLocaleString()} tokens?`)) return
+    setBuying(true)
+    try {
+      const wantVideo = Math.random() < MEDIA_VIDEO_CHANCE
+      let { data: mediaList } = await supabase
+        .from('character_media')
+        .select('*')
+        .eq('published', true)
+        .eq('type', wantVideo ? 'video' : 'image')
+      if (!mediaList?.length) {
+        const alt = await supabase.from('character_media').select('*').eq('published', true)
+        mediaList = alt.data || []
+      }
+      if (!mediaList.length) {
+        alert('No published character media available yet.')
+        setBuying(false)
+        return
+      }
+
+      // filter stock
+      const available = []
+      for (const m of mediaList) {
+        const total = m.edition_size || 100
+        const { count } = await supabase
+          .from('player_media')
+          .select('id', { count: 'exact', head: true })
+          .eq('media_id', m.id)
+        if ((count || 0) < total) available.push({ ...m, _sold: count || 0, _total: total })
+      }
+      if (!available.length) {
+        alert('All media editions are sold out.')
+        setBuying(false)
+        return
+      }
+
+      const m = available[Math.floor(Math.random() * available.length)]
+      const editionNumber = m._sold + 1
+      const editionTotal = m._total
+      const instanceId = makeInstanceId()
+      const newBalance = tokens - price
+      const trim = mediaTrim(editionTotal, editionNumber)
+
+      const { error: tokErr } = await supabase.from('user_settings').upsert({ id: 1, tokens: newBalance })
+      if (tokErr) throw new Error(tokErr.message)
+
+      const { data: row, error } = await supabase
+        .from('player_media')
+        .insert([{
+          instance_id: instanceId,
+          media_id: m.id,
+          owner_id: 1,
+          purchase_price: price,
+          edition_number: editionNumber,
+          edition_total: editionTotal,
+          acquired_via: 'shop',
+        }])
+        .select('*')
+        .single()
+      if (error) {
+        await supabase.from('user_settings').upsert({ id: 1, tokens })
+        throw new Error(error.message)
+      }
+
+      setTokens(newBalance)
+      setReveal({
+        phase: 'show',
+        kind: 'media',
+        media: m,
+        instanceId,
+        price,
+        editionNumber,
+        editionTotal,
+        trim,
+      })
+    } catch (err) {
+      alert('Media pack failed: ' + err.message)
+    }
+    setBuying(false)
   }
 
   const finishReveal = () => {
@@ -372,8 +524,13 @@ export default function Game() {
                         <div className="w-full aspect-[3/4] bg-gray-800" />
                       )}
                       <div className="p-2">
-                        <p className="text-xs font-semibold truncate">{c.name || 'Card'}</p>
+                        <p className="text-xs font-semibold truncate">{c.name || 'Card'}{c.series_name ? ' 👑' : ''}</p>
                         <p className="text-[10px] text-gray-500 capitalize">{c.rarity || '—'}</p>
+                        {o.edition_number && o.edition_total ? (
+                          <p className="text-[10px] text-amber-300/90 mt-0.5">
+                            {o.edition_number} of {o.edition_total}
+                          </p>
+                        ) : null}
                         <p className="text-[9px] text-pink-400/80 font-mono mt-1">{o.instance_id}</p>
                         <p className="text-[9px] text-gray-600">Paid {Number(o.purchase_price || 0).toLocaleString()} tok</p>
                       </div>
@@ -410,38 +567,48 @@ export default function Game() {
               ))}
             </div>
 
-            <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Mystery cards</p>
-            <p className="text-[10px] text-gray-600 mb-3">Art is hidden until you buy. Each purchase gets a unique instance ID for trading.</p>
-            {publishedCards.length === 0 ? (
-              <p className="text-sm text-gray-600">No cards in the shop yet. Publish cards from Studio.</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {publishedCards.map((c, idx) => {
-                  const price = priceOf(c.rarity)
-                  const skin = MYSTERY_SKINS[idx % MYSTERY_SKINS.length]
-                  return (
-                    <div key={c.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-                      <img
-                        src={skin.image}
-                        alt="Mystery card"
-                        className="w-full aspect-[3/4] object-cover"
-                      />
-                      <div className="p-2">
-                        <p className="text-xs font-semibold text-gray-300">Mystery Card</p>
-                        <p className="text-[10px] text-gray-500 capitalize">{c.rarity || 'common'}</p>
-                        <button
-                          onClick={() => buyCard(c, skin)}
-                          disabled={buying}
-                          className="w-full mt-2 bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded-lg py-1.5 text-[11px] font-semibold"
-                        >
-                          {buying ? '...' : `Buy · ${price.toLocaleString()} tok`}
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
+            <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Mystery card draws</p>
+            <p className="text-[10px] text-gray-600 mb-3">
+              Rarity stays hidden until reveal. Higher tiers weight toward rarer cards. Each copy is numbered (e.g. 12 of 500).
+            </p>
+            <div className="grid grid-cols-1 gap-3 mb-8">
+              {[
+                { tier: 'low', title: 'Shadow Draw', blurb: 'Mostly commons · slim rare chance', img: '/mystery-card-1.jpg' },
+                { tier: 'mid', title: 'Velvet Draw', blurb: 'Balanced mix · better rare odds', img: '/mystery-card-2.jpg' },
+                { tier: 'high', title: 'Crown Draw', blurb: 'Best shot at epic+ & series cards', img: '/mystery-card-3.jpg' },
+              ].map(t => (
+                <button
+                  key={t.tier}
+                  onClick={() => buyMysteryTier(t.tier)}
+                  disabled={buying}
+                  className="flex gap-3 items-center text-left bg-gray-900 border border-gray-800 rounded-2xl p-3 active:scale-[0.99] disabled:opacity-50"
+                >
+                  <img src={t.img} alt="" className="w-16 h-22 rounded-lg object-cover aspect-[3/4]" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-sm">{t.title}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">{t.blurb}</p>
+                    <p className="text-pink-400 text-xs font-semibold mt-2">{TIER_PRICE[t.tier]} tokens</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Character media pack</p>
+            <p className="text-[10px] text-gray-600 mb-3">
+              Random published extra media. Videos are rarer. Low print runs get gold or iridescent trim.
+            </p>
+            <button
+              onClick={buyMediaPack}
+              disabled={buying}
+              className="w-full flex gap-3 items-center text-left bg-gray-900 border border-pink-900/40 rounded-2xl p-3 disabled:opacity-50 mb-4"
+            >
+              <div className="w-16 aspect-[3/4] rounded-lg bg-gradient-to-br from-pink-800 to-purple-900 flex items-center justify-center text-2xl">🎬</div>
+              <div className="flex-1">
+                <p className="font-bold text-sm">Media Pack</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">Image or video · numbered edition</p>
+                <p className="text-pink-400 text-xs font-semibold mt-2">{MEDIA_PACK_PRICE} tokens</p>
               </div>
-            )}
+            </button>
           </div>
         </div>
       )}
@@ -491,6 +658,30 @@ export default function Game() {
               <p className="text-xs text-gray-500 mt-4">Revealing...</p>
               <button onClick={finishReveal} className="mt-3 text-xs text-gray-400 hover:text-white">Skip</button>
             </>
+          ) : reveal.kind === 'media' ? (
+            <div className="w-full max-w-sm">
+              <div className={`rounded-2xl overflow-hidden ${reveal.trim?.className || ''}`}>
+                {reveal.media?.type === 'video' ? (
+                  <video src={reveal.media.url} controls className="w-full" />
+                ) : (
+                  <img src={reveal.media?.url} alt="" className="w-full" />
+                )}
+              </div>
+              <div className="mt-4 text-center">
+                <p className="text-lg font-bold">{reveal.media?.title || 'Character media'}</p>
+                <p className="text-xs text-gray-400 mt-1 capitalize">{reveal.media?.type}</p>
+                {reveal.editionNumber && (
+                  <p className="text-sm text-amber-300 mt-2">
+                    {reveal.editionNumber} of {reveal.editionTotal}
+                    {reveal.trim?.label ? ` · ${reveal.trim.label} trim` : ''}
+                  </p>
+                )}
+                <p className="text-[11px] text-pink-400 font-mono mt-2">{reveal.instanceId}</p>
+              </div>
+              <button onClick={closeReveal} className="w-full mt-5 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold">
+                Keep
+              </button>
+            </div>
           ) : (
             <div className="w-full max-w-sm">
               <img
@@ -499,11 +690,21 @@ export default function Game() {
                 className="w-full rounded-2xl border border-pink-900/50"
               />
               <div className="mt-4 text-center">
-                <p className="text-lg font-bold">{reveal.card.name}</p>
+                <p className="text-lg font-bold">
+                  {reveal.card.name}{reveal.card.series_name ? ' 👑' : ''}
+                </p>
+                {reveal.card.series_name && (
+                  <p className="text-[10px] text-gray-400 tracking-widest uppercase mt-1">{reveal.card.series_name}</p>
+                )}
                 <p className="text-xs text-gray-400 capitalize mt-1">{reveal.card.rarity}</p>
+                {reveal.editionNumber && (
+                  <p className="text-sm text-amber-300 mt-2">
+                    {reveal.editionNumber} of {reveal.editionTotal}
+                  </p>
+                )}
                 <p className="text-[11px] text-pink-400 font-mono mt-2">{reveal.instanceId}</p>
                 <p className="text-[10px] text-gray-500 mt-1">
-                  Acquired for {reveal.price.toLocaleString()} tokens · proof of purchase
+                  Acquired for {Number(reveal.price || 0).toLocaleString()} tokens
                 </p>
               </div>
               <button

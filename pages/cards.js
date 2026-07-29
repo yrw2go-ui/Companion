@@ -94,6 +94,8 @@ const emptyDraft = () => ({
   name: '', title: '', description: '', flavor_text: '', rarity: 'common',
   stats: rollStats(STANDARD_LABELS, 'common'),
   image_prompt: '', back_image_prompt: '',
+  edition_size: 500,
+  series_name: '',
 })
 
 export default function Cards() {
@@ -146,6 +148,7 @@ export default function Cards() {
   const [mediaType, setMediaType] = useState('image')
   const [mediaUnlock, setMediaUnlock] = useState('shop')
   const [mediaCost, setMediaCost] = useState('100')
+  const [mediaEdition, setMediaEdition] = useState('100')
   const [mediaBusy, setMediaBusy] = useState(false)
 
   useEffect(() => { loadCards() }, [])
@@ -199,6 +202,7 @@ export default function Cards() {
       title: mediaTitle.trim() || null,
       unlock_method: mediaUnlock,
       token_cost: parseInt(mediaCost) || 0,
+      edition_size: parseInt(mediaEdition) || 100,
       published: false,
     }]).select().single()
     setMediaBusy(false)
@@ -360,6 +364,8 @@ export default function Cards() {
         back_seed: back.seed,
         negative_prompt: negative,
         image_model: imageModel,
+        edition_size: parseInt(draft.edition_size) || 500,
+        series_name: (draft.series_name || '').trim() || null,
       }])
       if (error) { alert('Save error: ' + error.message); setGenerating(false); setProgress(''); return }
 
@@ -391,6 +397,8 @@ export default function Cards() {
       image_prompt: editing.image_prompt,
       back_image_prompt: editing.back_image_prompt,
       negative_prompt: editNegative,
+      edition_size: parseInt(editing.edition_size) || 500,
+      series_name: (editing.series_name || '').trim() || null,
     }).eq('id', editing.id)
     setSaving(false)
     if (error) { alert('Save error: ' + error.message); return }
@@ -522,6 +530,8 @@ export default function Cards() {
       stats: rollStats(baseLabels, nextRarity),
       image_prompt: card.image_prompt || '',
       back_image_prompt: card.back_image_prompt || '',
+      edition_size: card.edition_size || 500,
+      series_name: card.series_name || '',
     })
     setNegative(card.negative_prompt || DEFAULT_NEGATIVE)
     setSeedInput(card.seed != null ? String(card.seed) : '')
@@ -613,6 +623,12 @@ export default function Cards() {
             ) : (
               <div className="absolute inset-0 bg-gray-900" />
             )}
+            {card.series_name && (
+              <span
+                className={`absolute top-2 left-2 z-[6] ${big ? 'text-lg' : 'text-sm'} drop-shadow`}
+                title={card.series_name}
+              >👑</span>
+            )}
             <span className={`badge ${t.badge}`}>{card.rarity}</span>
             <div className="nameplate">
               <div className={`font-bold leading-tight truncate tracking-wide ${big ? 'text-2xl' : 'text-[15px]'}`}>{card.name}</div>
@@ -641,6 +657,17 @@ export default function Cards() {
             <div className="absolute inset-x-0 bottom-0 h-[68%] bg-gradient-to-t from-black from-45% via-black/90 via-70% to-transparent" />
             <div className="absolute inset-x-0 bottom-0 h-[38%] bg-black/60" />
             <span className={`badge ${t.badge}`}>{card.rarity}</span>
+
+            {card.series_name && (
+              <div className={`absolute top-3 inset-x-0 z-[5] text-center px-2`}>
+                <span
+                  className={`text-black font-semibold tracking-[0.15em] uppercase ${big ? 'text-xs' : 'text-[9px]'}`}
+                  style={{ fontFamily: 'Georgia, "Times New Roman", serif', textShadow: '0 0 1px rgba(255,255,255,0.4)' }}
+                >
+                  {card.series_name}
+                </span>
+              </div>
+            )}
 
             <div className={`absolute inset-0 z-[4] flex flex-col justify-end ${big ? 'p-5' : 'p-3'}`}>
               {card.description && (
@@ -867,6 +894,17 @@ export default function Cards() {
 
                 {inputRow('Description', draft.description, v => setDraft({ ...draft, description: v }), true, 2)}
                 {inputRow('Flavor Text', draft.flavor_text, v => setDraft({ ...draft, flavor_text: v }))}
+                {inputRow('Series name (optional)', draft.series_name || '', v => setDraft({ ...draft, series_name: v }))}
+                <p className="text-[10px] text-gray-600 mb-2 -mt-2">Series cards get a 👑 on the front and the name on the back.</p>
+                <label className="block text-xs text-gray-400 mb-1">Edition size (print run)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={draft.edition_size ?? 500}
+                  onChange={e => setDraft({ ...draft, edition_size: e.target.value })}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
+                />
+                <p className="text-[10px] text-gray-600 mb-3 -mt-2">Players get &quot;3 of {draft.edition_size || 500}&quot; style numbers. Default 500.</p>
 
                 {isStatless(draft.rarity) ? (
                   <p className="text-[11px] text-gray-500 mb-3">
@@ -958,6 +996,15 @@ export default function Cards() {
 
             {inputRow('Description', editing.description, v => setEditing({ ...editing, description: v }), true, 2)}
             {inputRow('Flavor Text', editing.flavor_text, v => setEditing({ ...editing, flavor_text: v }))}
+            {inputRow('Series name (optional)', editing.series_name || '', v => setEditing({ ...editing, series_name: v }))}
+            <label className="block text-xs text-gray-400 mb-1">Edition size (print run)</label>
+            <input
+              type="number"
+              min="1"
+              value={editing.edition_size ?? 500}
+              onChange={e => setEditing({ ...editing, edition_size: e.target.value })}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
+            />
 
             {isStatless(editing.rarity) ? (
               <p className="text-[11px] text-gray-500 mb-3">
@@ -1127,6 +1174,9 @@ export default function Cards() {
                 </select>
                 <input value={mediaCost} onChange={e => setMediaCost(e.target.value)} placeholder="Cost"
                   className="w-16 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none" />
+                <input value={mediaEdition} onChange={e => setMediaEdition(e.target.value)} placeholder="Ed."
+                  title="Edition size"
+                  className="w-14 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none" />
               </div>
               <button onClick={addCharMedia} disabled={mediaBusy}
                 className="w-full bg-pink-900/60 hover:bg-pink-800 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">
