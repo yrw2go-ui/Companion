@@ -140,9 +140,10 @@ export default function Game() {
     }
   }
 
-  const buyCard = async (card) => {
+  const buyCard = async (card, skin) => {
     if (buying || reveal) return
     const price = priceOf(card.rarity)
+    const useSkin = skin || mysterySkinFor(card.id)
     if (tokens < price) {
       alert(`Need ${price.toLocaleString()} tokens (you have ${tokens.toLocaleString()})`)
       return
@@ -190,8 +191,7 @@ export default function Game() {
       cards: card,
     }, ...prev])
     setBuying(false)
-    const skin = mysterySkinFor(card.id)
-    setReveal({ card, instanceId, price, phase: 'anim', video: skin.video })
+    setReveal({ card, instanceId, price, phase: 'anim', video: useSkin.video })
   }
 
   const finishReveal = () => {
@@ -416,9 +416,9 @@ export default function Game() {
               <p className="text-sm text-gray-600">No cards in the shop yet. Publish cards from Studio.</p>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                {publishedCards.map(c => {
+                {publishedCards.map((c, idx) => {
                   const price = priceOf(c.rarity)
-                  const skin = mysterySkinFor(c.id)
+                  const skin = MYSTERY_SKINS[idx % MYSTERY_SKINS.length]
                   return (
                     <div key={c.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                       <img
@@ -430,7 +430,7 @@ export default function Game() {
                         <p className="text-xs font-semibold text-gray-300">Mystery Card</p>
                         <p className="text-[10px] text-gray-500 capitalize">{c.rarity || 'common'}</p>
                         <button
-                          onClick={() => buyCard(c)}
+                          onClick={() => buyCard(c, skin)}
                           disabled={buying}
                           className="w-full mt-2 bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded-lg py-1.5 text-[11px] font-semibold"
                         >
