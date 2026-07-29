@@ -9,6 +9,7 @@ export default function Game() {
   const [publishedCards, setPublishedCards] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('home') // home | packs | cards | duel
+  const [tokens, setTokens] = useState(0)
 
   useEffect(() => {
     load()
@@ -51,6 +52,14 @@ export default function Game() {
     }
 
     setBanners(banners)
+
+    const { data: settings } = await supabase
+      .from('user_settings')
+      .select('tokens')
+      .eq('id', 1)
+      .maybeSingle()
+    setTokens(settings?.tokens ?? 0)
+
     setLoading(false)
   }
 
@@ -151,8 +160,8 @@ export default function Game() {
 
             <div className="mt-8 rounded-2xl border border-pink-900/40 bg-pink-950/30 p-4">
               <p className="text-xs text-pink-300 font-semibold mb-1">Tokens</p>
-              <p className="text-3xl font-bold">0</p>
-              <p className="text-[10px] text-gray-500 mt-1">Buy / earn later — placeholder</p>
+              <p className="text-3xl font-bold">{tokens.toLocaleString()}</p>
+              <p className="text-[10px] text-gray-500 mt-1">Spend on packs · earn more later</p>
             </div>
           </div>
         </>
