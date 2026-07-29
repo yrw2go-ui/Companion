@@ -113,7 +113,7 @@ export default function Game() {
           <button onClick={() => router.push('/settings')} className="text-xs text-gray-400 hover:text-white">
             ⚙ Mode
           </button>
-          <img src="/goddess-arena-logo.png" alt="Goddess Arena" className="h-8 object-contain" />
+          <img src="/goddess-arena-logo.png" alt="Goddess Arena" className="h-11 object-contain" />
           <button onClick={() => router.push('/gallery')} className="text-xs text-gray-400 hover:text-white">
             Studio
           </button>

@@ -214,7 +214,7 @@ export default function Cards() {
   }
 
   const withStyle = (base, style) => (!style ? base : `${base}, ${style}`)
-  const BACK_FRAMING = 'subject in the upper half of the frame, head and shoulders near the top third, open space toward the bottom'
+  const BACK_FRAMING = 'subject in the upper two-thirds of the frame, head near the top, open empty space in the bottom third for text, do not place important details in the lower third'
   const withBackFraming = (base) => `${base}, ${BACK_FRAMING}`
 
   const genImage = async (imgPrompt, seedVal, neg, sz, style, modelId) => {
@@ -554,10 +554,10 @@ export default function Cards() {
                 muted
                 playsInline
                 poster={card.poster_url || undefined}
-                className="absolute inset-0 w-full h-full object-cover"
+                className="absolute inset-0 w-full h-full object-cover object-top"
               />
             ) : card.image_url ? (
-              <img src={card.image_url} alt={card.name} className="absolute inset-0 w-full h-full object-cover" />
+              <img src={card.image_url} alt={card.name} className="absolute inset-0 w-full h-full object-cover object-top" />
             ) : (
               <div className="absolute inset-0 bg-gray-900" />
             )}
@@ -582,7 +582,7 @@ export default function Cards() {
         <div className={`card-inner ${t.foil} ${t.holo ? 'holo' : ''}`}>
           <div className="relative aspect-[3/4]">
             {card.back_image_url ? (
-              <img src={card.back_image_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <img src={card.back_image_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
             ) : (
               <div className="absolute inset-0 bg-gray-900 flex items-center justify-center text-gray-700 text-[10px]">no back art</div>
             )}
