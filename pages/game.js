@@ -8,7 +8,7 @@ export default function Game() {
   const [banners, setBanners] = useState([])
   const [publishedCards, setPublishedCards] = useState([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('home') // home | packs | cards | duel
+  const [tab, setTab] = useState('home') // home | packs | collection | shop | duel
   const [tokens, setTokens] = useState(0)
 
   useEffect(() => {
@@ -72,7 +72,7 @@ export default function Game() {
           <button onClick={() => router.push('/settings')} className="text-xs text-gray-400 hover:text-white">
             ⚙ Mode
           </button>
-          <h1 className="text-sm font-bold tracking-[0.2em] uppercase text-pink-400">Arena</h1>
+          <img src="/goddess-arena-logo.png" alt="Goddess Arena" className="h-8 object-contain" />
           <button onClick={() => router.push('/gallery')} className="text-xs text-gray-400 hover:text-white">
             Studio
           </button>
@@ -128,23 +128,23 @@ export default function Game() {
               </div>
             </button>
 
-            <button onClick={() => setTab('cards')} className="w-full text-left bg-gray-900 border border-gray-800 rounded-2xl p-4 active:scale-[0.98] transition">
+            <button onClick={() => setTab('shop')} className="w-full text-left bg-gray-900 border border-gray-800 rounded-2xl p-4 active:scale-[0.98] transition">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-bold">Collection</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{publishedCards.length} published card{publishedCards.length === 1 ? '' : 's'}</p>
+                  <p className="font-bold">Shop</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Buy cards &amp; tokens</p>
                 </div>
-                <span className="text-2xl">💎</span>
+                <span className="text-2xl">🛒</span>
               </div>
             </button>
 
-            <button className="w-full text-left bg-gray-900 border border-gray-800 rounded-2xl p-4 active:scale-[0.98] transition opacity-60">
+            <button onClick={() => setTab('collection')} className="w-full text-left bg-gray-900 border border-gray-800 rounded-2xl p-4 active:scale-[0.98] transition">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-bold">Trade</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Coming soon</p>
+                  <p className="font-bold">My Collection</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Cards you own</p>
                 </div>
-                <span className="text-2xl">🔄</span>
+                <span className="text-2xl">💎</span>
               </div>
             </button>
 
@@ -167,16 +167,55 @@ export default function Game() {
         </>
       )}
 
-      {tab === 'cards' && (
+      {tab === 'collection' && (
         <div className="pt-16 max-w-lg mx-auto px-4 pb-24">
           <div className="flex items-center justify-between mb-3">
             <button onClick={() => setTab('home')} className="text-sm text-gray-400 hover:text-white">← Back</button>
-            <h2 className="font-bold text-lg">Collection</h2>
+            <h2 className="font-bold text-lg">My Collection</h2>
             <button onClick={() => setTab('home')} className="text-gray-400 hover:text-white text-lg leading-none px-1">✕</button>
           </div>
-          <p className="text-xs text-gray-500 mb-4">Cards you published from Studio</p>
+          <p className="text-xs text-gray-500 mb-4">Cards you have unlocked or bought</p>
+          <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-8 text-center">
+            <p className="text-3xl mb-2">💎</p>
+            <p className="text-sm text-gray-400">Your collection is empty</p>
+            <p className="text-xs text-gray-600 mt-1">Open packs or visit the Shop to get cards</p>
+            <button onClick={() => setTab('shop')} className="mt-4 text-sm text-pink-400 hover:text-pink-300 font-semibold">
+              Go to Shop →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {tab === 'shop' && (
+        <div className="pt-16 max-w-lg mx-auto px-4 pb-24">
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => setTab('home')} className="text-sm text-gray-400 hover:text-white">← Back</button>
+            <h2 className="font-bold text-lg">Shop</h2>
+            <button onClick={() => setTab('home')} className="text-gray-400 hover:text-white text-lg leading-none px-1">✕</button>
+          </div>
+
+          <div className="rounded-2xl border border-pink-900/40 bg-pink-950/30 p-4 mb-6">
+            <p className="text-xs text-pink-300 font-semibold mb-1">Your balance</p>
+            <p className="text-2xl font-bold">{tokens.toLocaleString()} tokens</p>
+          </div>
+
+          <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Token packs</p>
+          <div className="grid grid-cols-3 gap-2 mb-6">
+            {[
+              { amount: 500, price: '$0.99' },
+              { amount: 3000, price: '$4.99' },
+              { amount: 10000, price: '$14.99' },
+            ].map(p => (
+              <button key={p.amount} disabled className="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center opacity-70">
+                <p className="text-sm font-bold text-pink-300">{p.amount.toLocaleString()}</p>
+                <p className="text-[10px] text-gray-500 mt-1">{p.price}</p>
+              </button>
+            ))}
+          </div>
+
+          <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Featured cards</p>
           {publishedCards.length === 0 ? (
-            <p className="text-sm text-gray-600">No published cards yet. Open a card in Gallery and tap Publish to game.</p>
+            <p className="text-sm text-gray-600">No cards in the shop yet. Publish cards from Studio.</p>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {publishedCards.map(c => (
@@ -191,7 +230,10 @@ export default function Game() {
                   </div>
                   <div className="p-2 relative bg-gray-900">
                     <p className="text-xs font-semibold truncate text-gray-400">???</p>
-                    <p className="text-[10px] text-gray-600">{c.rarity || 'card'}</p>
+                    <p className="text-[10px] text-gray-600 capitalize">{c.rarity || 'card'}</p>
+                    <button disabled className="w-full mt-2 bg-pink-900/50 rounded-lg py-1.5 text-[10px] font-semibold text-pink-200/70">
+                      Buy · soon
+                    </button>
                   </div>
                 </div>
               ))}
@@ -231,15 +273,18 @@ export default function Game() {
       )}
 
       <div className="fixed bottom-0 inset-x-0 bg-black/90 backdrop-blur border-t border-white/10 z-40">
-        <div className="max-w-lg mx-auto grid grid-cols-4 text-center py-2 text-[10px] text-gray-500">
+        <div className="max-w-lg mx-auto grid grid-cols-5 text-center py-2 text-[10px] text-gray-500">
           <button onClick={() => setTab('home')} className={`py-2 ${tab === 'home' ? 'text-pink-400' : ''}`}>
             <div className="text-lg">🏠</div>Home
           </button>
           <button onClick={() => setTab('packs')} className={`py-2 ${tab === 'packs' ? 'text-pink-400' : ''}`}>
             <div className="text-lg">🎴</div>Packs
           </button>
-          <button onClick={() => setTab('cards')} className={`py-2 ${tab === 'cards' ? 'text-pink-400' : ''}`}>
-            <div className="text-lg">💎</div>Cards
+          <button onClick={() => setTab('shop')} className={`py-2 ${tab === 'shop' ? 'text-pink-400' : ''}`}>
+            <div className="text-lg">🛒</div>Shop
+          </button>
+          <button onClick={() => setTab('collection')} className={`py-2 ${tab === 'collection' ? 'text-pink-400' : ''}`}>
+            <div className="text-lg">💎</div>Mine
           </button>
           <button onClick={() => setTab('duel')} className={`py-2 ${tab === 'duel' ? 'text-pink-400' : ''}`}>
             <div className="text-lg">⚔️</div>Duel
