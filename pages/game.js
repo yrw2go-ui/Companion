@@ -17,6 +17,7 @@ export default function Game() {
   const shopVideoRef = useRef(null)
   const [showSplash, setShowSplash] = useState(true)
   const splashRef = useRef(null)
+  const [bannerVideoDone, setBannerVideoDone] = useState({}) // tabKey -> true after intro played
 
   useEffect(() => {
     load()
@@ -86,12 +87,28 @@ export default function Game() {
   const strip = marquee.length ? [...marquee, ...marquee] : []
 
   const TabBanner = ({ tabKey }) => {
-    const url = tabBanners?.[tabKey]
-    if (!url) return null
+    const raw = tabBanners?.[tabKey]
+    const image = typeof raw === 'string' ? raw : (raw?.image || '')
+    const video = typeof raw === 'string' ? '' : (raw?.video || '')
+    const showVideo = video && !bannerVideoDone[tabKey]
+    if (!image && !video) return null
     return (
       <div className="w-full max-w-lg mx-auto px-4 mb-4">
-        <div className="relative w-full aspect-[21/9] rounded-xl overflow-hidden border border-white/10">
-          <img src={url} alt="" className="w-full h-full object-cover object-top" />
+        <div className="relative w-full aspect-[21/9] rounded-xl overflow-hidden border border-white/10 bg-black">
+          {showVideo ? (
+            <video
+              key={tabKey + '-vid'}
+              src={video}
+              autoPlay
+              playsInline
+              muted={false}
+              className="w-full h-full object-cover object-top"
+              onEnded={() => setBannerVideoDone(prev => ({ ...prev, [tabKey]: true }))}
+              onError={() => setBannerVideoDone(prev => ({ ...prev, [tabKey]: true }))}
+            />
+          ) : image ? (
+            <img src={image} alt="" className="w-full h-full object-cover object-top" />
+          ) : null}
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
         </div>
       </div>

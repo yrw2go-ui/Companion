@@ -13,7 +13,13 @@ export default function Settings() {
   const [savedValue, setSavedValue] = useState('')
   const [appMode, setAppMode] = useState('creator')  // 'creator' | 'public'
   const [modeSaving, setModeSaving] = useState(false)
-  const [tabBanners, setTabBanners] = useState({ home: '', packs: '', shop: '', collection: '', duel: '' })
+  const [tabBanners, setTabBanners] = useState({
+    home: { image: '', video: '' },
+    packs: { image: '', video: '' },
+    shop: { image: '', video: '' },
+    collection: { image: '', video: '' },
+    duel: { image: '', video: '' },
+  })
   const [shopIntroUrl, setShopIntroUrl] = useState('')
   const [bannerSaving, setBannerSaving] = useState(false)
 
@@ -64,12 +70,17 @@ export default function Settings() {
     setSavedValue(loaded)
     setAppMode(data?.app_mode === 'public' ? 'public' : 'creator')
     const tb = data?.tab_banners || {}
+    const norm = (v) => {
+      if (!v) return { image: '', video: '' }
+      if (typeof v === 'string') return { image: v, video: '' }
+      return { image: v.image || '', video: v.video || '' }
+    }
     setTabBanners({
-      home: tb.home || '',
-      packs: tb.packs || '',
-      shop: tb.shop || '',
-      collection: tb.collection || '',
-      duel: tb.duel || '',
+      home: norm(tb.home),
+      packs: norm(tb.packs),
+      shop: norm(tb.shop),
+      collection: norm(tb.collection),
+      duel: norm(tb.duel),
     })
     setShopIntroUrl(data?.shop_intro_url || '')
     setLoading(false)
@@ -617,13 +628,34 @@ export default function Settings() {
           Landscape image URL for the top of each public tab (wide crop works best).
           Paste a public storage URL from your gallery.
         </p>
-        {['home', 'packs', 'shop', 'collection', 'duel'].map(key => (
-          <div key={key} className="mb-3">
-            <label className="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">{key}</label>
+        {[
+          { key: 'home', label: 'Home', hint: 'Top of the main game screen (above the scrolling strip)' },
+          { key: 'packs', label: 'Mystery Packs', hint: 'Top of the Packs tab' },
+          { key: 'shop', label: 'Shop', hint: 'Top of the Shop tab' },
+          { key: 'collection', label: 'My Collection', hint: 'Top of the Mine / Collection tab' },
+          { key: 'duel', label: 'Duel', hint: 'Top of the Duel tab' },
+        ].map(({ key, label, hint }) => (
+          <div key={key} className="mb-5 border border-gray-800 rounded-xl p-3">
+            <label className="block text-xs text-gray-300 font-semibold mb-0.5">{label}</label>
+            <p className="text-[10px] text-gray-600 mb-2">{hint}</p>
+            <p className="text-[10px] text-gray-500 mb-1">Static image (after video / always if no video)</p>
             <input
-              value={tabBanners[key] || ''}
-              onChange={e => setTabBanners(prev => ({ ...prev, [key]: e.target.value }))}
-              placeholder="https://.../image.jpeg"
+              value={tabBanners[key]?.image || ''}
+              onChange={e => setTabBanners(prev => ({
+                ...prev,
+                [key]: { ...(prev[key] || {}), image: e.target.value },
+              }))}
+              placeholder="https://.../landscape.jpeg"
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs outline-none focus:border-purple-500 mb-2"
+            />
+            <p className="text-[10px] text-gray-500 mb-1">Intro video (plays once when tab opens, then static)</p>
+            <input
+              value={tabBanners[key]?.video || ''}
+              onChange={e => setTabBanners(prev => ({
+                ...prev,
+                [key]: { ...(prev[key] || {}), video: e.target.value },
+              }))}
+              placeholder="https://.../banner.mp4"
               className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs outline-none focus:border-purple-500"
             />
           </div>
