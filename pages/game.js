@@ -12,6 +12,13 @@ export default function Game() {
   const [tokens, setTokens] = useState(0)
   // landscape banners per tab — set in Settings
   const [tabBanners, setTabBanners] = useState({})
+  const [tabTitles, setTabTitles] = useState({
+    home: 'Home',
+    packs: 'Mystery Packs',
+    shop: 'Shop',
+    collection: 'My Collection',
+    duel: 'Duel',
+  })
   const [shopIntroUrl, setShopIntroUrl] = useState('')
   const [showShopIntro, setShowShopIntro] = useState(false)
   const shopVideoRef = useRef(null)
@@ -60,11 +67,14 @@ export default function Game() {
 
     const { data: settings } = await supabase
       .from('user_settings')
-      .select('tokens, tab_banners, shop_intro_url')
+      .select('tokens, tab_banners, tab_titles, shop_intro_url')
       .eq('id', 1)
       .maybeSingle()
     setTokens(settings?.tokens ?? 0)
     setTabBanners(settings?.tab_banners || {})
+    if (settings?.tab_titles) {
+      setTabTitles(prev => ({ ...prev, ...settings.tab_titles }))
+    }
     setShopIntroUrl(settings?.shop_intro_url || '')
 
     setLoading(false)
@@ -88,10 +98,11 @@ export default function Game() {
 
   const TabBanner = ({ tabKey }) => {
     const raw = tabBanners?.[tabKey]
-    const image = typeof raw === 'string' ? raw : (raw?.image || '')
-    const video = typeof raw === 'string' ? '' : (raw?.video || '')
-    const showVideo = video && !bannerVideoDone[tabKey]
-    if (!image && !video) return null
+    const image = (typeof raw === 'string' ? raw : (raw?.image || '')).trim()
+    const video = (typeof raw === 'string' ? '' : (raw?.video || '')).trim()
+    const showVideo = !!(video && !bannerVideoDone[tabKey])
+    // nothing configured, or video finished and no static image → no gap
+    if (!showVideo && !image) return null
     return (
       <div className="w-full max-w-lg mx-auto px-4 mb-4">
         <div className="relative w-full aspect-[21/9] rounded-xl overflow-hidden border border-white/10 bg-black">
@@ -106,9 +117,9 @@ export default function Game() {
               onEnded={() => setBannerVideoDone(prev => ({ ...prev, [tabKey]: true }))}
               onError={() => setBannerVideoDone(prev => ({ ...prev, [tabKey]: true }))}
             />
-          ) : image ? (
+          ) : (
             <img src={image} alt="" className="w-full h-full object-cover object-top" />
-          ) : null}
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
         </div>
       </div>
@@ -180,7 +191,7 @@ export default function Game() {
             <button onClick={() => openTab('packs')} className="w-full text-left bg-gradient-to-r from-pink-700 to-purple-800 rounded-2xl p-4 active:scale-[0.98] transition">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-bold text-lg">Mystery Packs</p>
+                  <p className="font-bold text-lg">{tabTitles.packs || 'Mystery Packs'}</p>
                   <p className="text-xs text-pink-200/80 mt-0.5">Spend tokens · unlock rare cards</p>
                 </div>
                 <span className="text-2xl">🎴</span>
@@ -190,7 +201,7 @@ export default function Game() {
             <button onClick={() => openTab('shop')} className="w-full text-left bg-gray-900 border border-gray-800 rounded-2xl p-4 active:scale-[0.98] transition">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-bold">Shop</p>
+                  <p className="font-bold">{tabTitles.shop || 'Shop'}</p>
                   <p className="text-xs text-gray-500 mt-0.5">Buy cards &amp; tokens</p>
                 </div>
                 <span className="text-2xl">🛒</span>
@@ -200,7 +211,7 @@ export default function Game() {
             <button onClick={() => openTab('collection')} className="w-full text-left bg-gray-900 border border-gray-800 rounded-2xl p-4 active:scale-[0.98] transition">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-bold">My Collection</p>
+                  <p className="font-bold">{tabTitles.collection || 'My Collection'}</p>
                   <p className="text-xs text-gray-500 mt-0.5">Cards you own</p>
                 </div>
                 <span className="text-2xl">💎</span>
@@ -210,7 +221,7 @@ export default function Game() {
             <button onClick={() => openTab('duel')} className="w-full text-left bg-gray-900 border border-gray-800 rounded-2xl p-4 active:scale-[0.98] transition opacity-60">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-bold">Duel</p>
+                  <p className="font-bold">{tabTitles.duel || 'Duel'}</p>
                   <p className="text-xs text-gray-500 mt-0.5">Coming soon</p>
                 </div>
                 <span className="text-2xl">⚔️</span>
@@ -228,7 +239,7 @@ export default function Game() {
 
       {tab === 'collection' && (
         <div className="pt-16 pb-24">
-          <TabHeader title="My Collection" />
+          <TabHeader title={tabTitles.collection || "My Collection"} />
           <TabBanner tabKey="collection" />
           <div className="max-w-lg mx-auto px-4">
             <p className="text-xs text-gray-500 mb-4">Cards you have unlocked or bought</p>
@@ -246,7 +257,7 @@ export default function Game() {
 
       {tab === 'shop' && (
         <div className="pt-16 pb-24">
-          <TabHeader title="Shop" />
+          <TabHeader title={tabTitles.shop || "Shop"} />
           <TabBanner tabKey="shop" />
           <div className="max-w-lg mx-auto px-4">
             <div className="rounded-2xl border border-pink-900/40 bg-pink-950/30 p-4 mb-6">
@@ -300,7 +311,7 @@ export default function Game() {
 
       {tab === 'packs' && (
         <div className="pt-16 pb-24">
-          <TabHeader title="Mystery Packs" />
+          <TabHeader title={tabTitles.packs || "Mystery Packs"} />
           <TabBanner tabKey="packs" />
           <div className="max-w-lg mx-auto px-4">
             <p className="text-xs text-gray-500 mb-6">Unlock flow comes next. Packs will pull from published cards + extra media.</p>
@@ -318,7 +329,7 @@ export default function Game() {
 
       {tab === 'duel' && (
         <div className="pt-16 pb-24">
-          <TabHeader title="Duel" />
+          <TabHeader title={tabTitles.duel || "Duel"} />
           <TabBanner tabKey="duel" />
           <div className="max-w-lg mx-auto px-4">
             <p className="text-center text-gray-500 text-sm">Duel stacks — coming soon.</p>
@@ -366,19 +377,19 @@ export default function Game() {
       <div className="fixed bottom-0 inset-x-0 bg-black/90 backdrop-blur border-t border-white/10 z-40">
         <div className="max-w-lg mx-auto grid grid-cols-5 text-center py-2 text-[10px] text-gray-500">
           <button onClick={() => openTab('home')} className={`py-2 ${tab === 'home' ? 'text-pink-400' : ''}`}>
-            <div className="text-lg">🏠</div>Home
+            <div className="text-lg">🏠</div>{(tabTitles.home || 'Home').split(' ')[0]}
           </button>
           <button onClick={() => openTab('packs')} className={`py-2 ${tab === 'packs' ? 'text-pink-400' : ''}`}>
-            <div className="text-lg">🎴</div>Packs
+            <div className="text-lg">🎴</div>{(tabTitles.packs || 'Packs').split(' ')[0]}
           </button>
           <button onClick={() => openTab('shop')} className={`py-2 ${tab === 'shop' ? 'text-pink-400' : ''}`}>
-            <div className="text-lg">🛒</div>Shop
+            <div className="text-lg">🛒</div>{(tabTitles.shop || 'Shop').split(' ')[0]}
           </button>
           <button onClick={() => openTab('collection')} className={`py-2 ${tab === 'collection' ? 'text-pink-400' : ''}`}>
-            <div className="text-lg">💎</div>Mine
+            <div className="text-lg">💎</div>{(tabTitles.collection || 'Mine').split(' ')[0]}
           </button>
           <button onClick={() => openTab('duel')} className={`py-2 ${tab === 'duel' ? 'text-pink-400' : ''}`}>
-            <div className="text-lg">⚔️</div>Duel
+            <div className="text-lg">⚔️</div>{(tabTitles.duel || 'Duel').split(' ')[0]}
           </button>
         </div>
       </div>

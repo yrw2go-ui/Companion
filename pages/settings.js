@@ -20,6 +20,14 @@ export default function Settings() {
     collection: { image: '', video: '' },
     duel: { image: '', video: '' },
   })
+  const [tabTitles, setTabTitles] = useState({
+    home: 'Home',
+    packs: 'Mystery Packs',
+    shop: 'Shop',
+    collection: 'My Collection',
+    duel: 'Duel',
+  })
+  const [editingTitle, setEditingTitle] = useState(null) // which tab key is being renamed
   const [shopIntroUrl, setShopIntroUrl] = useState('')
   const [bannerSaving, setBannerSaving] = useState(false)
 
@@ -62,7 +70,7 @@ export default function Settings() {
   const load = async () => {
     const { data } = await supabase
       .from('user_settings')
-      .select('my_description, app_mode, tab_banners, shop_intro_url')
+      .select('my_description, app_mode, tab_banners, tab_titles, shop_intro_url')
       .eq('id', 1)
       .maybeSingle()
     const loaded = data?.my_description || ''
@@ -83,6 +91,14 @@ export default function Settings() {
       duel: norm(tb.duel),
     })
     setShopIntroUrl(data?.shop_intro_url || '')
+    const tt = data?.tab_titles || {}
+    setTabTitles({
+      home: tt.home || 'Home',
+      packs: tt.packs || 'Mystery Packs',
+      shop: tt.shop || 'Shop',
+      collection: tt.collection || 'My Collection',
+      duel: tt.duel || 'Duel',
+    })
     setLoading(false)
   }
 
@@ -92,6 +108,7 @@ export default function Settings() {
     const { error } = await supabase.from('user_settings').upsert({
       id: 1,
       tab_banners: tabBanners,
+      tab_titles: tabTitles,
       shop_intro_url: shopIntroUrl.trim() || null,
     })
     setBannerSaving(false)
@@ -629,14 +646,35 @@ export default function Settings() {
           Paste a public storage URL from your gallery.
         </p>
         {[
-          { key: 'home', label: 'Home', hint: 'Top of the main game screen (above the scrolling strip)' },
-          { key: 'packs', label: 'Mystery Packs', hint: 'Top of the Packs tab' },
-          { key: 'shop', label: 'Shop', hint: 'Top of the Shop tab' },
-          { key: 'collection', label: 'My Collection', hint: 'Top of the Mine / Collection tab' },
-          { key: 'duel', label: 'Duel', hint: 'Top of the Duel tab' },
-        ].map(({ key, label, hint }) => (
+          { key: 'home', hint: 'Top of the main game screen (above the scrolling strip)' },
+          { key: 'packs', hint: 'Top of the Packs tab' },
+          { key: 'shop', hint: 'Top of the Shop tab' },
+          { key: 'collection', hint: 'Top of the Mine / Collection tab' },
+          { key: 'duel', hint: 'Top of the Duel tab' },
+        ].map(({ key, hint }) => (
           <div key={key} className="mb-5 border border-gray-800 rounded-xl p-3">
-            <label className="block text-xs text-gray-300 font-semibold mb-0.5">{label}</label>
+            <div className="flex items-center gap-2 mb-0.5">
+              {editingTitle === key ? (
+                <input
+                  autoFocus
+                  value={tabTitles[key] || ''}
+                  onChange={e => setTabTitles(prev => ({ ...prev, [key]: e.target.value }))}
+                  onBlur={() => setEditingTitle(null)}
+                  onKeyDown={e => { if (e.key === 'Enter') setEditingTitle(null) }}
+                  className="flex-1 bg-black border border-purple-500 rounded px-2 py-1 text-xs font-semibold outline-none"
+                />
+              ) : (
+                <label className="block text-xs text-gray-300 font-semibold">{tabTitles[key] || key}</label>
+              )}
+              <button
+                type="button"
+                onClick={() => setEditingTitle(editingTitle === key ? null : key)}
+                className="text-gray-500 hover:text-purple-400 text-sm px-1"
+                title="Edit tab name"
+              >
+                ✎
+              </button>
+            </div>
             <p className="text-[10px] text-gray-600 mb-2">{hint}</p>
             <p className="text-[10px] text-gray-500 mb-1">Static image (after video / always if no video)</p>
             <input
