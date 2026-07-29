@@ -140,6 +140,13 @@ export default function Cards() {
   const [animating, setAnimating] = useState(false)
   const [view, setView] = useState('static')
   const [touchStartX, setTouchStartX] = useState(null)
+  const [charMedia, setCharMedia] = useState([])
+  const [mediaTitle, setMediaTitle] = useState('')
+  const [mediaUrl, setMediaUrl] = useState('')
+  const [mediaType, setMediaType] = useState('image')
+  const [mediaUnlock, setMediaUnlock] = useState('shop')
+  const [mediaCost, setMediaCost] = useState('100')
+  const [mediaBusy, setMediaBusy] = useState(false)
 
   useEffect(() => { loadCards() }, [])
 
@@ -163,11 +170,56 @@ export default function Cards() {
     setLoading(false)
   }
 
-  const openCard = (card) => {
+  const openCard = async (card) => {
     setSelected(card)
     setSide('front')
     setExpanded(false)
     setView('static')
+    setMediaTitle('')
+    setMediaUrl('')
+    // media linked by character name so all rarity variants share it
+    const { data } = await supabase
+      .from('character_media')
+      .select('*')
+      .ilike('character_name', card.name || '')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: false })
+    setCharMedia(data || [])
+  }
+
+  const addCharMedia = async () => {
+    if (!selected || mediaBusy) return
+    if (!mediaUrl.trim()) { alert('Paste a media URL'); return }
+    setMediaBusy(true)
+    const { data, error } = await supabase.from('character_media').insert([{
+      character_name: selected.name,
+      card_id: selected.id,
+      type: mediaType,
+      url: mediaUrl.trim(),
+      title: mediaTitle.trim() || null,
+      unlock_method: mediaUnlock,
+      token_cost: parseInt(mediaCost) || 0,
+      published: false,
+    }]).select().single()
+    setMediaBusy(false)
+    if (error) { alert('Save failed: ' + error.message); return }
+    setCharMedia(prev => [data, ...prev])
+    setMediaTitle('')
+    setMediaUrl('')
+  }
+
+  const toggleMediaPublish = async (row) => {
+    const next = !row.published
+    const { error } = await supabase.from('character_media').update({ published: next }).eq('id', row.id)
+    if (error) { alert(error.message); return }
+    setCharMedia(prev => prev.map(m => m.id === row.id ? { ...m, published: next } : m))
+  }
+
+  const deleteCharMedia = async (row) => {
+    if (!confirm('Remove this media from the character?')) return
+    const { error } = await supabase.from('character_media').delete().eq('id', row.id)
+    if (error) { alert(error.message); return }
+    setCharMedia(prev => prev.filter(m => m.id !== row.id))
   }
 
   const togglePublish = async (card) => {
@@ -1024,6 +1076,64 @@ export default function Cards() {
               className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
               ✦ New card for this character
             </button>
+            <div className="mt-4 bg-gray-900 border border-gray-800 rounded-xl p-3">
+              <p className="text-xs font-semibold text-pink-300 mb-1">Character media</p>
+              <p className="text-[10px] text-gray-500 mb-3">
+                Extra images/videos for this character (not part of the card art).
+                Players can earn or buy these later via shop, packs, mining, trade, or battle.
+                Linked by character name across all rarity variants.
+              </p>
+
+              {charMedia.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {charMedia.map(m => (
+                    <div key={m.id} className="flex gap-2 items-center bg-black/40 rounded-lg p-2">
+                      {m.type === 'video' ? (
+                        <video src={m.url} className="w-12 h-12 rounded object-cover" muted />
+                      ) : (
+                        <img src={m.url} alt="" className="w-12 h-12 rounded object-cover" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs truncate">{m.title || m.type}</p>
+                        <p className="text-[10px] text-gray-500">{m.unlock_method} · {m.token_cost || 0} tok</p>
+                      </div>
+                      <button onClick={() => toggleMediaPublish(m)}
+                        className={`text-[10px] px-2 py-1 rounded font-semibold ${m.published ? 'bg-emerald-700' : 'bg-gray-700'}`}>
+                        {m.published ? 'Live' : 'Off'}
+                      </button>
+                      <button onClick={() => deleteCharMedia(m)} className="text-red-400 text-xs px-1">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <input value={mediaTitle} onChange={e => setMediaTitle(e.target.value)} placeholder="Title (optional)"
+                className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs mb-2 outline-none focus:border-purple-500" />
+              <input value={mediaUrl} onChange={e => setMediaUrl(e.target.value)} placeholder="Media URL (image or video)"
+                className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs mb-2 outline-none focus:border-purple-500" />
+              <div className="flex gap-2 mb-2">
+                <select value={mediaType} onChange={e => setMediaType(e.target.value)}
+                  className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none">
+                  <option value="image">Image</option>
+                  <option value="video">Video</option>
+                </select>
+                <select value={mediaUnlock} onChange={e => setMediaUnlock(e.target.value)}
+                  className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none">
+                  <option value="shop">Shop</option>
+                  <option value="pack">Pack</option>
+                  <option value="mine">Mine</option>
+                  <option value="trade">Trade</option>
+                  <option value="battle">Battle</option>
+                </select>
+                <input value={mediaCost} onChange={e => setMediaCost(e.target.value)} placeholder="Cost"
+                  className="w-16 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none" />
+              </div>
+              <button onClick={addCharMedia} disabled={mediaBusy}
+                className="w-full bg-pink-900/60 hover:bg-pink-800 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">
+                {mediaBusy ? 'Saving...' : '+ Add character media'}
+              </button>
+            </div>
+
             <button onClick={() => openEdit(selected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-lg py-2 text-sm font-semibold mt-2">Edit Card</button>
             <button onClick={() => deleteCard(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">Delete Card</button>
             <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
