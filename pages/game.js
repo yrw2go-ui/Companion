@@ -43,9 +43,11 @@ export default function Game() {
     },
   }
   const TIER_PRICE = { low: 200, mid: 500, high: 800 }
-  const MEDIA_PACK_PRICE = 400
-  // video chance inside media pack (rest images)
+  const MEDIA_SINGLE_PRICE = 400
+  const MEDIA_MULTI_PRICE = 1100
+  const MEDIA_MULTI_QTY = 3
   const MEDIA_VIDEO_CHANCE = 0.18
+  const BUCKS = 'BabeBucks'
 
   // Real-money token packs (display only until payments wired)
   const TOKEN_PACKS = [
@@ -265,11 +267,11 @@ export default function Game() {
     const unit = TIER_PRICE[tier]
     const price = unit * packSize
     if (tokens < price) {
-      alert(`Need ${price.toLocaleString()} tokens (you have ${tokens.toLocaleString()})`)
+      alert(`Need ${price.toLocaleString()} ${BUCKS} (you have ${tokens.toLocaleString()})`)
       return
     }
     const label = packSize > 1 ? `${packSize}× ${tier} draws` : `${tier} mystery draw`
-    if (!confirm(`Open ${label} for ${price.toLocaleString()} tokens?`)) return
+    if (!confirm(`Open ${label} for ${price.toLocaleString()} ${BUCKS}?`)) return
 
     setBuying(true)
     try {
@@ -316,89 +318,105 @@ export default function Game() {
     setBuying(false)
   }
 
-  const buyMediaPack = async () => {
+  const drawOneMedia = async (unitPrice) => {
+    const wantVideo = Math.random() < MEDIA_VIDEO_CHANCE
+    let { data: mediaList } = await supabase
+      .from('character_media')
+      .select('*')
+      .eq('published', true)
+      .eq('type', wantVideo ? 'video' : 'image')
+    if (!mediaList?.length) {
+      const alt = await supabase.from('character_media').select('*').eq('published', true)
+      mediaList = alt.data || []
+    }
+    if (!mediaList.length) return { error: 'No published character media available yet.' }
+
+    const available = []
+    for (const m of mediaList) {
+      const total = m.edition_size || 100
+      const { count } = await supabase
+        .from('player_media')
+        .select('id', { count: 'exact', head: true })
+        .eq('media_id', m.id)
+      if ((count || 0) < total) available.push({ ...m, _sold: count || 0, _total: total })
+    }
+    if (!available.length) return { error: 'All media editions are sold out.' }
+
+    const m = available[Math.floor(Math.random() * available.length)]
+    const { count } = await supabase
+      .from('player_media')
+      .select('id', { count: 'exact', head: true })
+      .eq('media_id', m.id)
+    const editionNumber = (count || 0) + 1
+    const editionTotal = m.edition_size || 100
+    const instanceId = makeInstanceId()
+    const trim = mediaTrim(editionTotal, editionNumber)
+
+    const { data: row, error } = await supabase
+      .from('player_media')
+      .insert([{
+        instance_id: instanceId,
+        media_id: m.id,
+        owner_id: 1,
+        purchase_price: unitPrice,
+        edition_number: editionNumber,
+        edition_total: editionTotal,
+        acquired_via: 'shop',
+        sale_count: 0,
+        current_sale_price: MEDIA_SALE_BASE,
+      }])
+      .select('*')
+      .single()
+    if (error) return { error: error.message }
+    return { row, media: m, instanceId, editionNumber, editionTotal, trim }
+  }
+
+  const buyMedia = async (qty = 1) => {
     if (buying || reveal) return
-    const price = MEDIA_PACK_PRICE
+    const price = qty >= MEDIA_MULTI_QTY ? MEDIA_MULTI_PRICE : MEDIA_SINGLE_PRICE * qty
+    const unit = Math.floor(price / qty)
     if (tokens < price) {
-      alert(`Need ${price.toLocaleString()} tokens`)
+      alert('Need ' + price.toLocaleString() + ' ' + BUCKS)
       return
     }
-    if (!confirm(`Open media pack for ${price.toLocaleString()} tokens?`)) return
+    if (!confirm('Get ' + qty + ' random media for ' + price.toLocaleString() + ' ' + BUCKS + '?')) return
     setBuying(true)
     try {
-      const wantVideo = Math.random() < MEDIA_VIDEO_CHANCE
-      let { data: mediaList } = await supabase
-        .from('character_media')
-        .select('*')
-        .eq('published', true)
-        .eq('type', wantVideo ? 'video' : 'image')
-      if (!mediaList?.length) {
-        const alt = await supabase.from('character_media').select('*').eq('published', true)
-        mediaList = alt.data || []
-      }
-      if (!mediaList.length) {
-        alert('No published character media available yet.')
-        setBuying(false)
-        return
-      }
-
-      // filter stock
-      const available = []
-      for (const m of mediaList) {
-        const total = m.edition_size || 100
-        const { count } = await supabase
-          .from('player_media')
-          .select('id', { count: 'exact', head: true })
-          .eq('media_id', m.id)
-        if ((count || 0) < total) available.push({ ...m, _sold: count || 0, _total: total })
-      }
-      if (!available.length) {
-        alert('All media editions are sold out.')
-        setBuying(false)
-        return
-      }
-
-      const m = available[Math.floor(Math.random() * available.length)]
-      const editionNumber = m._sold + 1
-      const editionTotal = m._total
-      const instanceId = makeInstanceId()
       const newBalance = tokens - price
-      const trim = mediaTrim(editionTotal, editionNumber)
-
       const { error: tokErr } = await supabase.from('user_settings').upsert({ id: 1, tokens: newBalance })
       if (tokErr) throw new Error(tokErr.message)
 
-      const { data: row, error } = await supabase
-        .from('player_media')
-        .insert([{
-          instance_id: instanceId,
-          media_id: m.id,
-          owner_id: 1,
-          purchase_price: price,
-          edition_number: editionNumber,
-          edition_total: editionTotal,
-          acquired_via: 'shop',
-        }])
-        .select('*')
-        .single()
-      if (error) {
-        await supabase.from('user_settings').upsert({ id: 1, tokens })
-        throw new Error(error.message)
+      const won = []
+      for (let i = 0; i < qty; i++) {
+        const result = await drawOneMedia(unit)
+        if (result.error) {
+          if (!won.length) {
+            await supabase.from('user_settings').upsert({ id: 1, tokens })
+            throw new Error(result.error)
+          }
+          break
+        }
+        won.push(result)
       }
 
       setTokens(newBalance)
+      const last = won[won.length - 1]
+      const skin = randomSkin()
       setReveal({
-        phase: 'show',
+        phase: 'anim',
         kind: 'media',
-        media: m,
-        instanceId,
-        price,
-        editionNumber,
-        editionTotal,
-        trim,
+        media: last.media,
+        instanceId: last.instanceId,
+        price: unit,
+        editionNumber: last.editionNumber,
+        editionTotal: last.editionTotal,
+        trim: last.trim,
+        video: skin.video,
+        packWon: won.length,
+        packSize: qty,
       })
     } catch (err) {
-      alert('Media pack failed: ' + err.message)
+      alert('Media buy failed: ' + err.message)
     }
     setBuying(false)
   }
@@ -507,7 +525,7 @@ export default function Game() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-bold text-lg">{tabTitles.packs || 'Mystery Packs'}</p>
-                  <p className="text-xs text-pink-200/80 mt-0.5">Spend tokens · unlock rare cards</p>
+                  <p className="text-xs text-pink-200/80 mt-0.5">Spend BabeBucks · unlock rare cards</p>
                 </div>
                 <span className="text-2xl">🎴</span>
               </div>
@@ -517,7 +535,7 @@ export default function Game() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-bold">{tabTitles.shop || 'Shop'}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Buy cards &amp; tokens</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Buy cards &amp; BabeBucks</p>
                 </div>
                 <span className="text-2xl">🛒</span>
               </div>
@@ -544,7 +562,7 @@ export default function Game() {
             </button>
 
             <div className="mt-8 rounded-2xl border border-pink-900/40 bg-pink-950/30 p-4">
-              <p className="text-xs text-pink-300 font-semibold mb-1">Tokens</p>
+              <p className="text-xs text-pink-300 font-semibold mb-1">BabeBucks</p>
               <p className="text-3xl font-bold">{tokens.toLocaleString()}</p>
               <p className="text-[10px] text-gray-500 mt-1">Spend on packs · earn more later</p>
             </div>
@@ -619,14 +637,14 @@ export default function Game() {
           <div className="max-w-lg mx-auto px-4">
             <div className="rounded-2xl border border-pink-900/40 bg-pink-950/30 p-4 mb-6">
               <p className="text-xs text-pink-300 font-semibold mb-1">Your balance</p>
-              <p className="text-2xl font-bold">{tokens.toLocaleString()} tokens</p>
+              <p className="text-2xl font-bold">{tokens.toLocaleString()} BabeBucks</p>
             </div>
 
-            <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Token packs</p>
+            <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">BabeBucks packs</p>
             <div className="grid grid-cols-2 gap-2 mb-6">
               {TOKEN_PACKS.map(tp => (
                 <button key={tp.amount} disabled className="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center opacity-70">
-                  <p className="text-sm font-bold text-pink-300">{tp.amount.toLocaleString()} tok</p>
+                  <p className="text-sm font-bold text-pink-300">{tp.amount.toLocaleString()} BB</p>
                   <p className="text-[11px] text-gray-400 mt-1">{tp.price}</p>
                 </button>
               ))}
@@ -649,7 +667,7 @@ export default function Game() {
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-sm">{t.title}</p>
                       <p className="text-[10px] text-gray-500 mt-0.5">{t.blurb}</p>
-                      <p className="text-pink-400 text-xs font-semibold mt-1">{TIER_PRICE[t.tier]} tok each</p>
+                      <p className="text-pink-400 text-xs font-semibold mt-1">{TIER_PRICE[t.tier]} BB each</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-4 gap-1.5">
@@ -674,22 +692,36 @@ export default function Game() {
               No specific cards for sale in the shop — only mystery draws. Specific copies trade between players.
             </p>
 
-            <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Character media pack</p>
+            <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Card Character Media</p>
             <p className="text-[10px] text-gray-600 mb-3">
               Random published extra media. Videos are rarer. Low print runs get gold or iridescent trim.
             </p>
-            <button
-              onClick={buyMediaPack}
-              disabled={buying}
-              className="w-full flex gap-3 items-center text-left bg-gray-900 border border-pink-900/40 rounded-2xl p-3 disabled:opacity-50 mb-4"
-            >
-              <div className="w-16 aspect-[3/4] rounded-lg bg-gradient-to-br from-pink-800 to-purple-900 flex items-center justify-center text-2xl">🎬</div>
-              <div className="flex-1">
-                <p className="font-bold text-sm">Media Pack</p>
-                <p className="text-[10px] text-gray-500 mt-0.5">Image or video · numbered edition</p>
-                <p className="text-pink-400 text-xs font-semibold mt-2">{MEDIA_PACK_PRICE} tokens</p>
-              </div>
-            </button>
+            <div className="space-y-2 mb-4">
+              <button
+                onClick={() => buyMedia(1)}
+                disabled={buying}
+                className="w-full flex gap-3 items-center text-left bg-gray-900 border border-pink-900/40 rounded-2xl p-3 disabled:opacity-50"
+              >
+                <img src="/mystery-card-4.jpg" alt="" className="w-14 rounded-lg object-cover aspect-[3/4]" />
+                <div className="flex-1">
+                  <p className="font-bold text-sm">Random Media · 1 qty</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Image or video · numbered edition</p>
+                  <p className="text-pink-400 text-xs font-semibold mt-2">{MEDIA_SINGLE_PRICE.toLocaleString()} {BUCKS}</p>
+                </div>
+              </button>
+              <button
+                onClick={() => buyMedia(MEDIA_MULTI_QTY)}
+                disabled={buying}
+                className="w-full flex gap-3 items-center text-left bg-gray-900 border border-pink-900/40 rounded-2xl p-3 disabled:opacity-50"
+              >
+                <img src="/mystery-card-5.jpg" alt="" className="w-14 rounded-lg object-cover aspect-[3/4]" />
+                <div className="flex-1">
+                  <p className="font-bold text-sm">Media Multi · 3 qty</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Three random drops · better rate</p>
+                  <p className="text-pink-400 text-xs font-semibold mt-2">{MEDIA_MULTI_PRICE.toLocaleString()} {BUCKS}</p>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -705,7 +737,7 @@ export default function Game() {
               <p className="font-bold text-lg">Starter Pack</p>
               <p className="text-xs text-pink-200/80 mt-1 mb-4">3 cards · placeholder</p>
               <button disabled className="bg-white/20 rounded-full px-6 py-2 text-sm font-semibold opacity-50">
-                100 tokens
+                100 BabeBucks
               </button>
             </div>
           </div>
@@ -785,7 +817,7 @@ export default function Game() {
                 )}
                 <p className="text-[11px] text-pink-400 font-mono mt-2">{reveal.instanceId}</p>
                 <p className="text-[10px] text-gray-500 mt-1">
-                  Acquired for {Number(reveal.price || 0).toLocaleString()} tokens
+                  Acquired for {Number(reveal.price || 0).toLocaleString()} BabeBucks
                 </p>
                 {reveal.packSize > 1 && (
                   <p className="text-[10px] text-pink-300 mt-2">
