@@ -25,6 +25,44 @@ export default function Game() {
   const [showSplash, setShowSplash] = useState(true)
   const splashRef = useRef(null)
   const [bannerVideoDone, setBannerVideoDone] = useState({}) // tabKey -> true after intro played
+  const [ownedCards, setOwnedCards] = useState([]) // player_cards joined with card data
+  const [buying, setBuying] = useState(false)
+  const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
+  const revealVideoRef = useRef(null)
+
+  const SHOP_PRICE = {
+    common: 100,
+    uncommon: 250,
+    rare: 500,
+    epic: 1000,
+    legendary: 2500,
+    'ultra elite': 5000,
+    'after hours': 3000,
+  }
+  const priceOf = (rarity) => SHOP_PRICE[String(rarity || 'common').toLowerCase()] || 100
+
+  // Mystery skins: public/mystery-card-1.jpg + mystery-card-1.mp4, … through N
+  // Bump MYSTERY_SKIN_COUNT when you add more matching pairs
+  const MYSTERY_SKIN_COUNT = 5
+  const MYSTERY_SKINS = Array.from({ length: MYSTERY_SKIN_COUNT }, (_, i) => ({
+    image: `/mystery-card-${i + 1}.jpg`,
+    video: `/mystery-card-${i + 1}.mp4`,
+  }))
+  // stable pick from card id so the same listing always shows the same skin
+  const mysterySkinFor = (cardId) => {
+    if (!cardId) return MYSTERY_SKINS[0]
+    let h = 0
+    const s = String(cardId)
+    for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i) * (i + 1)) % 997
+    return MYSTERY_SKINS[h % MYSTERY_SKINS.length]
+  }
+
+  const makeInstanceId = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    let s = 'GA-'
+    for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)]
+    return s
+  }
 
   useEffect(() => {
     load()
@@ -77,6 +115,14 @@ export default function Game() {
     }
     setShopIntroUrl(settings?.shop_intro_url || '')
 
+    // owned card instances (Harem)
+    const { data: owned } = await supabase
+      .from('player_cards')
+      .select('id, instance_id, card_id, purchase_price, acquired_via, created_at, cards(id, name, card_number, image_url, back_image_url, video_url, poster_url, rarity, title)')
+      .eq('owner_id', 1)
+      .order('created_at', { ascending: false })
+    setOwnedCards(owned || [])
+
     setLoading(false)
   }
 
@@ -93,6 +139,66 @@ export default function Game() {
       try { shopVideoRef.current.pause() } catch {}
     }
   }
+
+  const buyCard = async (card) => {
+    if (buying || reveal) return
+    const price = priceOf(card.rarity)
+    if (tokens < price) {
+      alert(`Need ${price.toLocaleString()} tokens (you have ${tokens.toLocaleString()})`)
+      return
+    }
+    if (!confirm(`Buy mystery card for ${price.toLocaleString()} tokens?`)) return
+
+    setBuying(true)
+    const instanceId = makeInstanceId()
+    const newBalance = tokens - price
+
+    // deduct tokens
+    const { error: tokErr } = await supabase
+      .from('user_settings')
+      .upsert({ id: 1, tokens: newBalance })
+    if (tokErr) {
+      alert('Payment failed: ' + tokErr.message)
+      setBuying(false)
+      return
+    }
+
+    // create ownership record
+    const { data: row, error } = await supabase
+      .from('player_cards')
+      .insert([{
+        instance_id: instanceId,
+        card_id: card.id,
+        owner_id: 1,
+        purchase_price: price,
+        acquired_via: 'shop',
+      }])
+      .select('id, instance_id, card_id, purchase_price, acquired_via, created_at')
+      .single()
+
+    if (error) {
+      // refund on failure
+      await supabase.from('user_settings').upsert({ id: 1, tokens })
+      alert('Purchase failed: ' + error.message)
+      setBuying(false)
+      return
+    }
+
+    setTokens(newBalance)
+    setOwnedCards(prev => [{
+      ...row,
+      cards: card,
+    }, ...prev])
+    setBuying(false)
+    const skin = mysterySkinFor(card.id)
+    setReveal({ card, instanceId, price, phase: 'anim', video: skin.video })
+  }
+
+  const finishReveal = () => {
+    setReveal(prev => prev ? { ...prev, phase: 'show' } : null)
+  }
+
+  const closeReveal = () => setReveal(null)
 
   const strip = marquee.length ? [...marquee, ...marquee] : []
 
@@ -242,15 +348,40 @@ export default function Game() {
           <TabHeader title={tabTitles.collection || "My Collection"} />
           <TabBanner tabKey="collection" />
           <div className="max-w-lg mx-auto px-4">
-            <p className="text-xs text-gray-500 mb-4">Cards you have unlocked or bought</p>
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-8 text-center">
-              <p className="text-3xl mb-2">💎</p>
-              <p className="text-sm text-gray-400">Your collection is empty</p>
-              <p className="text-xs text-gray-600 mt-1">Open packs or visit the Shop to get cards</p>
-              <button onClick={() => openTab('shop')} className="mt-4 text-sm text-pink-400 hover:text-pink-300 font-semibold">
-                Go to Shop →
-              </button>
-            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              Your Harem · {ownedCards.length} card{ownedCards.length === 1 ? '' : 's'}
+            </p>
+            {ownedCards.length === 0 ? (
+              <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-8 text-center">
+                <p className="text-3xl mb-2">💎</p>
+                <p className="text-sm text-gray-400">Your collection is empty</p>
+                <p className="text-xs text-gray-600 mt-1">Buy mystery cards in the Shop</p>
+                <button onClick={() => openTab('shop')} className="mt-4 text-sm text-pink-400 hover:text-pink-300 font-semibold">
+                  Go to Shop →
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {ownedCards.map(o => {
+                  const c = o.cards || {}
+                  return (
+                    <div key={o.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                      {c.image_url ? (
+                        <img src={c.image_url} alt={c.name || ''} className="w-full aspect-[3/4] object-cover object-top" />
+                      ) : (
+                        <div className="w-full aspect-[3/4] bg-gray-800" />
+                      )}
+                      <div className="p-2">
+                        <p className="text-xs font-semibold truncate">{c.name || 'Card'}</p>
+                        <p className="text-[10px] text-gray-500 capitalize">{c.rarity || '—'}</p>
+                        <p className="text-[9px] text-pink-400/80 font-mono mt-1">{o.instance_id}</p>
+                        <p className="text-[9px] text-gray-600">Paid {Number(o.purchase_price || 0).toLocaleString()} tok</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -279,30 +410,36 @@ export default function Game() {
               ))}
             </div>
 
-            <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Featured cards</p>
+            <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">Mystery cards</p>
+            <p className="text-[10px] text-gray-600 mb-3">Art is hidden until you buy. Each purchase gets a unique instance ID for trading.</p>
             {publishedCards.length === 0 ? (
               <p className="text-sm text-gray-600">No cards in the shop yet. Publish cards from Studio.</p>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                {publishedCards.map(c => (
-                  <div key={c.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden relative">
-                    {c.image_url ? (
-                      <img src={c.image_url} alt="" className="w-full aspect-[3/4] object-cover blur-md scale-110" />
-                    ) : (
-                      <div className="w-full aspect-[3/4] bg-gray-800" />
-                    )}
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                      <span className="text-2xl">🔒</span>
+                {publishedCards.map(c => {
+                  const price = priceOf(c.rarity)
+                  const skin = mysterySkinFor(c.id)
+                  return (
+                    <div key={c.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                      <img
+                        src={skin.image}
+                        alt="Mystery card"
+                        className="w-full aspect-[3/4] object-cover"
+                      />
+                      <div className="p-2">
+                        <p className="text-xs font-semibold text-gray-300">Mystery Card</p>
+                        <p className="text-[10px] text-gray-500 capitalize">{c.rarity || 'common'}</p>
+                        <button
+                          onClick={() => buyCard(c)}
+                          disabled={buying}
+                          className="w-full mt-2 bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded-lg py-1.5 text-[11px] font-semibold"
+                        >
+                          {buying ? '...' : `Buy · ${price.toLocaleString()} tok`}
+                        </button>
+                      </div>
                     </div>
-                    <div className="p-2 relative bg-gray-900">
-                      <p className="text-xs font-semibold truncate text-gray-400">???</p>
-                      <p className="text-[10px] text-gray-600 capitalize">{c.rarity || 'card'}</p>
-                      <button disabled className="w-full mt-2 bg-pink-900/50 rounded-lg py-1.5 text-[10px] font-semibold text-pink-200/70">
-                        Buy · soon
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -334,6 +471,52 @@ export default function Game() {
           <div className="max-w-lg mx-auto px-4">
             <p className="text-center text-gray-500 text-sm">Duel stacks — coming soon.</p>
           </div>
+        </div>
+      )}
+
+      {/* Purchase reveal: mystery animation then card face */}
+      {reveal && (
+        <div className="fixed inset-0 z-[85] bg-black/95 flex flex-col items-center justify-center p-5">
+          {reveal.phase === 'anim' ? (
+            <>
+              <video
+                ref={revealVideoRef}
+                src={reveal.video || '/mystery-card-1.mp4'}
+                autoPlay
+                playsInline
+                className="w-full max-w-sm rounded-2xl"
+                onEnded={finishReveal}
+                onError={finishReveal}
+              />
+              <p className="text-xs text-gray-500 mt-4">Revealing...</p>
+              <button onClick={finishReveal} className="mt-3 text-xs text-gray-400 hover:text-white">Skip</button>
+            </>
+          ) : (
+            <div className="w-full max-w-sm">
+              <img
+                src={reveal.card.image_url}
+                alt={reveal.card.name || ''}
+                className="w-full rounded-2xl border border-pink-900/50"
+              />
+              <div className="mt-4 text-center">
+                <p className="text-lg font-bold">{reveal.card.name}</p>
+                <p className="text-xs text-gray-400 capitalize mt-1">{reveal.card.rarity}</p>
+                <p className="text-[11px] text-pink-400 font-mono mt-2">{reveal.instanceId}</p>
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Acquired for {reveal.price.toLocaleString()} tokens · proof of purchase
+                </p>
+              </div>
+              <button
+                onClick={() => { closeReveal(); openTab('collection') }}
+                className="w-full mt-5 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold"
+              >
+                Add to Harem
+              </button>
+              <button onClick={closeReveal} className="w-full mt-2 text-sm text-gray-400 hover:text-white py-2">
+                Close
+              </button>
+            </div>
+          )}
         </div>
       )}
 
