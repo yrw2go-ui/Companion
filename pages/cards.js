@@ -143,6 +143,7 @@ export default function Cards() {
   const [view, setView] = useState('static')
   const [touchStartX, setTouchStartX] = useState(null)
   const [charMedia, setCharMedia] = useState([])
+  const [mediaCounts, setMediaCounts] = useState({}) // character_name lower -> count
   const [mediaTitle, setMediaTitle] = useState('')
   const [mediaUrl, setMediaUrl] = useState('')
   const [mediaType, setMediaType] = useState('image')
@@ -150,6 +151,17 @@ export default function Cards() {
   const [mediaCost, setMediaCost] = useState('100')
   const [mediaEdition, setMediaEdition] = useState('100')
   const [mediaBusy, setMediaBusy] = useState(false)
+  const [showCreateMedia, setShowCreateMedia] = useState(false)
+  const [cmMode, setCmMode] = useState('t2i') // t2i | i2v_front | i2v_back
+  const [cmPrompt, setCmPrompt] = useState('')
+  const [cmSeed, setCmSeed] = useState('')
+  const [cmNeg, setCmNeg] = useState(DEFAULT_NEGATIVE)
+  const [cmTitle, setCmTitle] = useState('')
+  const [cmProgress, setCmProgress] = useState('')
+  const [cmBusy, setCmBusy] = useState(false)
+  const [cmDuration, setCmDuration] = useState(5)
+  const [cmModel, setCmModel] = useState(VIDEO_MODELS[0].id)
+  const [cmImageModel, setCmImageModel] = useState(IMAGE_MODELS[0].id)
 
   useEffect(() => { loadCards() }, [])
 
@@ -170,6 +182,18 @@ export default function Cards() {
   const loadCards = async () => {
     const { data } = await supabase.from('cards').select('*').order('created_at', { ascending: false })
     setCards(data || [])
+
+    // counts of character_media per character_name (case-insensitive key)
+    const { data: allMedia } = await supabase
+      .from('character_media')
+      .select('id, character_name, card_id, type, published')
+    const counts = {}
+    for (const m of allMedia || []) {
+      const key = String(m.character_name || '').trim().toLowerCase()
+      if (!key) continue
+      counts[key] = (counts[key] || 0) + 1
+    }
+    setMediaCounts(counts)
     setLoading(false)
   }
 
@@ -208,6 +232,8 @@ export default function Cards() {
     setMediaBusy(false)
     if (error) { alert('Save failed: ' + error.message); return }
     setCharMedia(prev => [data, ...prev])
+    const key = String(selected.name || '').trim().toLowerCase()
+    if (key) setMediaCounts(prev => ({ ...prev, [key]: (prev[key] || 0) + 1 }))
     setMediaTitle('')
     setMediaUrl('')
   }
@@ -220,10 +246,138 @@ export default function Cards() {
   }
 
   const deleteCharMedia = async (row) => {
-    if (!confirm('Remove this media from the character?')) return
+    if (!confirm('Remove this media from the character? Edition slot opens again for new copies.')) return
     const { error } = await supabase.from('character_media').delete().eq('id', row.id)
     if (error) { alert(error.message); return }
     setCharMedia(prev => prev.filter(m => m.id !== row.id))
+    const key = String(selected?.name || row.character_name || '').trim().toLowerCase()
+    if (key) setMediaCounts(prev => ({ ...prev, [key]: Math.max(0, (prev[key] || 1) - 1) }))
+  }
+
+  const openCreateMedia = () => {
+    if (!selected) return
+    setCmMode('t2i')
+    setCmPrompt(selected.image_prompt || '')
+    setCmSeed(selected.seed != null ? String(selected.seed) : '')
+    setCmNeg(selected.negative_prompt || DEFAULT_NEGATIVE)
+    setCmTitle('')
+    setCmProgress('')
+    setCmImageModel(selected.image_model || IMAGE_MODELS[0].id)
+    setCmModel(VIDEO_MODELS[0].id)
+    setCmDuration(5)
+    setShowCreateMedia(true)
+  }
+
+  // when mode changes, refresh prompt/seed from the chosen side
+  const applyCmMode = (mode) => {
+    setCmMode(mode)
+    if (!selected) return
+    if (mode === 't2i' || mode === 'i2v_front') {
+      setCmPrompt(selected.image_prompt || selected.video_prompt || '')
+      setCmSeed(selected.seed != null ? String(selected.seed) : '')
+    } else if (mode === 'i2v_back') {
+      setCmPrompt(selected.back_image_prompt || selected.image_prompt || '')
+      setCmSeed(selected.back_seed != null ? String(selected.back_seed) : '')
+    }
+  }
+
+  const saveLinkedMedia = async ({ url, type, title, seed }) => {
+    const { data, error } = await supabase.from('character_media').insert([{
+      character_name: selected.name,
+      card_id: selected.id,
+      type,
+      url,
+      title: title || null,
+      unlock_method: mediaUnlock || 'shop',
+      token_cost: parseInt(mediaCost) || 0,
+      edition_size: parseInt(mediaEdition) || 100,
+      published: false,
+    }]).select().single()
+    if (error) throw new Error(error.message)
+    setCharMedia(prev => [data, ...prev])
+    const key = String(selected.name || '').trim().toLowerCase()
+    if (key) setMediaCounts(prev => ({ ...prev, [key]: (prev[key] || 0) + 1 }))
+    return data
+  }
+
+  const runCreateMedia = async () => {
+    if (!selected || cmBusy) return
+    setCmBusy(true)
+    setCmProgress('Starting...')
+    try {
+      if (cmMode === 't2i') {
+        if (!cmPrompt.trim()) { alert('Prompt required'); setCmBusy(false); return }
+        setCmProgress('Generating image (T2I)...')
+        // temporarily use selected model path via genImage — pass model via editing hack
+        const prevModel = imageModel
+        // genImage uses imageModel state; call API directly for clarity
+        const fam = familyOf(cmImageModel)
+        const payload = { model: cmImageModel, prompt: cmPrompt }
+        if (fam === 'grok') {
+          payload.aspectRatio = '2:3'
+          payload.resolution = '2k'
+        } else if (fam === 'seedream') {
+          payload.size = '1328*1776'
+          payload.thinking = 'disabled'
+        } else if (fam === 'schnell') {
+          payload.size = '768*1024'
+          payload.seed = cmSeed ? parseInt(cmSeed) : undefined
+          payload.negativePrompt = cmNeg
+        } else {
+          payload.size = '768*1024'
+          payload.seed = cmSeed ? parseInt(cmSeed) : undefined
+          payload.negativePrompt = cmNeg
+          payload.guidance = guidance
+          payload.steps = steps
+        }
+        const res = await fetch('/api/generate-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const data = await res.json()
+        if (!data.imageUrl) throw new Error(data.error || 'image failed')
+        setCmProgress('Linking to character...')
+        await saveLinkedMedia({
+          url: data.imageUrl,
+          type: 'image',
+          title: cmTitle || `${selected.name} media`,
+          seed: data.seed ?? (cmSeed ? parseInt(cmSeed) : null),
+        })
+      } else {
+        // I2V from front or back
+        const src = cmMode === 'i2v_back' ? selected.back_image_url : selected.image_url
+        if (!src) throw new Error(cmMode === 'i2v_back' ? 'No back image on this card' : 'No front image on this card')
+        setCmProgress('Generating video (I2V)... 1–2 min')
+        const res = await fetch('/api/generate-video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageUrl: src,
+            prompt: cmPrompt || 'smooth natural motion',
+            duration: cmDuration,
+            resolution: '720p',
+            model: cmModel,
+          }),
+        })
+        const data = await res.json()
+        if (!data.videoUrl) throw new Error(data.error || 'video failed')
+        setCmProgress('Linking to character...')
+        await saveLinkedMedia({
+          url: data.videoUrl,
+          type: 'video',
+          title: cmTitle || `${selected.name} motion`,
+          seed: null,
+        })
+      }
+      setShowCreateMedia(false)
+      setCmProgress('')
+      alert('Media created and linked to this character.')
+    } catch (err) {
+      alert('Create media failed: ' + err.message)
+      setCmProgress('')
+    }
+    setCmBusy(false)
   }
 
   const togglePublish = async (card) => {
@@ -820,6 +974,11 @@ export default function Cards() {
                   ✓
                 </span>
               )}
+              {(mediaCounts[String(c.name || '').trim().toLowerCase()] || 0) > 0 && (
+                <span className="absolute top-2 left-2 z-[5] bg-pink-600/90 text-white rounded-full px-1.5 py-0.5 text-[9px] font-bold shadow">
+                  📎 {mediaCounts[String(c.name || '').trim().toLowerCase()]}
+                </span>
+              )}
               {c.video_url && (
                 <span className="absolute bottom-2 left-2 z-[5] bg-black/70 rounded-full px-2 py-0.5 text-[9px] tracking-wide">
                   🎬
@@ -1124,11 +1283,13 @@ export default function Cards() {
               ✦ New card for this character
             </button>
             <div className="mt-4 bg-gray-900 border border-gray-800 rounded-xl p-3">
-              <p className="text-xs font-semibold text-pink-300 mb-1">Character media</p>
+              <p className="text-xs font-semibold text-pink-300 mb-1">
+                Card character media
+                {charMedia.length > 0 ? ` · ${charMedia.length}` : ''}
+              </p>
               <p className="text-[10px] text-gray-500 mb-3">
-                Extra images/videos for this character (not part of the card art).
-                Players can earn or buy these later via shop, packs, mining, trade, or battle.
-                Linked by character name across all rarity variants.
+                Extra images/videos tied to <span className="text-gray-300">{selected.name}</span> (not card face/back).
+                Shared by name across all rarities of this character. Live = available in game media draws.
               </p>
 
               {charMedia.length > 0 && (
@@ -1178,15 +1339,103 @@ export default function Cards() {
                   title="Edition size"
                   className="w-14 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none" />
               </div>
+              <button onClick={openCreateMedia}
+                className="w-full bg-pink-600 hover:bg-pink-500 rounded-lg py-2 text-xs font-semibold mb-2">
+                ✦ Create +media from this card
+              </button>
               <button onClick={addCharMedia} disabled={mediaBusy}
                 className="w-full bg-pink-900/60 hover:bg-pink-800 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">
-                {mediaBusy ? 'Saving...' : '+ Add character media'}
+                {mediaBusy ? 'Saving...' : '+ Paste URL media'}
               </button>
             </div>
 
             <button onClick={() => openEdit(selected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-lg py-2 text-sm font-semibold mt-2">Edit Card</button>
             <button onClick={() => deleteCard(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">Delete Card</button>
             <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE MEDIA FROM CARD */}
+      {showCreateMedia && selected && (
+        <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-[75] overflow-y-auto">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
+            <h2 className="font-bold text-lg mb-1">Create +media</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              From <span className="text-gray-300">{selected.name}</span>. Saves and auto-links when done.
+              Delete later to unlink — edition slots free up for new copies.
+            </p>
+
+            <label className="block text-xs text-gray-400 mb-1">Mode</label>
+            <select value={cmMode} onChange={e => applyCmMode(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              <option value="t2i">New image · T2I (prompt + seed)</option>
+              <option value="i2v_front">Video from front · I2V</option>
+              <option value="i2v_back">Video from back · I2V</option>
+            </select>
+
+            {(cmMode === 'i2v_front' || cmMode === 'i2v_back') && (
+              <div className="mb-3">
+                <img
+                  src={cmMode === 'i2v_back' ? (selected.back_image_url || selected.image_url) : selected.image_url}
+                  alt=""
+                  className="w-24 rounded-lg"
+                />
+              </div>
+            )}
+
+            <label className="block text-xs text-gray-400 mb-1">Title (optional)</label>
+            <input value={cmTitle} onChange={e => setCmTitle(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
+              placeholder={`${selected.name} extra`} />
+
+            <label className="block text-xs text-gray-400 mb-1">Prompt</label>
+            <textarea value={cmPrompt} onChange={e => setCmPrompt(e.target.value)} rows={4}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+
+            {cmMode === 't2i' && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Image model</label>
+                <select value={cmImageModel} onChange={e => setCmImageModel(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+                  {IMAGE_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+                <label className="block text-xs text-gray-400 mb-1">Seed (from card, editable)</label>
+                <input value={cmSeed} onChange={e => setCmSeed(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none" />
+                <label className="block text-xs text-gray-400 mb-1">Negative</label>
+                <textarea value={cmNeg} onChange={e => setCmNeg(e.target.value)} rows={2}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none" />
+              </>
+            )}
+
+            {(cmMode === 'i2v_front' || cmMode === 'i2v_back') && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Video model</label>
+                <select value={cmModel} onChange={e => setCmModel(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+                  {VIDEO_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+                <label className="block text-xs text-gray-400 mb-1">Length</label>
+                <select value={cmDuration} onChange={e => setCmDuration(parseInt(e.target.value))}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+                  <option value={5}>5 seconds</option>
+                  <option value={8}>8 seconds</option>
+                  <option value={10}>10 seconds</option>
+                </select>
+              </>
+            )}
+
+            {cmProgress && <p className="text-xs text-purple-400 mb-3">{cmProgress}</p>}
+
+            <div className="flex gap-2">
+              <button onClick={() => setShowCreateMedia(false)} disabled={cmBusy}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold disabled:opacity-50">Cancel</button>
+              <button onClick={runCreateMedia} disabled={cmBusy}
+                className="flex-1 bg-pink-600 hover:bg-pink-500 rounded-lg py-3 font-semibold disabled:opacity-50">
+                {cmBusy ? 'Working...' : 'Generate & link'}
+              </button>
+            </div>
           </div>
         </div>
       )}
