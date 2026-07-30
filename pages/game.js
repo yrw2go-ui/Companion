@@ -27,6 +27,7 @@ export default function Game() {
   const [bannerVideoDone, setBannerVideoDone] = useState({}) // tabKey -> true after intro played
   const [ownedCards, setOwnedCards] = useState([]) // player_cards joined with card data
   const [ownedMedia, setOwnedMedia] = useState([]) // player_media joined with character_media
+  const [ownedMisc, setOwnedMisc] = useState([])
   const [viewOwned, setViewOwned] = useState(null) // { kind: 'card'|'media', row }
   const [ownedSide, setOwnedSide] = useState('front') // card front/back
   const [buying, setBuying] = useState(false)
@@ -49,6 +50,8 @@ export default function Game() {
   const MEDIA_SINGLE_PRICE = 400
   const MEDIA_MULTI_PRICE = 1100
   const MEDIA_MULTI_QTY = 3
+  const MISC_SINGLE_PRICE = 200
+  const MISC_SET_PRICE = 700
   const MEDIA_VIDEO_CHANCE = 0.18
   const BUCKS = 'BabeBucks'
 
@@ -215,6 +218,13 @@ export default function Game() {
       .eq('owner_id', 1)
       .order('created_at', { ascending: false })
     setOwnedMedia(ownedM || [])
+
+    const { data: ownedX } = await supabase
+      .from('player_misc')
+      .select('id, instance_id, misc_item_id, purchase_price, acquired_via, created_at, misc_items(id, type, url, title, public_id, sort_index, set_id, misc_sets(id, name, code_prefix))')
+      .eq('owner_id', 1)
+      .order('created_at', { ascending: false })
+    setOwnedMisc(ownedX || [])
 
     setLoading(false)
   }
@@ -433,6 +443,129 @@ export default function Game() {
     return { row, media: m, instanceId, editionNumber, editionTotal, trim }
   }
 
+
+  const buyMiscRandom = async () => {
+    if (buying || reveal) return
+    const price = MISC_SINGLE_PRICE
+    if (tokens < price) {
+      alert(`Need ${price} ${BUCKS}`)
+      return
+    }
+    if (!confirm(`Random Misc Beauty for ${price} ${BUCKS}?`)) return
+    setBuying(true)
+    try {
+      const { data: items } = await supabase.from('misc_items').select('*, misc_sets(id, name, code_prefix)').eq('published', true)
+      if (!items?.length) throw new Error('No Misc Beauties published yet')
+      const item = items[Math.floor(Math.random() * items.length)]
+      const instanceId = makeInstanceId()
+      const newBalance = tokens - price
+      const { error: tErr } = await supabase.from('user_settings').upsert({ id: 1, tokens: newBalance })
+      if (tErr) throw new Error(tErr.message)
+      const { data: row, error } = await supabase.from('player_misc').insert([{
+        instance_id: instanceId,
+        misc_item_id: item.id,
+        owner_id: 1,
+        purchase_price: price,
+        acquired_via: 'shop',
+      }]).select('id, instance_id, misc_item_id, purchase_price, acquired_via, created_at').single()
+      if (error) {
+        await supabase.from('user_settings').upsert({ id: 1, tokens })
+        throw new Error(error.message)
+      }
+      setTokens(newBalance)
+      setOwnedMisc(prev => [{ ...row, misc_items: item }, ...prev])
+      setReveal({
+        phase: 'show',
+        kind: 'misc',
+        miscItem: item,
+        instanceId,
+        price,
+        packItems: null,
+      })
+    } catch (err) {
+      alert('Misc buy failed: ' + err.message)
+    }
+    setBuying(false)
+  }
+
+  const buyMiscSet = async () => {
+    if (buying || reveal) return
+    const price = MISC_SET_PRICE
+    if (tokens < price) {
+      alert(`Need ${price} ${BUCKS}`)
+      return
+    }
+    if (!confirm(`Random Misc set for ${price} ${BUCKS}? (all items in that set)`)) return
+    setBuying(true)
+    try {
+      const { data: sets } = await supabase.from('misc_sets').select('id, name, code_prefix')
+      if (!sets?.length) throw new Error('No sets yet')
+      // only sets that have published items
+      const eligible = []
+      for (const s of sets) {
+        const { data: items } = await supabase
+          .from('misc_items')
+          .select('*, misc_sets(id, name, code_prefix)')
+          .eq('set_id', s.id)
+          .eq('published', true)
+          .order('sort_index')
+        if (items?.length) eligible.push({ set: s, items })
+      }
+      if (!eligible.length) throw new Error('No published sets with items')
+      const pick = eligible[Math.floor(Math.random() * eligible.length)]
+      const instanceIdBase = makeInstanceId()
+      const newBalance = tokens - price
+      const { error: tErr } = await supabase.from('user_settings').upsert({ id: 1, tokens: newBalance })
+      if (tErr) throw new Error(tErr.message)
+
+      const won = []
+      for (let i = 0; i < pick.items.length; i++) {
+        const item = pick.items[i]
+        const instanceId = `${instanceIdBase}-${i + 1}`
+        const { data: row, error } = await supabase.from('player_misc').insert([{
+          instance_id: instanceId,
+          misc_item_id: item.id,
+          owner_id: 1,
+          purchase_price: Math.floor(price / pick.items.length),
+          acquired_via: 'shop_set',
+        }]).select('id, instance_id, misc_item_id, purchase_price, acquired_via, created_at').single()
+        if (error) {
+          console.error(error)
+          continue
+        }
+        won.push({ row, item })
+      }
+      if (!won.length) {
+        await supabase.from('user_settings').upsert({ id: 1, tokens })
+        throw new Error('Could not grant set items')
+      }
+      setTokens(newBalance)
+      setOwnedMisc(prev => [
+        ...won.map(w => ({ ...w.row, misc_items: w.item })),
+        ...prev,
+      ])
+      const packItems = won.map(w => ({
+        kind: 'misc',
+        miscItem: w.item,
+        instanceId: w.row.instance_id,
+        price: w.row.purchase_price,
+      }))
+      setReveal({
+        phase: 'show',
+        kind: 'misc',
+        miscItem: won[0].item,
+        instanceId: won[0].row.instance_id,
+        price,
+        packItems,
+        packIndex: 0,
+        setName: pick.set.name,
+      })
+    } catch (err) {
+      alert('Set buy failed: ' + err.message)
+    }
+    setBuying(false)
+  }
+
   const buyMedia = async (qty = 1, skinOverride = null) => {
     if (buying || reveal) return
     const price = qty >= MEDIA_MULTI_QTY ? MEDIA_MULTI_PRICE : MEDIA_SINGLE_PRICE * qty
@@ -528,6 +661,16 @@ export default function Game() {
           editionNumber: item.editionNumber,
           editionTotal: item.editionTotal,
           trim: item.trim,
+          price: item.price ?? prev.price,
+        }
+      }
+      if (item.kind === 'misc') {
+        return {
+          ...prev,
+          packIndex: next,
+          kind: 'misc',
+          miscItem: item.miscItem,
+          instanceId: item.instanceId,
           price: item.price ?? prev.price,
         }
       }
@@ -695,8 +838,9 @@ export default function Game() {
             <p className="text-xs text-gray-500 mb-4">
               Your Harem · {ownedCards.length} card{ownedCards.length === 1 ? '' : 's'}
               {ownedMedia.length > 0 ? ` · ${ownedMedia.length} media` : ''}
+              {ownedMisc.length > 0 ? ` · ${ownedMisc.length} misc` : ''}
             </p>
-            {ownedCards.length === 0 && ownedMedia.length === 0 ? (
+            {ownedCards.length === 0 && ownedMedia.length === 0 && ownedMisc.length === 0 ? (
               <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-8 text-center">
                 <p className="text-3xl mb-2">💎</p>
                 <p className="text-sm text-gray-400">Your collection is empty</p>
@@ -773,6 +917,44 @@ export default function Game() {
                               ) : null}
                               <p className="text-[9px] text-pink-400/80 font-mono mt-1">{o.instance_id}</p>
                               <p className="text-[9px] text-gray-600">Paid {Number(o.purchase_price || 0).toLocaleString()} BB</p>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+
+                {ownedMisc.length > 0 && (
+                  <>
+                    <p className="text-[10px] tracking-[0.15em] uppercase text-gray-500 mb-2 mt-4">Misc Beauties</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {ownedMisc.map(o => {
+                        const m = o.misc_items || {}
+                        const set = m.misc_sets || {}
+                        const setName = set.name || 'Standalone'
+                        return (
+                          <button
+                            key={o.id}
+                            type="button"
+                            onClick={() => setViewOwned({ kind: 'misc', row: o })}
+                            className="text-left bg-gray-900 border border-gray-800 rounded-xl overflow-hidden active:scale-[0.98] transition"
+                          >
+                            <div className="relative w-full aspect-[3/4] bg-gray-800">
+                              {m.type === 'video' ? (
+                                <video src={m.url} className="w-full h-full object-cover" muted playsInline />
+                              ) : m.url ? (
+                                <img src={m.url} alt="" className="w-full h-full object-cover object-top" />
+                              ) : null}
+                              <div className="absolute top-1.5 left-1.5 right-8 z-[5] bg-black/75 rounded-md px-1.5 py-1">
+                                <p className="text-[9px] font-mono text-pink-300 leading-tight">{m.public_id}</p>
+                                <p className="text-[8px] text-gray-300 leading-tight truncate">{setName}</p>
+                              </div>
+                              <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-10 w-10 object-contain drop-shadow-lg pointer-events-none z-[5]" />
+                            </div>
+                            <div className="p-2">
+                              <p className="text-[9px] text-gray-500">{m.type} · {Number(o.purchase_price || 0)} BB</p>
+                              <p className="text-[9px] text-pink-400/80 font-mono mt-0.5">{o.instance_id}</p>
                             </div>
                           </button>
                         )
@@ -927,7 +1109,48 @@ export default function Game() {
               <p className="text-xs text-gray-500 mt-4">Revealing...</p>
               <button onClick={finishReveal} className="mt-3 text-xs text-gray-400 hover:text-white">Skip</button>
             </>
-          ) : reveal.kind === 'media' ? (
+          ) : reveal.kind === 'misc' ? (() => {
+            const m = reveal.miscItem || {}
+            const set = m.misc_sets || {}
+            const setName = set.name || 'Standalone'
+            return (
+              <div className="w-full max-w-sm">
+                <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-black">
+                  {m.type === 'video' ? (
+                    <video src={m.url} controls autoPlay playsInline className="w-full max-h-[70vh]" />
+                  ) : (
+                    <img src={m.url} alt="" className="w-full max-h-[70vh] object-contain" />
+                  )}
+                  <div className="absolute top-2 left-2 bg-black/80 rounded-lg px-2 py-1.5 max-w-[75%]">
+                    <p className="text-[10px] font-mono text-pink-300">{m.public_id}</p>
+                    <p className="text-[9px] text-white truncate">{setName}</p>
+                    {m.sort_index != null && set.name && (
+                      <p className="text-[9px] text-gray-400">{m.sort_index} of set</p>
+                    )}
+                  </div>
+                  <img src="/ga-mark.png" alt="" className="absolute top-3 right-3 h-14 w-14 object-contain drop-shadow-lg pointer-events-none" />
+                </div>
+                {reveal.setName && (
+                  <p className="text-center text-xs text-pink-300 mt-3">Set: {reveal.setName}</p>
+                )}
+                {reveal.packItems?.length > 1 && (
+                  <p className="text-center text-[10px] text-pink-300 mt-1">
+                    Item {(reveal.packIndex ?? 0) + 1} of {reveal.packItems.length}
+                  </p>
+                )}
+                <p className="text-center text-[11px] text-pink-400 font-mono mt-2">{reveal.instanceId}</p>
+                {reveal.packItems?.length > 1 && (
+                  <div className="flex gap-2 mt-4">
+                    <button type="button" onClick={() => stepPackReveal(-1)} className="flex-1 bg-gray-800 rounded-xl py-3 text-sm font-semibold">← Prev</button>
+                    <button type="button" onClick={() => stepPackReveal(1)} className="flex-1 bg-gray-800 rounded-xl py-3 text-sm font-semibold">Next →</button>
+                  </div>
+                )}
+                <button onClick={() => { closeReveal(); openTab('collection') }}
+                  className="w-full mt-3 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold">View Harem</button>
+                <button onClick={closeReveal} className="w-full mt-2 text-sm text-gray-400 py-2">Close</button>
+              </div>
+            )
+          })() : reveal.kind === 'media' ? (
             <div className="w-full max-w-sm">
               <div className={`rounded-2xl overflow-hidden ${reveal.trim?.className || ''}`}>
                 {reveal.media?.type === 'video' ? (
@@ -1128,6 +1351,38 @@ export default function Game() {
                 </div>
                 <button type="button" onClick={() => setViewOwned(null)}
                   className="w-full mt-3 text-sm text-gray-400 hover:text-white py-2">Close</button>
+              </div>
+            )
+          })() : viewOwned.kind === 'misc' ? (() => {
+            const o = viewOwned.row
+            const m = o.misc_items || {}
+            const set = m.misc_sets || {}
+            const setName = set.name || 'Standalone'
+            return (
+              <div className="w-full max-w-sm">
+                <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-black">
+                  {m.type === 'video' ? (
+                    <video src={m.url} controls autoPlay playsInline className="w-full max-h-[70vh]" />
+                  ) : (
+                    <img src={m.url} alt="" className="w-full max-h-[70vh] object-contain" />
+                  )}
+                  <div className="absolute top-2 left-2 bg-black/80 rounded-lg px-2 py-1.5 max-w-[70%] z-[5]">
+                    <p className="text-[10px] font-mono text-pink-300">{m.public_id}</p>
+                    <p className="text-[9px] text-white truncate">{setName}</p>
+                    {m.sort_index != null && set.name && (
+                      <p className="text-[9px] text-gray-400">Item {m.sort_index} in set</p>
+                    )}
+                  </div>
+                  <img src="/ga-mark.png" alt="" className="absolute top-3 right-3 h-14 w-14 object-contain drop-shadow-lg pointer-events-none z-[5]" />
+                </div>
+                <div className="mt-4 text-center">
+                  <p className="text-lg font-bold">{m.public_id}</p>
+                  <p className="text-xs text-gray-400 mt-1">{setName}</p>
+                  <p className="text-[11px] text-pink-400 font-mono mt-2">{o.instance_id}</p>
+                  <p className="text-[10px] text-gray-500 mt-1">Paid {Number(o.purchase_price || 0).toLocaleString()} BabeBucks</p>
+                </div>
+                <button type="button" onClick={() => setViewOwned(null)}
+                  className="w-full mt-5 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold">Close</button>
               </div>
             )
           })() : (() => {

@@ -148,6 +148,14 @@ export default function Gallery() {
   const [grabbingFrame, setGrabbingFrame] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkStatus, setBulkStatus] = useState('')
+  const [showMiscModal, setShowMiscModal] = useState(false)
+  const [miscSets, setMiscSets] = useState([])
+  const [miscMode, setMiscMode] = useState('standalone') // standalone | existing | new
+  const [miscSetId, setMiscSetId] = useState('')
+  const [miscSetName, setMiscSetName] = useState('')
+  const [miscPrefix, setMiscPrefix] = useState('')
+  const [miscBusy, setMiscBusy] = useState(false)
+
 
   useEffect(() => { load() }, [])
 
@@ -252,6 +260,9 @@ export default function Gallery() {
       'id, name, card_number, image_url, back_image_url, video_url, image_prompt, back_image_prompt, video_prompt, seed, back_seed, created_at, published, poster_url',
       q => q.order('created_at', { ascending: false })
     )
+
+    const { data: mSets } = await supabase.from('misc_sets').select('*').order('name')
+    setMiscSets(mSets || [])
 
     const fromChats = (msgMedia || [])
       .filter(m => m.content && m.content !== 'generating')
@@ -1046,6 +1057,98 @@ export default function Gallery() {
       m.source === 'cards' && m.cardId === item.cardId ? { ...m, published: next } : m
     ))
     setSelected(prev => prev && prev.cardId === item.cardId ? { ...prev, published: next } : prev)
+  }
+
+
+  const openAddMisc = () => {
+    if (!selected) return
+    if (selected.source === 'cards') {
+      alert('Card art stays on Cards. Pick a normal gallery image/video for Misc Beauties.')
+      return
+    }
+    setMiscMode('standalone')
+    setMiscSetId('')
+    setMiscSetName('')
+    setMiscPrefix('')
+    setShowMiscModal(true)
+  }
+
+  const nextPublicId = async (prefix) => {
+    const p = (prefix || 'MX').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'MX'
+    const { data } = await supabase
+      .from('misc_items')
+      .select('public_id')
+      .ilike('public_id', p + '%')
+      .order('public_id', { ascending: false })
+      .limit(50)
+    let maxN = 102000
+    for (const row of data || []) {
+      const m = String(row.public_id || '').match(/(\d+)$/)
+      if (m) maxN = Math.max(maxN, parseInt(m[1], 10))
+    }
+    return p + String(maxN + 1)
+  }
+
+  const addToMisc = async () => {
+    if (!selected || miscBusy) return
+    setMiscBusy(true)
+    try {
+      let setId = null
+      let prefix = 'MX'
+      let setName = null
+
+      if (miscMode === 'existing') {
+        if (!miscSetId) throw new Error('Pick a set')
+        const s = miscSets.find(x => x.id === miscSetId)
+        if (!s) throw new Error('Set not found')
+        setId = s.id
+        prefix = s.code_prefix
+        setName = s.name
+      } else if (miscMode === 'new') {
+        if (!miscSetName.trim()) throw new Error('Set name required')
+        prefix = (miscPrefix || miscSetName).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'SET'
+        const { data: created, error } = await supabase.from('misc_sets').insert([{
+          name: miscSetName.trim(),
+          code_prefix: prefix,
+        }]).select().single()
+        if (error) throw new Error(error.message)
+        setId = created.id
+        setName = created.name
+        setMiscSets(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)))
+      }
+
+      // sort index within set
+      let sortIndex = 1
+      if (setId) {
+        const { count } = await supabase
+          .from('misc_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('set_id', setId)
+        sortIndex = (count || 0) + 1
+      }
+
+      const publicId = await nextPublicId(prefix)
+      const { data: item, error: iErr } = await supabase.from('misc_items').insert([{
+        set_id: setId,
+        type: selected.type === 'video' ? 'video' : 'image',
+        url: selected.url,
+        title: selected.prompt ? String(selected.prompt).slice(0, 80) : null,
+        public_id: publicId,
+        sort_index: sortIndex,
+        published: true,
+      }]).select().single()
+      if (iErr) throw new Error(iErr.message)
+
+      setShowMiscModal(false)
+      alert(
+        setName
+          ? `Live in Misc: ${publicId} · ${setName} · item ${sortIndex}`
+          : `Live in Misc (standalone): ${publicId}`
+      )
+    } catch (err) {
+      alert('Add to Misc failed: ' + err.message)
+    }
+    setMiscBusy(false)
   }
 
   const remove = async (item) => {
@@ -2000,6 +2103,16 @@ export default function Gallery() {
             {selected.source === 'cards' && selected.published && (
               <p className="text-[11px] text-pink-300 text-center mt-3 mb-1 font-semibold">📡 Published card art</p>
             )}
+
+            {selected.source !== 'cards' && (
+              <button
+                onClick={openAddMisc}
+                className="w-full bg-pink-800 hover:bg-pink-700 rounded-lg py-2 text-sm font-semibold mt-2"
+              >
+                ✦ Add to Misc Beauties
+              </button>
+            )}
+
             {selected.source === 'cards' ? (
               <p className="text-[11px] text-gray-500 text-center mt-3 mb-1">
                 This belongs to a card. Delete or replace it from the Cards page.
@@ -2010,6 +2123,56 @@ export default function Gallery() {
               </button>
             )}
             <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* ADD TO MISC BEAUTIES */}
+      {showMiscModal && selected && (
+        <div className="fixed inset-0 z-[80] bg-black/90 flex items-center justify-center p-5">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-md">
+            <h2 className="font-bold text-lg mb-1">Add to Misc Beauties</h2>
+            <p className="text-xs text-gray-500 mb-4">Publishes this file to the game shop (unlimited supply).</p>
+
+            <label className="block text-xs text-gray-400 mb-1">Placement</label>
+            <select value={miscMode} onChange={e => setMiscMode(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+              <option value="standalone">Standalone (no set)</option>
+              <option value="existing">Add to existing set</option>
+              <option value="new">Create new set</option>
+            </select>
+
+            {miscMode === 'existing' && (
+              <select value={miscSetId} onChange={e => setMiscSetId(e.target.value)}
+                className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+                <option value="">Select set…</option>
+                {miscSets.map(s => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.code_prefix})</option>
+                ))}
+              </select>
+            )}
+
+            {miscMode === 'new' && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Set name</label>
+                <input value={miscSetName} onChange={e => setMiscSetName(e.target.value)}
+                  placeholder="Tasha Dukes Set"
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none" />
+                <label className="block text-xs text-gray-400 mb-1">ID prefix (2–4 letters)</label>
+                <input value={miscPrefix} onChange={e => setMiscPrefix(e.target.value)}
+                  placeholder="TD"
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none" />
+              </>
+            )}
+
+            <div className="flex gap-2 mt-2">
+              <button type="button" onClick={() => setShowMiscModal(false)} disabled={miscBusy}
+                className="flex-1 bg-gray-800 rounded-lg py-3 font-semibold">Cancel</button>
+              <button type="button" onClick={addToMisc} disabled={miscBusy}
+                className="flex-1 bg-pink-600 hover:bg-pink-500 rounded-lg py-3 font-semibold disabled:opacity-50">
+                {miscBusy ? 'Saving…' : 'Publish to Misc'}
+              </button>
+            </div>
           </div>
         </div>
       )}

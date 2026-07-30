@@ -112,6 +112,9 @@ export default function Cards() {
   const [sortBy, setSortBy] = useState('date_desc')
   const [search, setSearch] = useState('')
   const [rarityFilter, setRarityFilter] = useState('all')
+  const [pageMode, setPageMode] = useState('cards') // cards | series
+  const [selectedSeries, setSelectedSeries] = useState(null)
+  const [seriesFilter, setSeriesFilter] = useState('all') // all | none | series name
 
   const [selected, setSelected] = useState(null)
   const [side, setSide] = useState('front')
