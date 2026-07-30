@@ -1031,11 +1031,11 @@ export default function Game() {
                       {c.series_name && (
                         <span className="absolute top-3 left-3 text-lg drop-shadow z-[2]">👑</span>
                       )}
-                      <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 z-[2] h-7 w-7 object-contain drop-shadow" />
-                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10">
-                        <p className="font-bold text-[15px] leading-tight truncate">{c.name}</p>
-                        {c.title && <p className="text-[10px] text-gray-300 uppercase tracking-[0.12em] mt-0.5 truncate">{c.title}</p>}
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10 z-[5]">
+                        <p className="font-bold text-[15px] leading-tight truncate pr-14">{c.name}</p>
+                        {c.title && <p className="text-[10px] text-gray-300 uppercase tracking-[0.12em] mt-0.5 truncate pr-14">{c.title}</p>}
                       </div>
+                      <img src="/ga-mark.png" alt="" className="absolute bottom-3 right-2 z-[12] h-12 w-12 object-contain drop-shadow-md pointer-events-none" />
                     </>
                   )}
                 </div>

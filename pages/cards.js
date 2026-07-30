@@ -290,7 +290,7 @@ export default function Cards() {
   }
 
   const saveLinkedMedia = async ({ url, type, title, seed }) => {
-    const { data, error } = await supabase.from('character_media').insert([{
+    const row = {
       character_name: selected.name,
       card_id: selected.id,
       type,
@@ -300,12 +300,25 @@ export default function Cards() {
       token_cost: parseInt(mediaCost) || 0,
       edition_size: parseInt(mediaEdition) || 100,
       published: false,
-    }]).select().single()
-    if (error) throw new Error(error.message)
-    setCharMedia(prev => [data, ...prev])
-    const key = String(selected.name || '').trim().toLowerCase()
-    if (key) setMediaCounts(prev => ({ ...prev, [key]: (prev[key] || 0) + 1 }))
-    return data
+    }
+    let lastErr = null
+    for (let i = 0; i < 3; i++) {
+      const { data, error } = await supabase.from('character_media').insert([row]).select().single()
+      if (!error && data) {
+        setCharMedia(prev => [data, ...prev])
+        const key = String(selected.name || '').trim().toLowerCase()
+        if (key) setMediaCounts(prev => ({ ...prev, [key]: (prev[key] || 0) + 1 }))
+        return data
+      }
+      lastErr = error
+      console.error('character_media insert', error)
+      await new Promise(r => setTimeout(r, 800 * (i + 1)))
+    }
+    // Storage has the file — surface URL so it is not lost
+    throw new Error(
+      (lastErr?.message || 'save failed') +
+      `\n\nFile is in storage. Link:\n${url}\nImport via Settings → Orphaned Media or paste URL on the card.`
+    )
   }
 
   const runCreateMedia = async () => {
@@ -814,18 +827,18 @@ export default function Cards() {
                 title={card.series_name}
               >👑</span>
             )}
+            <span className={`badge ${t.badge}`}>{card.rarity}</span>
+            <div className="nameplate" style={{ zIndex: 8 }}>
+              <div className={`font-bold leading-tight truncate tracking-wide pr-12 ${big ? 'text-2xl' : 'text-[15px]'}`}>{card.name}</div>
+              {card.title && (
+                <div className={`text-gray-300 truncate uppercase tracking-[0.12em] mt-0.5 pr-12 ${big ? 'text-xs' : 'text-[10px]'}`}>{card.title}</div>
+              )}
+            </div>
             <img
               src="/ga-mark.png"
               alt=""
-              className={`absolute top-2 right-2 z-[6] object-contain drop-shadow pointer-events-none ${big ? 'h-8 w-8' : 'h-5 w-5'}`}
+              className={`absolute bottom-3 right-2 z-[20] object-contain drop-shadow-lg pointer-events-none ${big ? 'h-16 w-16' : 'h-11 w-11'}`}
             />
-            <span className={`badge ${t.badge}`}>{card.rarity}</span>
-            <div className="nameplate">
-              <div className={`font-bold leading-tight truncate tracking-wide ${big ? 'text-2xl' : 'text-[15px]'}`}>{card.name}</div>
-              {card.title && (
-                <div className={`text-gray-300 truncate uppercase tracking-[0.12em] mt-0.5 ${big ? 'text-xs' : 'text-[10px]'}`}>{card.title}</div>
-              )}
-            </div>
           </div>
         </div>
       </div>
