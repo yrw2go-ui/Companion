@@ -295,10 +295,26 @@ export default function Gallery() {
       addPub(m.url, (`Misc Beauties ${m.public_id || ''}${setPart}`).trim())
     }
 
+    // url -> misc_items rows (for remove)
+    const miscByUrl = {}
+    for (const m of miscItemRows || []) {
+      if (!m.url) continue
+      if (!miscByUrl[m.url]) miscByUrl[m.url] = []
+      miscByUrl[m.url].push(m)
+    }
+
     const tagPublished = (item) => {
       const links = publishedLinkMap[item.url] || []
-      if (!links.length) return item
-      return { ...item, linkedPublished: true, publishedLinks: links, protected: true }
+      const miscRows = miscByUrl[item.url] || []
+      if (!links.length && !miscRows.length) return item
+      return {
+        ...item,
+        linkedPublished: links.length > 0,
+        publishedLinks: links,
+        protected: true,
+        miscItems: miscRows,
+        inMiscBeauties: miscRows.length > 0,
+      }
     }
 
     const fromChats = (msgMedia || [])
@@ -1079,6 +1095,39 @@ export default function Gallery() {
     setMiscSetName('')
     setMiscPrefix('')
     setShowMiscModal(true)
+  }
+
+  const removeFromMisc = async () => {
+    if (!selected) return
+    const rows = selected.miscItems || []
+    if (!rows.length) {
+      // fallback: delete by url
+      const ok = confirm(
+        '⚠️ Remove this file from Misc Beauties?\n\n' +
+        'It will no longer appear in the shop or Harem draws. Existing player purchases keep their copies.\n\nRemove?'
+      )
+      if (!ok) return
+      const { error } = await supabase.from('misc_items').delete().eq('url', selected.url)
+      if (error) { alert(error.message); return }
+      await load()
+      setSelected(null)
+      alert('Removed from Misc Beauties')
+      return
+    }
+    const labels = rows.map(r => r.public_id || r.id).join(', ')
+    const ok = confirm(
+      '⚠️ Remove from Misc Beauties?\n\n' +
+      'IDs: ' + labels + '\n\n' +
+      'This removes the shop listing(s). Players who already bought a copy keep it.\n\nRemove?'
+    )
+    if (!ok) return
+    for (const r of rows) {
+      const { error } = await supabase.from('misc_items').delete().eq('id', r.id)
+      if (error) { alert(error.message); return }
+    }
+    await load()
+    setSelected(null)
+    alert('Removed from Misc Beauties')
   }
 
   const nextPublicId = async (prefix) => {
@@ -2035,12 +2084,21 @@ export default function Gallery() {
             )}
 
             {selected.source !== 'cards' && (
-              <button
-                onClick={openAddMisc}
-                className="w-full bg-pink-800 hover:bg-pink-700 rounded-lg py-2 text-sm font-semibold mt-2"
-              >
-                ✦ Add to Misc Beauties
-              </button>
+              selected.inMiscBeauties || (selected.publishedLinks || []).some(l => String(l).startsWith('Misc Beauties')) ? (
+                <button
+                  onClick={removeFromMisc}
+                  className="w-full bg-amber-900 hover:bg-amber-800 rounded-lg py-2 text-sm font-semibold mt-2"
+                >
+                  ✦ Remove from Misc Beauties
+                </button>
+              ) : (
+                <button
+                  onClick={openAddMisc}
+                  className="w-full bg-pink-800 hover:bg-pink-700 rounded-lg py-2 text-sm font-semibold mt-2"
+                >
+                  ✦ Add to Misc Beauties
+                </button>
+              )
             )}
 
             {selected.source === 'cards' ? (
