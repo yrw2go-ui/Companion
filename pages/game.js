@@ -28,8 +28,10 @@ export default function Game() {
   const [ownedCards, setOwnedCards] = useState([]) // player_cards joined with card data
   const [ownedMedia, setOwnedMedia] = useState([]) // player_media joined with character_media
   const [ownedMisc, setOwnedMisc] = useState([])
-  const [viewOwned, setViewOwned] = useState(null) // { kind: 'card'|'media', row }
+  const [viewOwned, setViewOwned] = useState(null) // { kind, row, stack: [] }
   const [ownedSide, setOwnedSide] = useState('front') // card front/back
+  const [stackIndex, setStackIndex] = useState(0)
+  const [mediaFullscreen, setMediaFullscreen] = useState(false)
   const [buying, setBuying] = useState(false)
   const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
   const revealVideoRef = useRef(null)
@@ -240,6 +242,79 @@ export default function Game() {
     setOwnedMisc(ownedX || [])
 
     setLoading(false)
+  }
+
+
+  const stackCards = (() => {
+    const map = {}
+    for (const o of ownedCards) {
+      const key = o.card_id || o.cards?.id || o.id
+      if (!map[key]) map[key] = []
+      map[key].push(o)
+    }
+    return Object.values(map).map(rows => ({
+      kind: 'card', rows, top: rows[0], count: rows.length, card: rows[0].cards || {},
+    }))
+  })()
+
+  const stackMedia = (() => {
+    const map = {}
+    for (const o of ownedMedia) {
+      const key = o.media_id || o.character_media?.id || o.id
+      if (!map[key]) map[key] = []
+      map[key].push(o)
+    }
+    return Object.values(map).map(rows => ({
+      kind: 'media', rows, top: rows[0], count: rows.length, media: rows[0].character_media || {},
+    }))
+  })()
+
+  const stackMisc = (() => {
+    const map = {}
+    for (const o of ownedMisc) {
+      const key = o.misc_item_id || o.misc_items?.id || o.id
+      if (!map[key]) map[key] = []
+      map[key].push(o)
+    }
+    return Object.values(map).map(rows => ({
+      kind: 'misc', rows, top: rows[0], count: rows.length, misc: rows[0].misc_items || {},
+    }))
+  })()
+
+  const openStack = (stack) => {
+    setStackIndex(0)
+    setOwnedSide('front')
+    setMediaFullscreen(false)
+    setViewOwned({ kind: stack.kind, row: stack.rows[0], stack: stack.rows })
+  }
+
+  const stepStack = (dir) => {
+    setViewOwned(prev => {
+      if (!prev?.stack?.length) return prev
+      const n = prev.stack.length
+      const next = (stackIndex + dir + n) % n
+      setStackIndex(next)
+      setOwnedSide('front')
+      return { ...prev, row: prev.stack[next] }
+    })
+  }
+
+  const downloadOwnedMedia = async (url, nameHint) => {
+    if (!url) return
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const ext = (blob.type || '').includes('video') ? 'mp4' : (blob.type || '').includes('png') ? 'png' : 'jpg'
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `${(nameHint || 'media').replace(/[^\w.-]+/g, '_')}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+    } catch {
+      window.open(url, '_blank')
+    }
   }
 
   const openTab = (next) => {
@@ -864,34 +939,37 @@ export default function Game() {
               </div>
             ) : (
               <>
-                {ownedCards.length > 0 && (
+                {stackCards.length > 0 && (
                   <>
                     <p className="text-[10px] tracking-[0.15em] uppercase text-gray-500 mb-2">Cards</p>
                     <div className="grid grid-cols-2 gap-3 mb-6">
-                      {ownedCards.map(o => {
-                        const c = o.cards || {}
+                      {stackCards.map(st => {
+                        const c = st.card
+                        const o = st.top
                         return (
-                          <button
-                            key={o.id}
-                            type="button"
-                            onClick={() => { setOwnedSide('front'); setViewOwned({ kind: 'card', row: o }) }}
-                            className="text-left bg-gray-900 border border-gray-800 rounded-xl overflow-hidden active:scale-[0.98] transition"
-                          >
-                            {c.image_url ? (
-                              <img src={c.image_url} alt={c.name || ''} className="w-full aspect-[3/4] object-cover object-top" />
-                            ) : (
-                              <div className="w-full aspect-[3/4] bg-gray-800" />
+                          <button key={o.card_id || o.id} type="button" onClick={() => openStack(st)}
+                            className="text-left relative active:scale-[0.98] transition">
+                            {st.count > 1 && (
+                              <div className="absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-xl bg-gray-800 border border-gray-700" />
                             )}
-                            <div className="p-2">
-                              <p className="text-xs font-semibold truncate">{c.name || 'Card'}{c.series_name ? ' 👑' : ''}</p>
-                              <p className="text-[10px] text-gray-500 capitalize">{c.rarity || '—'}</p>
-                              {o.edition_number && o.edition_total ? (
-                                <p className="text-[10px] text-amber-300/90 mt-0.5">
-                                  {o.edition_number} of {o.edition_total}
-                                </p>
-                              ) : null}
-                              <p className="text-[9px] text-pink-400/80 font-mono mt-1">{o.instance_id}</p>
-                              <p className="text-[9px] text-gray-600">Paid {Number(o.purchase_price || 0).toLocaleString()} BB</p>
+                            <div className="relative z-[1] bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                              {c.image_url ? (
+                                <img src={c.image_url} alt={c.name || ''} className="w-full aspect-[3/4] object-cover object-top" />
+                              ) : (
+                                <div className="w-full aspect-[3/4] bg-gray-800" />
+                              )}
+                              {st.count > 1 && (
+                                <span className="absolute top-2 right-2 bg-pink-600 text-white text-[10px] font-bold rounded-full min-w-[1.5rem] h-6 px-1.5 flex items-center justify-center shadow">×{st.count}</span>
+                              )}
+                              <div className="p-2">
+                                <p className="text-xs font-semibold truncate">{c.name || 'Card'}{c.series_name ? ' 👑' : ''}</p>
+                                <p className="text-[10px] text-gray-500 capitalize">{c.rarity || '—'}</p>
+                                {st.count > 1 ? (
+                                  <p className="text-[10px] text-amber-300/90 mt-0.5">{st.count} copies</p>
+                                ) : o.edition_number && o.edition_total ? (
+                                  <p className="text-[10px] text-amber-300/90 mt-0.5">{o.edition_number} of {o.edition_total}</p>
+                                ) : null}
+                              </div>
                             </div>
                           </button>
                         )
@@ -899,37 +977,35 @@ export default function Game() {
                     </div>
                   </>
                 )}
-                {ownedMedia.length > 0 && (
+                {stackMedia.length > 0 && (
                   <>
                     <p className="text-[10px] tracking-[0.15em] uppercase text-gray-500 mb-2">Character media</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      {ownedMedia.map(o => {
-                        const m = o.character_media || {}
+                    <div className="grid grid-cols-2 gap-3 mb-6">
+                      {stackMedia.map(st => {
+                        const m = st.media
+                        const o = st.top
                         return (
-                          <button
-                            key={o.id}
-                            type="button"
-                            onClick={() => setViewOwned({ kind: 'media', row: o })}
-                            className="text-left bg-gray-900 border border-gray-800 rounded-xl overflow-hidden active:scale-[0.98] transition"
-                          >
-                            <div className="relative w-full aspect-[3/4] bg-gray-800">
-                              {m.type === 'video' ? (
-                                <video src={m.url} className="w-full h-full object-cover" muted playsInline />
-                              ) : m.url ? (
-                                <img src={m.url} alt="" className="w-full h-full object-cover object-top" />
-                              ) : null}
-                              <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-12 w-12 object-contain drop-shadow-lg pointer-events-none z-[5]" />
-                            </div>
-                            <div className="p-2">
-                              <p className="text-xs font-semibold truncate">{m.title || m.character_name || 'Media'}</p>
-                              <p className="text-[10px] text-gray-500 capitalize">{m.type || 'media'} · {m.character_name || ''}</p>
-                              {o.edition_number && o.edition_total ? (
-                                <p className="text-[10px] text-amber-300/90 mt-0.5">
-                                  {o.edition_number} of {o.edition_total}
-                                </p>
-                              ) : null}
-                              <p className="text-[9px] text-pink-400/80 font-mono mt-1">{o.instance_id}</p>
-                              <p className="text-[9px] text-gray-600">Paid {Number(o.purchase_price || 0).toLocaleString()} BB</p>
+                          <button key={o.media_id || o.id} type="button" onClick={() => openStack(st)}
+                            className="text-left relative active:scale-[0.98] transition">
+                            {st.count > 1 && (
+                              <div className="absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-xl bg-gray-800 border border-gray-700" />
+                            )}
+                            <div className="relative z-[1] bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                              <div className="relative w-full aspect-[3/4] bg-gray-800">
+                                {m.type === 'video' ? (
+                                  <video src={m.url} className="w-full h-full object-cover" muted playsInline />
+                                ) : m.url ? (
+                                  <img src={m.url} alt="" className="w-full h-full object-cover object-top" />
+                                ) : null}
+                                <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-12 w-12 object-contain drop-shadow-lg pointer-events-none z-[5]" />
+                                {st.count > 1 && (
+                                  <span className="absolute top-2 left-2 bg-pink-600 text-white text-[10px] font-bold rounded-full min-w-[1.5rem] h-6 px-1.5 flex items-center justify-center shadow z-[5]">×{st.count}</span>
+                                )}
+                              </div>
+                              <div className="p-2">
+                                <p className="text-xs font-semibold truncate">{m.title || m.character_name || 'Media'}</p>
+                                <p className="text-[10px] text-gray-500 capitalize">{m.type || 'media'}</p>
+                              </div>
                             </div>
                           </button>
                         )
@@ -937,37 +1013,40 @@ export default function Game() {
                     </div>
                   </>
                 )}
-
-                {ownedMisc.length > 0 && (
+                {stackMisc.length > 0 && (
                   <>
-                    <p className="text-[10px] tracking-[0.15em] uppercase text-gray-500 mb-2 mt-4">Misc Beauties</p>
+                    <p className="text-[10px] tracking-[0.15em] uppercase text-gray-500 mb-2 mt-2">Misc Beauties</p>
                     <div className="grid grid-cols-2 gap-3">
-                      {ownedMisc.map(o => {
-                        const m = o.misc_items || {}
+                      {stackMisc.map(st => {
+                        const m = st.misc
+                        const o = st.top
                         const set = m.misc_sets || {}
                         const setName = set.name || 'Standalone'
                         return (
-                          <button
-                            key={o.id}
-                            type="button"
-                            onClick={() => setViewOwned({ kind: 'misc', row: o })}
-                            className="text-left bg-gray-900 border border-gray-800 rounded-xl overflow-hidden active:scale-[0.98] transition"
-                          >
-                            <div className="relative w-full aspect-[3/4] bg-gray-800">
-                              {m.type === 'video' ? (
-                                <video src={m.url} className="w-full h-full object-cover" muted playsInline />
-                              ) : m.url ? (
-                                <img src={m.url} alt="" className="w-full h-full object-cover object-top" />
-                              ) : null}
-                              <div className="absolute top-1.5 left-1.5 right-8 z-[5] bg-black/75 rounded-md px-1.5 py-1">
-                                <p className="text-[9px] font-mono text-pink-300 leading-tight">{m.public_id}</p>
-                                <p className="text-[8px] text-gray-300 leading-tight truncate">{setName}</p>
+                          <button key={o.misc_item_id || o.id} type="button" onClick={() => openStack(st)}
+                            className="text-left relative active:scale-[0.98] transition">
+                            {st.count > 1 && (
+                              <div className="absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-xl bg-gray-800 border border-gray-700" />
+                            )}
+                            <div className="relative z-[1] bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                              <div className="relative w-full aspect-[3/4] bg-gray-800">
+                                {m.type === 'video' ? (
+                                  <video src={m.url} className="w-full h-full object-cover" muted playsInline />
+                                ) : m.url ? (
+                                  <img src={m.url} alt="" className="w-full h-full object-cover object-top" />
+                                ) : null}
+                                <div className="absolute top-1.5 left-1.5 right-8 z-[5] bg-black/75 rounded-md px-1.5 py-1">
+                                  <p className="text-[9px] font-mono text-pink-300 leading-tight">{m.public_id}</p>
+                                  <p className="text-[8px] text-gray-300 leading-tight truncate">{setName}</p>
+                                </div>
+                                {st.count > 1 && (
+                                  <span className="absolute bottom-2 right-2 bg-pink-600 text-white text-[10px] font-bold rounded-full min-w-[1.5rem] h-6 px-1.5 flex items-center justify-center shadow z-[5]">×{st.count}</span>
+                                )}
+                                <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-10 w-10 object-contain drop-shadow-lg pointer-events-none z-[5]" />
                               </div>
-                              <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-10 w-10 object-contain drop-shadow-lg pointer-events-none z-[5]" />
-                            </div>
-                            <div className="p-2">
-                              <p className="text-[9px] text-gray-500">{m.type} · {Number(o.purchase_price || 0)} BB</p>
-                              <p className="text-[9px] text-pink-400/80 font-mono mt-0.5">{o.instance_id}</p>
+                              <div className="p-2">
+                                <p className="text-[9px] text-gray-500">{m.type} · {Number(o.purchase_price || 0)} BB</p>
+                              </div>
                             </div>
                           </button>
                         )
@@ -1261,49 +1340,51 @@ export default function Game() {
         </div>
       )}
 
-      {/* Owned item detail — flip cards / expand media */}
-      {viewOwned && (
-        <div className="fixed inset-0 z-[88] bg-black/95 flex flex-col items-center justify-center p-4">
-          <button
-            type="button"
-            onClick={() => setViewOwned(null)}
-            className="absolute top-4 right-4 text-white/80 hover:text-white text-2xl px-3 z-10"
-          >✕</button>
+      {/* Owned item detail — stacks, trade/sell, fullscreen media */}
+      {viewOwned && (() => {
+        const o = viewOwned.row
+        const stack = viewOwned.stack || [o]
+        const stackLen = stack.length
+        const tradeSell = (
+          <div className="flex gap-2 mt-3">
+            <button type="button" onClick={() => alert('Trade is coming soon')}
+              className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-xl py-3 text-sm font-semibold border border-gray-700">Trade</button>
+            <button type="button" onClick={() => alert('Sell is coming soon')}
+              className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-xl py-3 text-sm font-semibold border border-gray-700">Sell</button>
+          </div>
+        )
+        const stackNav = stackLen > 1 ? (
+          <div className="flex items-center gap-2 mt-3">
+            <button type="button" onClick={() => stepStack(-1)} className="flex-1 bg-gray-800 rounded-lg py-2 text-sm font-semibold">←</button>
+            <span className="text-[11px] text-pink-300 font-semibold whitespace-nowrap">Copy {stackIndex + 1} / {stackLen}</span>
+            <button type="button" onClick={() => stepStack(1)} className="flex-1 bg-gray-800 rounded-lg py-2 text-sm font-semibold">→</button>
+          </div>
+        ) : null
 
-          {viewOwned.kind === 'card' ? (() => {
-            const o = viewOwned.row
-            const c = o.cards || {}
-            const showBack = ownedSide === 'back'
-            const stats = Array.isArray(c.stats) ? c.stats : []
-            return (
-              <div className="w-full max-w-sm">
-                <div
-                  className="relative w-full aspect-[3/4] rounded-2xl overflow-hidden border border-white/10 bg-gray-900"
-                  onClick={() => setOwnedSide(s => s === 'front' ? 'back' : 'front')}
-                >
+        if (viewOwned.kind === 'card') {
+          const c = o.cards || {}
+          const showBack = ownedSide === 'back'
+          const stats = Array.isArray(c.stats) ? c.stats : []
+          return (
+            <div className="fixed inset-0 z-[88] bg-black/95 flex flex-col items-center justify-center p-4 overflow-y-auto">
+              <button type="button" onClick={() => setViewOwned(null)} className="absolute top-4 right-4 text-white/80 hover:text-white text-2xl px-3 z-10">✕</button>
+              <div className="w-full max-w-sm my-8">
+                <div className="relative w-full aspect-[3/4] rounded-2xl overflow-hidden border border-white/10 bg-gray-900"
+                  onClick={() => setOwnedSide(s => s === 'front' ? 'back' : 'front')}>
                   {showBack ? (
                     <>
                       {c.back_image_url ? (
                         <img src={c.back_image_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
-                      ) : (
-                        <div className="absolute inset-0 bg-gray-900" />
-                      )}
+                      ) : <div className="absolute inset-0 bg-gray-900" />}
                       <div className="absolute inset-x-0 bottom-0 h-[70%] bg-gradient-to-t from-black from-40% via-black/85 to-transparent" />
                       {c.series_name && (
                         <div className="absolute top-3 inset-x-0 text-center z-[2]">
-                          <span className="text-[10px] text-black font-semibold tracking-[0.15em] uppercase"
-                            style={{ fontFamily: 'Georgia, serif', textShadow: '0 0 1px rgba(255,255,255,0.4)' }}>
-                            {c.series_name}
-                          </span>
+                          <span className="text-[10px] text-black font-semibold tracking-[0.15em] uppercase" style={{ fontFamily: 'Georgia, serif', textShadow: '0 0 1px rgba(255,255,255,0.4)' }}>{c.series_name}</span>
                         </div>
                       )}
                       <div className="absolute inset-x-0 bottom-0 z-[3] p-4 flex flex-col justify-end">
-                        {c.description && (
-                          <p className="text-[11px] text-gray-200 leading-snug mb-2">{c.description}</p>
-                        )}
-                        {c.flavor_text && (
-                          <p className="text-[10px] italic text-gray-400 mb-3 leading-snug">&quot;{c.flavor_text}&quot;</p>
-                        )}
+                        {c.description && <p className="text-[11px] text-gray-200 leading-snug mb-2">{c.description}</p>}
+                        {c.flavor_text && <p className="text-[10px] italic text-gray-400 mb-3 leading-snug">&quot;{c.flavor_text}&quot;</p>}
                         {stats.length > 0 && (
                           <div className="space-y-1.5 mb-2">
                             {stats.map((s, i) => (
@@ -1320,9 +1401,7 @@ export default function Game() {
                         <div className="flex items-center justify-between pt-2 border-t border-white/15 gap-2">
                           <span className="font-mono text-[9px] text-gray-400 tracking-widest">{c.card_number || '—'}</span>
                           {(o.edition_number && o.edition_total) ? (
-                            <span className="text-[10px] text-amber-300 font-semibold tracking-wide shrink-0">
-                              {o.edition_number}/{o.edition_total}
-                            </span>
+                            <span className="text-[10px] text-amber-300 font-semibold tracking-wide shrink-0">{o.edition_number}/{o.edition_total}</span>
                           ) : null}
                           <span className="text-[9px] text-gray-300 tracking-widest font-semibold shrink-0">COMP-GA</span>
                         </div>
@@ -1332,12 +1411,8 @@ export default function Game() {
                     <>
                       {c.image_url ? (
                         <img src={c.image_url} alt={c.name || ''} className="absolute inset-0 w-full h-full object-cover object-top" />
-                      ) : (
-                        <div className="absolute inset-0 bg-gray-800" />
-                      )}
-                      {c.series_name && (
-                        <span className="absolute top-3 left-3 text-lg drop-shadow z-[2]">👑</span>
-                      )}
+                      ) : <div className="absolute inset-0 bg-gray-800" />}
+                      {c.series_name && <span className="absolute top-3 left-3 text-lg drop-shadow z-[2]">👑</span>}
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10 z-[5]">
                         <p className="font-bold text-[15px] leading-tight truncate pr-24">{c.name}</p>
                         {c.title && <p className="text-[10px] text-gray-300 uppercase tracking-[0.12em] mt-0.5 truncate pr-24">{c.title}</p>}
@@ -1347,86 +1422,87 @@ export default function Game() {
                   )}
                 </div>
                 <p className="text-center text-[10px] text-gray-500 mt-2">Tap card to flip · {showBack ? 'back' : 'front'}</p>
+                {stackNav}
                 <div className="mt-3 text-center">
                   <p className="text-sm font-bold">{c.name}{c.series_name ? ' 👑' : ''}</p>
                   <p className="text-xs text-gray-400 capitalize mt-0.5">{c.rarity}</p>
-                  {o.edition_number && (
-                    <p className="text-sm text-amber-300 mt-1">{o.edition_number} of {o.edition_total}</p>
-                  )}
+                  {o.edition_number && <p className="text-sm text-amber-300 mt-1">{o.edition_number} of {o.edition_total}</p>}
                   <p className="text-[11px] text-pink-400 font-mono mt-1">{o.instance_id}</p>
                   <p className="text-[10px] text-gray-500 mt-1">Paid {Number(o.purchase_price || 0).toLocaleString()} BabeBucks</p>
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <button type="button" onClick={() => setOwnedSide('front')}
-                    className={`flex-1 rounded-lg py-2 text-sm font-semibold ${!showBack ? 'bg-pink-600' : 'bg-gray-800'}`}>Front</button>
-                  <button type="button" onClick={() => setOwnedSide('back')}
-                    className={`flex-1 rounded-lg py-2 text-sm font-semibold ${showBack ? 'bg-pink-600' : 'bg-gray-800'}`}>Back</button>
+                  <button type="button" onClick={() => setOwnedSide('front')} className={`flex-1 rounded-lg py-2 text-sm font-semibold ${!showBack ? 'bg-pink-600' : 'bg-gray-800'}`}>Front</button>
+                  <button type="button" onClick={() => setOwnedSide('back')} className={`flex-1 rounded-lg py-2 text-sm font-semibold ${showBack ? 'bg-pink-600' : 'bg-gray-800'}`}>Back</button>
                 </div>
-                <button type="button" onClick={() => setViewOwned(null)}
-                  className="w-full mt-3 text-sm text-gray-400 hover:text-white py-2">Close</button>
+                {tradeSell}
+                <button type="button" onClick={() => setViewOwned(null)} className="w-full mt-3 text-sm text-gray-400 hover:text-white py-2">Close</button>
               </div>
-            )
-          })() : viewOwned.kind === 'misc' ? (() => {
-            const o = viewOwned.row
-            const m = o.misc_items || {}
-            const set = m.misc_sets || {}
-            const setName = set.name || 'Standalone'
-            return (
-              <div className="w-full max-w-sm">
-                <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-black">
-                  {m.type === 'video' ? (
-                    <video src={m.url} controls autoPlay playsInline className="w-full max-h-[70vh]" />
-                  ) : (
-                    <img src={m.url} alt="" className="w-full max-h-[70vh] object-contain" />
-                  )}
+            </div>
+          )
+        }
+
+        const m = viewOwned.kind === 'misc' ? (o.misc_items || {}) : (o.character_media || {})
+        const set = m.misc_sets || {}
+        const title = viewOwned.kind === 'misc' ? (m.public_id || set.name || 'Misc') : (m.title || m.character_name || 'Media')
+        const mediaUrl = m.url
+
+        if (mediaFullscreen && mediaUrl) {
+          return (
+            <div className="fixed inset-0 z-[95] bg-black flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 z-10">
+                <button type="button" onClick={() => downloadOwnedMedia(mediaUrl, title)}
+                  className="text-sm font-semibold text-pink-300 hover:text-pink-200 px-3 py-1.5 rounded-lg bg-white/10">⬇ Download</button>
+                <button type="button" onClick={() => setMediaFullscreen(false)} className="text-white text-2xl px-3 leading-none">✕</button>
+              </div>
+              <div className="flex-1 flex items-center justify-center min-h-0 px-2 pb-6">
+                {m.type === 'video' ? (
+                  <video src={mediaUrl} controls autoPlay playsInline className="max-w-full max-h-full object-contain" />
+                ) : (
+                  <img src={mediaUrl} alt="" className="max-w-full max-h-full object-contain" />
+                )}
+              </div>
+            </div>
+          )
+        }
+
+        return (
+          <div className="fixed inset-0 z-[88] bg-black/95 flex flex-col items-center justify-center p-4 overflow-y-auto">
+            <button type="button" onClick={() => setViewOwned(null)} className="absolute top-4 right-4 text-white/80 hover:text-white text-2xl px-3 z-10">✕</button>
+            <div className="w-full max-w-sm my-8">
+              <button type="button" onClick={() => setMediaFullscreen(true)}
+                className="relative w-full rounded-2xl overflow-hidden border border-white/10 bg-black block">
+                {m.type === 'video' ? (
+                  <video src={mediaUrl} className="w-full max-h-[55vh] object-contain" muted playsInline />
+                ) : (
+                  <img src={mediaUrl} alt="" className="w-full max-h-[55vh] object-contain" />
+                )}
+                {viewOwned.kind === 'misc' && (
                   <div className="absolute top-2 left-2 bg-black/80 rounded-lg px-2 py-1.5 max-w-[70%] z-[5]">
                     <p className="text-[10px] font-mono text-pink-300">{m.public_id}</p>
-                    <p className="text-[9px] text-white truncate">{setName}</p>
-                    {m.sort_index != null && set.name && (
-                      <p className="text-[9px] text-gray-400">Item {m.sort_index} in set</p>
-                    )}
+                    <p className="text-[9px] text-white truncate">{set.name || 'Standalone'}</p>
                   </div>
-                  <img src="/ga-mark.png" alt="" className="absolute top-3 right-3 h-14 w-14 object-contain drop-shadow-lg pointer-events-none z-[5]" />
-                </div>
-                <div className="mt-4 text-center">
-                  <p className="text-lg font-bold">{m.public_id}</p>
-                  <p className="text-xs text-gray-400 mt-1">{setName}</p>
-                  <p className="text-[11px] text-pink-400 font-mono mt-2">{o.instance_id}</p>
-                  <p className="text-[10px] text-gray-500 mt-1">Paid {Number(o.purchase_price || 0).toLocaleString()} BabeBucks</p>
-                </div>
-                <button type="button" onClick={() => setViewOwned(null)}
-                  className="w-full mt-5 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold">Close</button>
+                )}
+                <img src="/ga-mark.png" alt="" className="absolute top-3 right-3 h-14 w-14 object-contain drop-shadow-lg pointer-events-none z-[5]" />
+                <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] bg-black/70 text-gray-200 px-2 py-1 rounded-full">Tap to expand</span>
+              </button>
+              {stackNav}
+              <div className="mt-4 text-center">
+                <p className="text-lg font-bold">{title}</p>
+                <p className="text-xs text-gray-400 mt-1 capitalize">
+                  {m.type}{m.character_name ? ` · ${m.character_name}` : ''}{set.name ? ` · ${set.name}` : ''}
+                </p>
+                {o.edition_number && <p className="text-sm text-amber-300 mt-2">{o.edition_number} of {o.edition_total}</p>}
+                <p className="text-[11px] text-pink-400 font-mono mt-2">{o.instance_id}</p>
+                <p className="text-[10px] text-gray-500 mt-1">Paid {Number(o.purchase_price || 0).toLocaleString()} BabeBucks</p>
               </div>
-            )
-          })() : (() => {
-            const o = viewOwned.row
-            const m = o.character_media || {}
-            return (
-              <div className="w-full max-w-sm">
-                <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-black">
-                  {m.type === 'video' ? (
-                    <video src={m.url} controls autoPlay playsInline className="w-full max-h-[70vh]" />
-                  ) : (
-                    <img src={m.url} alt="" className="w-full max-h-[70vh] object-contain" />
-                  )}
-                  <img src="/ga-mark.png" alt="" className="absolute top-3 right-3 h-16 w-16 object-contain drop-shadow-lg pointer-events-none z-[5]" />
-                </div>
-                <div className="mt-4 text-center">
-                  <p className="text-lg font-bold">{m.title || m.character_name || 'Media'}</p>
-                  <p className="text-xs text-gray-400 mt-1 capitalize">{m.type} · {m.character_name}</p>
-                  {o.edition_number && (
-                    <p className="text-sm text-amber-300 mt-2">{o.edition_number} of {o.edition_total}</p>
-                  )}
-                  <p className="text-[11px] text-pink-400 font-mono mt-2">{o.instance_id}</p>
-                  <p className="text-[10px] text-gray-500 mt-1">Paid {Number(o.purchase_price || 0).toLocaleString()} BabeBucks</p>
-                </div>
-                <button type="button" onClick={() => setViewOwned(null)}
-                  className="w-full mt-5 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold">Close</button>
-              </div>
-            )
-          })()}
-        </div>
-      )}
+              <button type="button" onClick={() => downloadOwnedMedia(mediaUrl, title)}
+                className="w-full mt-4 bg-gray-800 hover:bg-gray-700 rounded-xl py-3 text-sm font-semibold">⬇ Download</button>
+              {tradeSell}
+              <button type="button" onClick={() => setViewOwned(null)} className="w-full mt-3 text-sm text-gray-400 hover:text-white py-2">Close</button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Initial load splash — animated logo */}
       {showSplash && (
