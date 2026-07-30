@@ -27,6 +27,8 @@ export default function Game() {
   const [bannerVideoDone, setBannerVideoDone] = useState({}) // tabKey -> true after intro played
   const [ownedCards, setOwnedCards] = useState([]) // player_cards joined with card data
   const [ownedMedia, setOwnedMedia] = useState([]) // player_media joined with character_media
+  const [viewOwned, setViewOwned] = useState(null) // { kind: 'card'|'media', row }
+  const [ownedSide, setOwnedSide] = useState('front') // card front/back
   const [buying, setBuying] = useState(false)
   const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
   const revealVideoRef = useRef(null)
@@ -646,7 +648,12 @@ export default function Game() {
                       {ownedCards.map(o => {
                         const c = o.cards || {}
                         return (
-                          <div key={o.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                          <button
+                            key={o.id}
+                            type="button"
+                            onClick={() => { setOwnedSide('front'); setViewOwned({ kind: 'card', row: o }) }}
+                            className="text-left bg-gray-900 border border-gray-800 rounded-xl overflow-hidden active:scale-[0.98] transition"
+                          >
                             {c.image_url ? (
                               <img src={c.image_url} alt={c.name || ''} className="w-full aspect-[3/4] object-cover object-top" />
                             ) : (
@@ -663,7 +670,7 @@ export default function Game() {
                               <p className="text-[9px] text-pink-400/80 font-mono mt-1">{o.instance_id}</p>
                               <p className="text-[9px] text-gray-600">Paid {Number(o.purchase_price || 0).toLocaleString()} BB</p>
                             </div>
-                          </div>
+                          </button>
                         )
                       })}
                     </div>
@@ -676,7 +683,12 @@ export default function Game() {
                       {ownedMedia.map(o => {
                         const m = o.character_media || {}
                         return (
-                          <div key={o.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                          <button
+                            key={o.id}
+                            type="button"
+                            onClick={() => setViewOwned({ kind: 'media', row: o })}
+                            className="text-left bg-gray-900 border border-gray-800 rounded-xl overflow-hidden active:scale-[0.98] transition"
+                          >
                             {m.type === 'video' ? (
                               <video src={m.url} className="w-full aspect-[3/4] object-cover" muted playsInline />
                             ) : m.url ? (
@@ -695,7 +707,7 @@ export default function Game() {
                               <p className="text-[9px] text-pink-400/80 font-mono mt-1">{o.instance_id}</p>
                               <p className="text-[9px] text-gray-600">Paid {Number(o.purchase_price || 0).toLocaleString()} BB</p>
                             </div>
-                          </div>
+                          </button>
                         )
                       })}
                     </div>
@@ -919,6 +931,99 @@ export default function Game() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Owned item detail — flip cards / expand media */}
+      {viewOwned && (
+        <div className="fixed inset-0 z-[88] bg-black/95 flex flex-col items-center justify-center p-4">
+          <button
+            type="button"
+            onClick={() => setViewOwned(null)}
+            className="absolute top-4 right-4 text-white/80 hover:text-white text-2xl px-3 z-10"
+          >✕</button>
+
+          {viewOwned.kind === 'card' ? (() => {
+            const o = viewOwned.row
+            const c = o.cards || {}
+            const showBack = ownedSide === 'back'
+            return (
+              <div className="w-full max-w-sm">
+                <div
+                  className="relative w-full aspect-[3/4] rounded-2xl overflow-hidden border border-white/10 bg-gray-900"
+                  onClick={() => setOwnedSide(s => s === 'front' ? 'back' : 'front')}
+                >
+                  {showBack ? (
+                    c.back_image_url ? (
+                      <img src={c.back_image_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">No back art</div>
+                    )
+                  ) : (
+                    c.image_url ? (
+                      <img src={c.image_url} alt={c.name || ''} className="absolute inset-0 w-full h-full object-cover object-top" />
+                    ) : (
+                      <div className="absolute inset-0 bg-gray-800" />
+                    )
+                  )}
+                  {c.series_name && !showBack && (
+                    <span className="absolute top-3 left-3 text-lg drop-shadow">👑</span>
+                  )}
+                  {c.series_name && showBack && (
+                    <div className="absolute top-3 inset-x-0 text-center">
+                      <span className="text-[10px] text-black font-semibold tracking-[0.15em] uppercase"
+                        style={{ fontFamily: 'Georgia, serif', textShadow: '0 0 1px rgba(255,255,255,0.4)' }}>
+                        {c.series_name}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-center text-[10px] text-gray-500 mt-2">Tap card to flip · {showBack ? 'back' : 'front'}</p>
+                <div className="mt-4 text-center">
+                  <p className="text-lg font-bold">{c.name}{c.series_name ? ' 👑' : ''}</p>
+                  <p className="text-xs text-gray-400 capitalize mt-1">{c.rarity}</p>
+                  {o.edition_number && (
+                    <p className="text-sm text-amber-300 mt-2">{o.edition_number} of {o.edition_total}</p>
+                  )}
+                  <p className="text-[11px] text-pink-400 font-mono mt-2">{o.instance_id}</p>
+                  <p className="text-[10px] text-gray-500 mt-1">Paid {Number(o.purchase_price || 0).toLocaleString()} BabeBucks</p>
+                </div>
+                <div className="flex gap-2 mt-4">
+                  <button type="button" onClick={() => setOwnedSide('front')}
+                    className={`flex-1 rounded-lg py-2 text-sm font-semibold ${!showBack ? 'bg-pink-600' : 'bg-gray-800'}`}>Front</button>
+                  <button type="button" onClick={() => setOwnedSide('back')}
+                    className={`flex-1 rounded-lg py-2 text-sm font-semibold ${showBack ? 'bg-pink-600' : 'bg-gray-800'}`}>Back</button>
+                </div>
+                <button type="button" onClick={() => setViewOwned(null)}
+                  className="w-full mt-3 text-sm text-gray-400 hover:text-white py-2">Close</button>
+              </div>
+            )
+          })() : (() => {
+            const o = viewOwned.row
+            const m = o.character_media || {}
+            return (
+              <div className="w-full max-w-sm">
+                <div className="rounded-2xl overflow-hidden border border-white/10 bg-black">
+                  {m.type === 'video' ? (
+                    <video src={m.url} controls autoPlay playsInline className="w-full max-h-[70vh]" />
+                  ) : (
+                    <img src={m.url} alt="" className="w-full max-h-[70vh] object-contain" />
+                  )}
+                </div>
+                <div className="mt-4 text-center">
+                  <p className="text-lg font-bold">{m.title || m.character_name || 'Media'}</p>
+                  <p className="text-xs text-gray-400 mt-1 capitalize">{m.type} · {m.character_name}</p>
+                  {o.edition_number && (
+                    <p className="text-sm text-amber-300 mt-2">{o.edition_number} of {o.edition_total}</p>
+                  )}
+                  <p className="text-[11px] text-pink-400 font-mono mt-2">{o.instance_id}</p>
+                  <p className="text-[10px] text-gray-500 mt-1">Paid {Number(o.purchase_price || 0).toLocaleString()} BabeBucks</p>
+                </div>
+                <button type="button" onClick={() => setViewOwned(null)}
+                  className="w-full mt-5 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold">Close</button>
+              </div>
+            )
+          })()}
         </div>
       )}
 
