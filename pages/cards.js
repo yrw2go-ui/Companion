@@ -21,6 +21,13 @@ const IMAGE_MODELS = [
   { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok' },
 ]
 
+// Models that accept referenceImageUrl (I2I / edit)
+const EDIT_IMAGE_MODELS = [
+  { id: 'alibaba/wan-2.7-pro/image-edit', label: 'Wan 2.7 Pro Edit (default)' },
+  { id: 'bytedance/seedream-v5.0-pro/edit', label: 'Seedream 5 Pro Edit' },
+  { id: 'xai/grok-imagine-image/edit', label: 'Grok Imagine Edit' },
+]
+
 const familyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
 
 const VIDEO_MODELS = [
@@ -152,7 +159,7 @@ export default function Cards() {
   const [mediaEdition, setMediaEdition] = useState('100')
   const [mediaBusy, setMediaBusy] = useState(false)
   const [showCreateMedia, setShowCreateMedia] = useState(false)
-  const [cmMode, setCmMode] = useState('t2i') // t2i | i2v_front | i2v_back
+  const [cmMode, setCmMode] = useState('t2i') // t2i | i2i_front | i2i_back | i2v_front | i2v_back
   const [cmPrompt, setCmPrompt] = useState('')
   const [cmSeed, setCmSeed] = useState('')
   const [cmNeg, setCmNeg] = useState(DEFAULT_NEGATIVE)
@@ -162,6 +169,7 @@ export default function Cards() {
   const [cmDuration, setCmDuration] = useState(5)
   const [cmModel, setCmModel] = useState(VIDEO_MODELS[0].id)
   const [cmImageModel, setCmImageModel] = useState(IMAGE_MODELS[0].id)
+  const [cmEditModel, setCmEditModel] = useState(EDIT_IMAGE_MODELS[0].id)
 
   useEffect(() => { loadCards() }, [])
 
@@ -272,10 +280,10 @@ export default function Cards() {
   const applyCmMode = (mode) => {
     setCmMode(mode)
     if (!selected) return
-    if (mode === 't2i' || mode === 'i2v_front') {
+    if (mode === 't2i' || mode === 'i2v_front' || mode === 'i2i_front') {
       setCmPrompt(selected.image_prompt || selected.video_prompt || '')
       setCmSeed(selected.seed != null ? String(selected.seed) : '')
-    } else if (mode === 'i2v_back') {
+    } else if (mode === 'i2v_back' || mode === 'i2i_back') {
       setCmPrompt(selected.back_image_prompt || selected.image_prompt || '')
       setCmSeed(selected.back_seed != null ? String(selected.back_seed) : '')
     }
@@ -308,9 +316,6 @@ export default function Cards() {
       if (cmMode === 't2i') {
         if (!cmPrompt.trim()) { alert('Prompt required'); setCmBusy(false); return }
         setCmProgress('Generating image (T2I)...')
-        // temporarily use selected model path via genImage — pass model via editing hack
-        const prevModel = imageModel
-        // genImage uses imageModel state; call API directly for clarity
         const fam = familyOf(cmImageModel)
         const payload = { model: cmImageModel, prompt: cmPrompt }
         if (fam === 'grok') {
@@ -343,6 +348,32 @@ export default function Cards() {
           type: 'image',
           title: cmTitle || `${selected.name} media`,
           seed: data.seed ?? (cmSeed ? parseInt(cmSeed) : null),
+        })
+      } else if (cmMode === 'i2i_front' || cmMode === 'i2i_back') {
+        if (!cmPrompt.trim()) { alert('Edit prompt required'); setCmBusy(false); return }
+        const src = cmMode === 'i2i_back' ? selected.back_image_url : selected.image_url
+        if (!src) throw new Error(cmMode === 'i2i_back' ? 'No back image on this card' : 'No front image on this card')
+        setCmProgress('Editing image (I2I)...')
+        const payload = {
+          model: cmEditModel,
+          prompt: cmPrompt,
+          referenceImageUrl: src,
+          seed: cmSeed ? parseInt(cmSeed) : undefined,
+          negativePrompt: cmNeg,
+        }
+        const res = await fetch('/api/generate-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const data = await res.json()
+        if (!data.imageUrl) throw new Error(data.error || 'edit failed')
+        setCmProgress('Linking to character...')
+        await saveLinkedMedia({
+          url: data.imageUrl,
+          type: 'image',
+          title: cmTitle || `${selected.name} edit`,
+          seed: data.seed ?? null,
         })
       } else {
         // I2V from front or back
@@ -1370,17 +1401,22 @@ export default function Cards() {
             <select value={cmMode} onChange={e => applyCmMode(e.target.value)}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
               <option value="t2i">New image · T2I (prompt + seed)</option>
+              <option value="i2i_front">Edit front image · I2I</option>
+              <option value="i2i_back">Edit back image · I2I</option>
               <option value="i2v_front">Video from front · I2V</option>
               <option value="i2v_back">Video from back · I2V</option>
             </select>
 
-            {(cmMode === 'i2v_front' || cmMode === 'i2v_back') && (
+            {(cmMode === 'i2v_front' || cmMode === 'i2v_back' || cmMode === 'i2i_front' || cmMode === 'i2i_back') && (
               <div className="mb-3">
                 <img
-                  src={cmMode === 'i2v_back' ? (selected.back_image_url || selected.image_url) : selected.image_url}
+                  src={(cmMode === 'i2v_back' || cmMode === 'i2i_back')
+                    ? (selected.back_image_url || selected.image_url)
+                    : selected.image_url}
                   alt=""
                   className="w-24 rounded-lg"
                 />
+                <p className="text-[10px] text-gray-500 mt-1">Source image for this mode</p>
               </div>
             )}
 
@@ -1406,6 +1442,20 @@ export default function Cards() {
                 <label className="block text-xs text-gray-400 mb-1">Negative</label>
                 <textarea value={cmNeg} onChange={e => setCmNeg(e.target.value)} rows={2}
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none" />
+              </>
+            )}
+
+            {(cmMode === 'i2i_front' || cmMode === 'i2i_back') && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Edit model</label>
+                <select value={cmEditModel} onChange={e => setCmEditModel(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+                  {EDIT_IMAGE_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+                <label className="block text-xs text-gray-400 mb-1">Seed (optional)</label>
+                <input value={cmSeed} onChange={e => setCmSeed(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none" />
+                <p className="text-[10px] text-gray-500 mb-3 -mt-2">Describe the change (outfit, pose, setting…). Source image is sent as reference.</p>
               </>
             )}
 
