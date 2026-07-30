@@ -166,29 +166,42 @@ export default function Game() {
 
     setPublishedCards(cards || [])
 
+    // Scrolling home banner: images filed in Gallery folder "Main Banner"
+    // Prefer thumbnail_url to cut egress; no hard low cap — use everything in the folder
+    const mapBanner = (f) => ({
+      id: 'gal_' + f.id,
+      url: f.thumbnail_url || f.url,
+      prompt: f.prompt,
+    })
     let strip = []
-    const { data: favs } = await supabase
-      .from('gallery_media')
-      .select('id, url, prompt')
-      .eq('type', 'image')
-      .eq('is_favorite', true)
-      .order('created_at', { ascending: false })
-      .limit(24)
-    strip = (favs || []).map(f => ({ id: 'gal_' + f.id, url: f.url, prompt: f.prompt }))
-
-    if (strip.length < 4) {
-      const { data: recent } = await supabase
-        .from('gallery_media')
-        .select('id, url, prompt')
-        .eq('type', 'image')
-        .order('created_at', { ascending: false })
-        .limit(24)
-      const extra = (recent || []).map(f => ({ id: 'gal_' + f.id, url: f.url, prompt: f.prompt }))
-      const seen = new Set(strip.map(b => b.id))
-      for (const e of extra) {
-        if (!seen.has(e.id)) strip.push(e)
+    const { data: folderRows } = await supabase.from('gallery_folders').select('id, name')
+    const mainFolder = (folderRows || []).find(f => String(f.name || '').trim().toLowerCase() === 'main banner')
+    if (mainFolder) {
+      const { data: fis } = await supabase
+        .from('folder_items')
+        .select('item_key')
+        .eq('folder_id', mainFolder.id)
+      const ids = (fis || []).map(x => {
+        const k = String(x.item_key || '')
+        if (k.startsWith('gal_')) return k.slice(4)
+        // raw uuid
+        if (/^[0-9a-f-]{36}$/i.test(k)) return k
+        return null
+      }).filter(Boolean)
+      if (ids.length) {
+        // chunk in() in case of large folders
+        const media = []
+        for (let i = 0; i < ids.length; i += 100) {
+          const chunk = ids.slice(i, i + 100)
+          const { data } = await supabase
+            .from('gallery_media')
+            .select('id, url, thumbnail_url, prompt, type')
+            .in('id', chunk)
+            .eq('type', 'image')
+          if (data) media.push(...data)
+        }
+        strip = media.map(mapBanner)
       }
-      strip = strip.slice(0, 24)
     }
     setMarquee(strip)
 
@@ -751,7 +764,7 @@ export default function Game() {
                 <div className="h-full flex items-center justify-center text-gray-600 text-sm">Loading...</div>
               ) : marquee.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-gray-600 text-sm px-6 text-center">
-                  Favorite images in Studio to fill the scroll banners.
+                  Add images to the Gallery folder "Main Banner" to fill this strip.
                 </div>
               ) : (
                 <div className="flex h-full gap-2 animate-marquee" style={{ width: 'max-content' }}>

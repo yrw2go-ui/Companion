@@ -109,14 +109,6 @@ export default function Gallery() {
   const [transformModel, setTransformModel] = useState('bytedance/seedream-v5.0-pro/edit')
   const [transforming, setTransforming] = useState(false)
 
-  const [show3D, setShow3D] = useState(false)
-  const [prompt3D, setPrompt3D] = useState('')
-  const [enablePbr, setEnablePbr] = useState(false)
-  const [enableGeometry, setEnableGeometry] = useState(false)
-  const [busy3D, setBusy3D] = useState(false)
-  const [provider3D, setProvider3D] = useState('hunyuan')
-  const [imgProvider3D, setImgProvider3D] = useState('hunyuan')
-  const [show3DFromImage, setShow3DFromImage] = useState(null)  // holds the source item, or null
 
   const [showT2V, setShowT2V] = useState(false)
   const [t2vModel, setT2vModel] = useState(T2V_MODEL)
@@ -264,9 +256,54 @@ export default function Gallery() {
     const { data: mSets } = await supabase.from('misc_sets').select('*').order('name')
     setMiscSets(mSets || [])
 
+    const charMediaRows = await fetchAllRows(
+      'character_media',
+      'id, character_name, type, url, title, published, card_id',
+      q => q.order('created_at', { ascending: false })
+    )
+    const miscItemRows = await fetchAllRows(
+      'misc_items',
+      'id, public_id, type, url, title, published, sort_index, set_id',
+      q => q.order('created_at', { ascending: false })
+    )
+    const miscSetById = {}
+    for (const s of mSets || []) miscSetById[s.id] = s
+
+    const publishedLinkMap = {}
+    const addPub = (url, label) => {
+      if (!url) return
+      const u = String(url)
+      if (!publishedLinkMap[u]) publishedLinkMap[u] = []
+      if (!publishedLinkMap[u].includes(label)) publishedLinkMap[u].push(label)
+    }
+    for (const c of cardRows || []) {
+      if (!c.published) continue
+      const label = (`Card ${c.card_number || ''} ${c.name || ''}`).trim()
+      addPub(c.image_url, label + ' (front)')
+      addPub(c.back_image_url, label + ' (back)')
+      addPub(c.video_url, label + ' (video)')
+      addPub(c.poster_url, label + ' (poster)')
+    }
+    for (const m of charMediaRows || []) {
+      if (!m.published) continue
+      addPub(m.url, `Media · ${m.character_name || m.title || 'character'}`)
+    }
+    for (const m of miscItemRows || []) {
+      if (m.published === false) continue
+      const set = m.set_id ? miscSetById[m.set_id] : null
+      const setPart = set ? ` · ${set.name}` : ' · Standalone'
+      addPub(m.url, (`Misc Beauties ${m.public_id || ''}${setPart}`).trim())
+    }
+
+    const tagPublished = (item) => {
+      const links = publishedLinkMap[item.url] || []
+      if (!links.length) return item
+      return { ...item, linkedPublished: true, publishedLinks: links, protected: true }
+    }
+
     const fromChats = (msgMedia || [])
       .filter(m => m.content && m.content !== 'generating')
-      .map(m => ({
+      .map(m => tagPublished({
         key: 'msg_' + m.id,
         id: m.id,
         source: 'messages',
@@ -278,7 +315,7 @@ export default function Gallery() {
         size: m.size ?? null,
         created_at: m.created_at,
       }))
-    const fromGallery = (galMedia || []).map(g => ({
+    const fromGallery = (galMedia || []).map(g => tagPublished({
       key: 'gal_' + g.id,
       id: g.id,
       source: 'gallery_media',
@@ -782,22 +819,63 @@ export default function Gallery() {
     setExtendStatus('')
   }
 
+  const makeBannerThumb = async (imageUrl) => {
+    try {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      await new Promise((resolve, reject) => {
+        img.onload = resolve
+        img.onerror = reject
+        img.src = imageUrl
+      })
+      const maxW = 480
+      const scale = Math.min(1, maxW / img.naturalWidth)
+      const w = Math.max(1, Math.round(img.naturalWidth * scale))
+      const h = Math.max(1, Math.round(img.naturalHeight * scale))
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.72))
+      if (!blob) return null
+      const fileName = `thumb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`
+      const { error: upErr } = await supabase.storage
+        .from('character-images')
+        .upload(fileName, blob, { contentType: 'image/jpeg', upsert: false })
+      if (upErr) { console.warn('thumb upload', upErr); return null }
+      const { data: pub } = supabase.storage.from('character-images').getPublicUrl(fileName)
+      return pub?.publicUrl || null
+    } catch (err) {
+      console.warn('makeBannerThumb', err)
+      return null
+    }
+  }
+
   const toggleFavorite = async (item) => {
     if (item.source !== 'gallery_media') return
     const next = !item.is_favorite
 
-    // update on screen straight away
     setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, is_favorite: next } : m)))
     setSelected(prev => (prev && prev.key === item.key ? { ...prev, is_favorite: next } : prev))
 
+    const patch = { is_favorite: next }
+
+    if (next && item.type === 'image' && !item.thumbnail_url) {
+      const thumb = await makeBannerThumb(item.url)
+      if (thumb) {
+        patch.thumbnail_url = thumb
+        setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, thumbnail_url: thumb } : m)))
+        setSelected(prev => (prev && prev.key === item.key ? { ...prev, thumbnail_url: thumb } : prev))
+      }
+    }
+
     const { error } = await supabase
       .from('gallery_media')
-      .update({ is_favorite: next })
+      .update(patch)
       .eq('id', item.id)
 
     if (error) {
       alert('Could not update: ' + error.message)
-      // put it back
       setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, is_favorite: !next } : m)))
       setSelected(prev => (prev && prev.key === item.key ? { ...prev, is_favorite: !next } : prev))
     }
@@ -849,76 +927,6 @@ export default function Gallery() {
       alert('Error: ' + err.message)
     }
     setTransforming(false)
-  }
-
-  const openImage3D = (item) => {
-    setShow3DFromImage(item)
-    setSelected(null)
-  }
-
-  const run3DFromImage = async () => {
-    const item = show3DFromImage
-    if (!item || busy3D) return
-    setShow3DFromImage(null)
-    setBusy3D(true)
-    setAnimating(true)
-    try {
-      const res = await fetch('/api/generate-3d', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: item.url, enablePbr: true, enableGeometry: false, provider: imgProvider3D }),
-      })
-      const data = await res.json()
-      if (!data.modelUrl) {
-        alert('Error: ' + (data.error || 'failed'))
-        setBusy3D(false); setAnimating(false)
-        return
-      }
-      await saveWithRetry({
-        type: 'model',
-        url: data.modelUrl,
-        prompt: item.prompt || '3D from image',
-        thumbnail_url: data.thumbnailUrl || null,
-      }, 'Your 3D model')
-      load()
-    } catch (err) {
-      alert('Error: ' + err.message)
-    }
-    setBusy3D(false)
-    setAnimating(false)
-  }
-
-  const run3D = async () => {
-    if (busy3D) return
-    if (!prompt3D.trim()) { alert('Describe the 3D object you want'); return }
-    setShow3D(false)
-    setBusy3D(true)
-    setAnimating(true)  // reuse the generic "working" banner
-    try {
-      const res = await fetch('/api/generate-3d', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt3D, enablePbr, enableGeometry, provider: provider3D }),
-      })
-      const data = await res.json()
-      if (!data.modelUrl) {
-        alert('Error: ' + (data.error || 'failed'))
-        setBusy3D(false); setAnimating(false)
-        return
-      }
-      await saveWithRetry({
-        type: 'model',
-        url: data.modelUrl,
-        prompt: prompt3D,
-        thumbnail_url: data.thumbnailUrl || null,
-      }, 'Your 3D model')
-      setPrompt3D('')
-      load()
-    } catch (err) {
-      alert('Error: ' + err.message)
-    }
-    setBusy3D(false)
-    setAnimating(false)
   }
 
   const runT2V = async () => {
@@ -1158,9 +1166,12 @@ export default function Gallery() {
     }
     if (item.linkedPublished) {
       const links = (item.publishedLinks || []).join('\n• ')
+      const hasMisc = (item.publishedLinks || []).some(l => String(l).startsWith('Misc Beauties'))
       const ok = confirm(
         '⚠️ This file is used by PUBLISHED game content:\n\n• ' + links +
-        '\n\nDeleting it can break cards or media drops in the live game.\n\nDelete anyway?'
+        '\n\nDeleting it can break ' +
+        (hasMisc ? 'Misc Beauties shop items, ' : '') +
+        'cards, or media drops in the live game.\n\nDelete anyway?'
       )
       if (!ok) return
     } else if (!confirm('Delete this permanently?')) {
@@ -1253,8 +1264,7 @@ export default function Gallery() {
       if (m.source === 'cards') return false
       if (filter === 'images') return m.type === 'image'
       if (filter === 'videos') return m.type === 'video'
-      if (filter === 'models') return m.type === 'model'
-      return true
+            return true
     })
 
     if (favOnly) {
@@ -1314,9 +1324,6 @@ export default function Gallery() {
           <button onClick={() => setShowT2V(true)} className="bg-gray-800 hover:bg-gray-700 rounded-full px-3 py-2 text-sm font-semibold" title="Video from text">
             🎬 Text
           </button>
-          <button onClick={() => setShow3D(true)} className="bg-gray-800 hover:bg-gray-700 rounded-full px-3 py-2 text-sm font-semibold" title="3D model from text">
-            🧊 3D
-          </button>
           <button onClick={openCreate} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">
             + Create
           </button>
@@ -1332,7 +1339,6 @@ export default function Gallery() {
         {tab('all', 'All')}
         {tab('images', 'Images')}
         {tab('videos', 'Videos')}
-        {tab('models', '3D')}
         {tab('cards', 'Cards')}
       </div>
 
@@ -1414,17 +1420,6 @@ export default function Gallery() {
               className="relative aspect-square rounded-xl overflow-hidden bg-gray-900">
               {item.type === 'image' ? (
                 <img src={item.url} alt="" className="w-full h-full object-cover" />
-              ) : item.type === 'model' ? (
-                <>
-                  {item.thumbnail_url ? (
-                    <img src={item.thumbnail_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
-                      <span className="text-3xl text-gray-600">🧊</span>
-                    </div>
-                  )}
-                  <span className="absolute bottom-1.5 right-1.5 bg-black/70 rounded-full px-2 py-0.5 text-[10px]">🧊 3D</span>
-                </>
               ) : (
                 <>
                   {item.poster_url ? (
@@ -1444,7 +1439,9 @@ export default function Gallery() {
               )}
               {item.linkedPublished && item.source !== 'cards' && (
                 <span className="absolute top-1.5 left-1.5 bg-pink-600/90 rounded-full px-2 py-0.5 text-[9px] tracking-wide font-semibold">
-                  📡 Live
+                  {(item.publishedLinks || []).some(l => String(l).startsWith('Misc Beauties'))
+                    ? ((item.publishedLinks || []).length === 1 ? '✨ Misc' : '📡 Live · Misc')
+                    : '📡 Live'}
                 </span>
               )}
               {item.source === 'cards' && item.published && (
@@ -1656,74 +1653,7 @@ export default function Gallery() {
         </div>
       )}
 
-      {/* 3D FROM IMAGE: provider choice */}
-      {show3DFromImage && (
-        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-5 z-[65]">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-sm">
-            <h2 className="font-bold text-lg mb-2">Make 3D Model</h2>
-            <p className="text-xs text-gray-500 mb-3">Takes a couple of minutes.</p>
-
-            <img src={show3DFromImage.url} alt="" className="w-24 rounded-lg mb-3 border border-gray-700" />
-
-            <label className="block text-xs text-gray-400 mb-1">Provider</label>
-            <select value={imgProvider3D} onChange={e => setImgProvider3D(e.target.value)}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500">
-              <option value="hunyuan">Hunyuan 3D Rapid</option>
-              <option value="seed3d">Seed3D v2.0 (higher detail)</option>
-            </select>
-            <p className="text-[10px] text-gray-600 mb-4">
-              Works best on a simple background with the subject filling most of the frame.
-            </p>
-
-            <div className="flex gap-2">
-              <button onClick={() => setShow3DFromImage(null)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
-              <button onClick={run3DFromImage} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Generate</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TEXT TO 3D */}
-      {show3D && (
-        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-5 z-[60]">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg">
-            <h2 className="font-bold text-lg mb-2">3D Model from Text</h2>
-            <p className="text-xs text-gray-500 mb-3">
-              Generates a rotatable 3D model (GLB) from a description. Takes a couple of minutes.
-            </p>
-
-            <label className="block text-xs text-gray-400 mb-1">Describe the object</label>
-            <textarea value={prompt3D} onChange={e => setPrompt3D(e.target.value)} rows={3}
-              placeholder="e.g. a worn leather messenger bag with brass buckles"
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
-
-            <label className="block text-xs text-gray-400 mb-1">Provider</label>
-            <select value={provider3D} onChange={e => setProvider3D(e.target.value)}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
-              <option value="hunyuan">Hunyuan 3D Rapid</option>
-              <option value="tripo">Tripo H3.1</option>
-            </select>
-
-            <label className="flex items-center gap-2 text-xs text-gray-400 mb-2">
-              <input type="checkbox" checked={enablePbr} onChange={e => setEnablePbr(e.target.checked)} />
-              Realistic materials (PBR textures)
-            </label>
-            <label className="flex items-center gap-2 text-xs text-gray-400 mb-4">
-              <input type="checkbox" checked={enableGeometry} onChange={e => setEnableGeometry(e.target.checked)} />
-              Also generate an untextured mesh
-            </label>
-
-            <p className="text-[10px] text-gray-600 -mt-2 mb-4">price not listed</p>
-
-            <div className="flex gap-2">
-              <button onClick={() => setShow3D(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
-              <button onClick={run3D} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Generate</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* VIDEO EDIT */}
+{/* VIDEO EDIT */}
       {showVideoEdit && videoEditSource && (
         <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-[65] overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
@@ -2059,10 +1989,6 @@ export default function Gallery() {
 
             {selected.type === 'image' && (
               <>
-                <button onClick={() => openImage3D(selected)} disabled={busy3D}
-                  className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2">
-                  🧊 Make 3D Model
-                </button>
 
               </>
             )}
@@ -2092,7 +2018,11 @@ export default function Gallery() {
 
             {selected.linkedPublished && selected.source !== 'cards' && (
               <div className="mt-3 mb-1 rounded-lg border border-pink-800/50 bg-pink-950/40 px-3 py-2">
-                <p className="text-[11px] text-pink-300 font-semibold">📡 Used by published content</p>
+                <p className="text-[11px] text-pink-300 font-semibold">
+                  {(selected.publishedLinks || []).some(l => String(l).startsWith('Misc Beauties'))
+                    ? '✨ Published to Misc Beauties'
+                    : '📡 Used by published content'}
+                </p>
                 <ul className="mt-1 text-[10px] text-gray-400 list-disc list-inside">
                   {(selected.publishedLinks || []).map((l, i) => (
                     <li key={i}>{l}</li>
