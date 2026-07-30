@@ -26,6 +26,7 @@ export default function Game() {
   const splashRef = useRef(null)
   const [bannerVideoDone, setBannerVideoDone] = useState({}) // tabKey -> true after intro played
   const [ownedCards, setOwnedCards] = useState([]) // player_cards joined with card data
+  const [ownedMedia, setOwnedMedia] = useState([]) // player_media joined with character_media
   const [buying, setBuying] = useState(false)
   const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
   const revealVideoRef = useRef(null)
@@ -205,6 +206,13 @@ export default function Game() {
       .eq('owner_id', 1)
       .order('created_at', { ascending: false })
     setOwnedCards(owned || [])
+
+    const { data: ownedM } = await supabase
+      .from('player_media')
+      .select('id, instance_id, media_id, purchase_price, edition_number, edition_total, sale_count, current_sale_price, acquired_via, created_at, character_media(id, character_name, type, url, title, edition_size)')
+      .eq('owner_id', 1)
+      .order('created_at', { ascending: false })
+    setOwnedMedia(ownedM || [])
 
     setLoading(false)
   }
@@ -434,6 +442,13 @@ export default function Game() {
       }
 
       setTokens(newBalance)
+      setOwnedMedia(prev => [
+        ...won.map(w => ({
+          ...w.row,
+          character_media: w.media,
+        })),
+        ...prev,
+      ])
       const last = won[won.length - 1]
       const skin = randomSkin()
       setReveal({
@@ -611,54 +626,82 @@ export default function Game() {
           <div className="max-w-lg mx-auto px-4">
             <p className="text-xs text-gray-500 mb-4">
               Your Harem · {ownedCards.length} card{ownedCards.length === 1 ? '' : 's'}
+              {ownedMedia.length > 0 ? ` · ${ownedMedia.length} media` : ''}
             </p>
-            {ownedCards.length === 0 ? (
+            {ownedCards.length === 0 && ownedMedia.length === 0 ? (
               <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-8 text-center">
                 <p className="text-3xl mb-2">💎</p>
                 <p className="text-sm text-gray-400">Your collection is empty</p>
-                <p className="text-xs text-gray-600 mt-1">Buy mystery cards in the Shop</p>
+                <p className="text-xs text-gray-600 mt-1">Buy mystery cards or media in the Shop</p>
                 <button onClick={() => openTab('shop')} className="mt-4 text-sm text-pink-400 hover:text-pink-300 font-semibold">
                   Go to Shop →
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {ownedCards.map(o => {
-                  const c = o.cards || {}
-                  return (
-                    <div key={o.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-                      {c.image_url ? (
-                        <img src={c.image_url} alt={c.name || ''} className="w-full aspect-[3/4] object-cover object-top" />
-                      ) : (
-                        <div className="w-full aspect-[3/4] bg-gray-800" />
-                      )}
-                      <div className="p-2">
-                        <p className="text-xs font-semibold truncate">{c.name || 'Card'}{c.series_name ? ' 👑' : ''}</p>
-                        <p className="text-[10px] text-gray-500 capitalize">{c.rarity || '—'}</p>
-                        {o.edition_number && o.edition_total ? (
-                          <p className="text-[10px] text-amber-300/90 mt-0.5">
-                            {o.edition_number} of {o.edition_total}
-                          </p>
-                        ) : null}
-                        <p className="text-[9px] text-pink-400/80 font-mono mt-1">{o.instance_id}</p>
-                        <p className="text-[9px] text-gray-600">Paid {Number(o.purchase_price || 0).toLocaleString()} tok</p>
-                        {(() => {
-                          const bounds = cardSaleBounds(c.rarity, !!c.series_name)
-                          const saleCount = o.sale_count || 0
-                          const cur = o.current_sale_price != null
-                            ? o.current_sale_price
-                            : currentSalePrice(bounds.base, bounds.max, saleCount)
-                          return (
-                            <p className="text-[9px] text-emerald-400/90 mt-0.5">
-                              Trade value {cur} · max {bounds.max}
-                            </p>
-                          )
-                        })()}
-                      </div>
+              <>
+                {ownedCards.length > 0 && (
+                  <>
+                    <p className="text-[10px] tracking-[0.15em] uppercase text-gray-500 mb-2">Cards</p>
+                    <div className="grid grid-cols-2 gap-3 mb-6">
+                      {ownedCards.map(o => {
+                        const c = o.cards || {}
+                        return (
+                          <div key={o.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                            {c.image_url ? (
+                              <img src={c.image_url} alt={c.name || ''} className="w-full aspect-[3/4] object-cover object-top" />
+                            ) : (
+                              <div className="w-full aspect-[3/4] bg-gray-800" />
+                            )}
+                            <div className="p-2">
+                              <p className="text-xs font-semibold truncate">{c.name || 'Card'}{c.series_name ? ' 👑' : ''}</p>
+                              <p className="text-[10px] text-gray-500 capitalize">{c.rarity || '—'}</p>
+                              {o.edition_number && o.edition_total ? (
+                                <p className="text-[10px] text-amber-300/90 mt-0.5">
+                                  {o.edition_number} of {o.edition_total}
+                                </p>
+                              ) : null}
+                              <p className="text-[9px] text-pink-400/80 font-mono mt-1">{o.instance_id}</p>
+                              <p className="text-[9px] text-gray-600">Paid {Number(o.purchase_price || 0).toLocaleString()} BB</p>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
-                  )
-                })}
-              </div>
+                  </>
+                )}
+                {ownedMedia.length > 0 && (
+                  <>
+                    <p className="text-[10px] tracking-[0.15em] uppercase text-gray-500 mb-2">Character media</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {ownedMedia.map(o => {
+                        const m = o.character_media || {}
+                        return (
+                          <div key={o.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                            {m.type === 'video' ? (
+                              <video src={m.url} className="w-full aspect-[3/4] object-cover" muted playsInline />
+                            ) : m.url ? (
+                              <img src={m.url} alt="" className="w-full aspect-[3/4] object-cover object-top" />
+                            ) : (
+                              <div className="w-full aspect-[3/4] bg-gray-800" />
+                            )}
+                            <div className="p-2">
+                              <p className="text-xs font-semibold truncate">{m.title || m.character_name || 'Media'}</p>
+                              <p className="text-[10px] text-gray-500 capitalize">{m.type || 'media'} · {m.character_name || ''}</p>
+                              {o.edition_number && o.edition_total ? (
+                                <p className="text-[10px] text-amber-300/90 mt-0.5">
+                                  {o.edition_number} of {o.edition_total}
+                                </p>
+                              ) : null}
+                              <p className="text-[9px] text-pink-400/80 font-mono mt-1">{o.instance_id}</p>
+                              <p className="text-[9px] text-gray-600">Paid {Number(o.purchase_price || 0).toLocaleString()} BB</p>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -825,7 +868,13 @@ export default function Game() {
                 )}
                 <p className="text-[11px] text-pink-400 font-mono mt-2">{reveal.instanceId}</p>
               </div>
-              <button onClick={closeReveal} className="w-full mt-5 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold">
+              <button
+                onClick={() => { closeReveal(); openTab('collection') }}
+                className="w-full mt-5 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold"
+              >
+                View in Harem
+              </button>
+              <button onClick={closeReveal} className="w-full mt-2 text-sm text-gray-400 hover:text-white py-2">
                 Keep
               </button>
             </div>
