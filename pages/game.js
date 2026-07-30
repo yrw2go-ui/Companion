@@ -492,10 +492,57 @@ export default function Game() {
   }
 
   const finishReveal = () => {
-    setReveal(prev => prev ? { ...prev, phase: 'show' } : null)
+    setReveal(prev => {
+      if (!prev) return null
+      const items = prev.packItems || []
+      if (items.length > 1) {
+        const first = items[0]
+        return {
+          ...prev,
+          phase: 'show',
+          packIndex: 0,
+          ...(first.kind === 'media'
+            ? { kind: 'media', media: first.media, instanceId: first.instanceId, editionNumber: first.editionNumber, editionTotal: first.editionTotal, trim: first.trim }
+            : { kind: 'card', card: first.card, instanceId: first.instanceId, editionNumber: first.editionNumber, editionTotal: first.editionTotal }),
+        }
+      }
+      return { ...prev, phase: 'show' }
+    })
   }
 
   const closeReveal = () => setReveal(null)
+
+  const stepPackReveal = (dir) => {
+    setReveal(prev => {
+      if (!prev?.packItems?.length) return prev
+      const n = prev.packItems.length
+      const next = (prev.packIndex + dir + n) % n
+      const item = prev.packItems[next]
+      if (item.kind === 'media') {
+        return {
+          ...prev,
+          packIndex: next,
+          kind: 'media',
+          media: item.media,
+          instanceId: item.instanceId,
+          editionNumber: item.editionNumber,
+          editionTotal: item.editionTotal,
+          trim: item.trim,
+          price: item.price ?? prev.price,
+        }
+      }
+      return {
+        ...prev,
+        packIndex: next,
+        kind: 'card',
+        card: item.card,
+        instanceId: item.instanceId,
+        editionNumber: item.editionNumber,
+        editionTotal: item.editionTotal,
+        price: item.price ?? prev.price,
+      }
+    })
+  }
 
   const strip = marquee.length ? [...marquee, ...marquee] : []
 
@@ -714,7 +761,7 @@ export default function Game() {
                               ) : m.url ? (
                                 <img src={m.url} alt="" className="w-full h-full object-cover object-top" />
                               ) : null}
-                              <img src="/ga-mark.png" alt="" className="absolute top-1.5 right-1.5 h-5 w-5 object-contain drop-shadow pointer-events-none" />
+                              <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-12 w-12 object-contain drop-shadow-lg pointer-events-none z-[5]" />
                             </div>
                             <div className="p-2">
                               <p className="text-xs font-semibold truncate">{m.title || m.character_name || 'Media'}</p>
@@ -900,9 +947,21 @@ export default function Game() {
                 )}
                 <p className="text-[11px] text-pink-400 font-mono mt-2">{reveal.instanceId}</p>
               </div>
+              {reveal.packItems?.length > 1 && (
+                <div className="flex gap-2 mt-4">
+                  <button type="button" onClick={() => stepPackReveal(-1)}
+                    className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-xl py-3 font-semibold text-sm">
+                    ← Prev
+                  </button>
+                  <button type="button" onClick={() => stepPackReveal(1)}
+                    className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-xl py-3 font-semibold text-sm">
+                    Next →
+                  </button>
+                </div>
+              )}
               <button
                 onClick={() => { closeReveal(); openTab('collection') }}
-                className="w-full mt-5 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold"
+                className="w-full mt-3 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold"
               >
                 View in Harem
               </button>
@@ -934,17 +993,29 @@ export default function Game() {
                 <p className="text-[10px] text-gray-500 mt-1">
                   Acquired for {Number(reveal.price || 0).toLocaleString()} BabeBucks
                 </p>
-                {reveal.packSize > 1 && (
+                {reveal.packItems?.length > 1 && (
                   <p className="text-[10px] text-pink-300 mt-2">
-                    Pack: {reveal.packWon}/{reveal.packSize} cards added to Harem
+                    Card {(reveal.packIndex ?? 0) + 1} of {reveal.packItems.length}
                   </p>
                 )}
               </div>
+              {reveal.packItems?.length > 1 && (
+                <div className="flex gap-2 mt-4">
+                  <button type="button" onClick={() => stepPackReveal(-1)}
+                    className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-xl py-3 font-semibold text-sm">
+                    ← Prev
+                  </button>
+                  <button type="button" onClick={() => stepPackReveal(1)}
+                    className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-xl py-3 font-semibold text-sm">
+                    Next →
+                  </button>
+                </div>
+              )}
               <button
                 onClick={() => { closeReveal(); openTab('collection') }}
-                className="w-full mt-5 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold"
+                className="w-full mt-3 bg-pink-600 hover:bg-pink-500 rounded-xl py-3 font-semibold"
               >
-                Add to Harem
+                View Harem
               </button>
               <button onClick={closeReveal} className="w-full mt-2 text-sm text-gray-400 hover:text-white py-2">
                 Close
@@ -1070,7 +1141,7 @@ export default function Game() {
                   ) : (
                     <img src={m.url} alt="" className="w-full max-h-[70vh] object-contain" />
                   )}
-                  <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-8 w-8 object-contain drop-shadow pointer-events-none" />
+                  <img src="/ga-mark.png" alt="" className="absolute top-3 right-3 h-16 w-16 object-contain drop-shadow-lg pointer-events-none z-[5]" />
                 </div>
                 <div className="mt-4 text-center">
                   <p className="text-lg font-bold">{m.title || m.character_name || 'Media'}</p>

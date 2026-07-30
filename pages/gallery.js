@@ -152,24 +152,48 @@ export default function Gallery() {
   useEffect(() => { load() }, [])
 
   // saves a completed generation to gallery_media with retry.
-  // if the media exists (generation succeeded) but the save itself fails,
-  // this surfaces the direct URL instead of a bare error, so nothing is lost.
+  // Atlas already uploaded the file; this only writes the DB row so it appears in Gallery.
   const saveWithRetry = async (row, label) => {
-    const attempt = async () => {
-      const { error } = await supabase.from('gallery_media').insert([row])
-      return !error
+    // drop undefined/null optional fields that can trip strict schemas
+    const clean = {}
+    for (const [k, v] of Object.entries(row || {})) {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
     }
-    if (await attempt()) return true
-    // one retry after a short pause, in case it was a transient network blip
-    await new Promise(r => setTimeout(r, 1500))
-    if (await attempt()) return true
+    if (row?.url) clean.url = row.url
+    if (row?.type) clean.type = row.type
 
+    let lastErr = null
+    for (let i = 0; i < 3; i++) {
+      const { data, error } = await supabase
+        .from('gallery_media')
+        .insert([clean])
+        .select()
+        .single()
+      if (!error && data) {
+        // optimistically prepend so UI updates even before full reload
+        setMedia(prev => {
+          const entry = {
+            ...data,
+            source: 'gallery_media',
+            created_at: data.created_at || new Date().toISOString(),
+          }
+          return [entry, ...(prev || []).filter(x => x.url !== data.url)]
+        })
+        return data
+      }
+      lastErr = error
+      console.error('gallery_media insert attempt', i + 1, error)
+      await new Promise(r => setTimeout(r, 800 * (i + 1)))
+    }
+
+    const detail = lastErr?.message || lastErr?.code || 'unknown error'
     alert(
-      `${label} was created, but saving it to the gallery failed (likely a connection hiccup). ` +
-      `Nothing was lost — here is the direct link:\n\n${row.url}\n\n` +
-      `You can also find it later via Settings \u2192 Import Orphaned Media.`
+      `${label} was created in storage, but the gallery row failed to save.\n\n` +
+      `Error: ${detail}\n\n` +
+      `Direct link (not lost):\n${row.url}\n\n` +
+      `Use Settings → Import Orphaned Media, or fix RLS on gallery_media.`
     )
-    return false
+    return null
   }
 
   // generic pager for any table read that could exceed Supabase's 1000-row cap
@@ -1029,7 +1053,16 @@ export default function Gallery() {
       alert('This is card art. Delete or replace it from the Cards page.')
       return
     }
-    if (!confirm('Delete this permanently?')) return
+    if (item.linkedPublished) {
+      const links = (item.publishedLinks || []).join('\n• ')
+      const ok = confirm(
+        '⚠️ This file is used by PUBLISHED game content:\n\n• ' + links +
+        '\n\nDeleting it can break cards or media drops in the live game.\n\nDelete anyway?'
+      )
+      if (!ok) return
+    } else if (!confirm('Delete this permanently?')) {
+      return
+    }
 
     try {
       const res = await fetch('/api/delete-gallery-item', {
@@ -1304,6 +1337,16 @@ export default function Gallery() {
               {item.source === 'cards' && (
                 <span className="absolute top-1.5 left-1.5 bg-black/75 rounded-full px-2 py-0.5 text-[9px] tracking-wide">
                   🃏 {item.cardSide}
+                </span>
+              )}
+              {item.linkedPublished && item.source !== 'cards' && (
+                <span className="absolute top-1.5 left-1.5 bg-pink-600/90 rounded-full px-2 py-0.5 text-[9px] tracking-wide font-semibold">
+                  📡 Live
+                </span>
+              )}
+              {item.source === 'cards' && item.published && (
+                <span className="absolute bottom-1.5 left-1.5 bg-pink-600/90 rounded-full px-2 py-0.5 text-[9px] font-semibold">
+                  Live
                 </span>
               )}
               {item.is_favorite && (
@@ -1944,12 +1987,27 @@ export default function Gallery() {
               </button>
             )}
 
+            {selected.linkedPublished && selected.source !== 'cards' && (
+              <div className="mt-3 mb-1 rounded-lg border border-pink-800/50 bg-pink-950/40 px-3 py-2">
+                <p className="text-[11px] text-pink-300 font-semibold">📡 Used by published content</p>
+                <ul className="mt-1 text-[10px] text-gray-400 list-disc list-inside">
+                  {(selected.publishedLinks || []).map((l, i) => (
+                    <li key={i}>{l}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {selected.source === 'cards' && selected.published && (
+              <p className="text-[11px] text-pink-300 text-center mt-3 mb-1 font-semibold">📡 Published card art</p>
+            )}
             {selected.source === 'cards' ? (
               <p className="text-[11px] text-gray-500 text-center mt-3 mb-1">
                 This belongs to a card. Delete or replace it from the Cards page.
               </p>
             ) : (
-              <button onClick={() => remove(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">Delete</button>
+              <button onClick={() => remove(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">
+                {selected.linkedPublished ? 'Delete (breaks live content)…' : 'Delete'}
+              </button>
             )}
             <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
           </div>
