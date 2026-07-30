@@ -242,13 +242,14 @@ export default function Game() {
   }
 
   const cardsWithStock = async () => {
-    // published cards that still have remaining print run
-    const cards = publishedCards.length
-      ? publishedCards
-      : (await supabase.from('cards').select('id, name, card_number, image_url, back_image_url, video_url, poster_url, published, rarity, edition_size, series_name, title').eq('published', true)).data || []
+    // Always refresh published cards from DB so the pool is full & current
+    const { data: cards } = await supabase
+      .from('cards')
+      .select('id, name, card_number, image_url, back_image_url, video_url, poster_url, published, rarity, edition_size, series_name, title, description, flavor_text, stats')
+      .eq('published', true)
 
     const result = []
-    for (const c of cards) {
+    for (const c of cards || []) {
       const total = c.edition_size || 500
       const { count } = await supabase
         .from('player_cards')
@@ -260,30 +261,47 @@ export default function Game() {
     return result
   }
 
+  // Weight each individual card by its rarity odds for this tier (not pick rarity then only one card)
+  const pickCardWeighted = (stock, tier) => {
+    const tierW = TIER_WEIGHTS[tier] || TIER_WEIGHTS.low
+    const entries = stock.map(c => {
+      const r = String(c.rarity || 'common').toLowerCase()
+      let w = Number(tierW[r])
+      if (!w || w <= 0) w = 0.5 // still allow unknown rarities a tiny chance
+      // slight boost when more print run remains so sold-out-ish cards are less likely
+      const remain = Math.max(1, (c._total || 500) - (c._sold || 0))
+      w *= Math.log10(9 + remain)
+      return { card: c, weight: w }
+    }).filter(e => e.weight > 0)
+
+    if (!entries.length) return stock[Math.floor(Math.random() * stock.length)]
+
+    const total = entries.reduce((s, e) => s + e.weight, 0)
+    let r = Math.random() * total
+    for (const e of entries) {
+      r -= e.weight
+      if (r <= 0) return e.card
+    }
+    return entries[entries.length - 1].card
+  }
+
   const drawOneCard = async (tier, unitPrice) => {
     const stock = await cardsWithStock()
-    if (!stock.length) return { error: 'Shop is sold out — no edition stock left.' }
-
-    const weights = { ...TIER_WEIGHTS[tier] }
-    for (const r of Object.keys(weights)) {
-      if (!stock.some(c => String(c.rarity || 'common').toLowerCase() === r)) weights[r] = 0
-    }
-    if (Object.values(weights).every(w => w <= 0)) {
-      for (const r of Object.keys(weights)) weights[r] = 1
+    if (!stock.length) return { error: 'Shop is sold out — no edition stock left. Publish more cards in Studio.' }
+    if (stock.length === 1) {
+      // only one published card with stock — will always be that character
+      console.warn('Mystery draw pool size 1:', stock[0].name)
     }
 
-    const pickedRarity = weightedPick(weights)
-    let pool = stock.filter(c => String(c.rarity || 'common').toLowerCase() === pickedRarity)
-    if (!pool.length) pool = stock
-    const card = pool[Math.floor(Math.random() * pool.length)]
-    // re-count sold for accuracy
+    const card = pickCardWeighted(stock, tier)
+
     const { count } = await supabase
       .from('player_cards')
       .select('id', { count: 'exact', head: true })
       .eq('card_id', card.id)
     const editionNumber = (count || 0) + 1
     const editionTotal = card.edition_size || 500
-    if (editionNumber > editionTotal) return { error: 'That card just sold out.' }
+    if (editionNumber > editionTotal) return { error: 'That card just sold out. Try again.' }
 
     const instanceId = makeInstanceId()
     const bounds = cardSaleBounds(card.rarity, !!card.series_name)
@@ -415,7 +433,7 @@ export default function Game() {
     return { row, media: m, instanceId, editionNumber, editionTotal, trim }
   }
 
-  const buyMedia = async (qty = 1) => {
+  const buyMedia = async (qty = 1, skinOverride = null) => {
     if (buying || reveal) return
     const price = qty >= MEDIA_MULTI_QTY ? MEDIA_MULTI_PRICE : MEDIA_SINGLE_PRICE * qty
     const unit = Math.floor(price / qty)
@@ -452,7 +470,8 @@ export default function Game() {
         ...prev,
       ])
       const last = won[won.length - 1]
-      const skin = randomSkin()
+      // Match the shop tile animation (or random if not passed)
+      const skin = skinOverride || randomSkin()
       setReveal({
         phase: 'anim',
         kind: 'media',
@@ -787,11 +806,11 @@ export default function Game() {
             </p>
             <div className="space-y-2 mb-4">
               <button
-                onClick={() => buyMedia(1)}
+                onClick={() => buyMedia(1, MYSTERY_SKINS[3])}
                 disabled={buying}
                 className="w-full flex gap-3 items-center text-left bg-gray-900 border border-pink-900/40 rounded-2xl p-3 disabled:opacity-50"
               >
-                <img src="/mystery-card-4.jpg" alt="" className="w-14 rounded-lg object-cover aspect-[3/4]" />
+                <img src={MYSTERY_SKINS[3].image} alt="" className="w-14 rounded-lg object-cover aspect-[3/4]" />
                 <div className="flex-1">
                   <p className="font-bold text-sm">Random Media · 1 qty</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Image or video · numbered edition</p>
@@ -799,11 +818,11 @@ export default function Game() {
                 </div>
               </button>
               <button
-                onClick={() => buyMedia(MEDIA_MULTI_QTY)}
+                onClick={() => buyMedia(MEDIA_MULTI_QTY, MYSTERY_SKINS[4])}
                 disabled={buying}
                 className="w-full flex gap-3 items-center text-left bg-gray-900 border border-pink-900/40 rounded-2xl p-3 disabled:opacity-50"
               >
-                <img src="/mystery-card-5.jpg" alt="" className="w-14 rounded-lg object-cover aspect-[3/4]" />
+                <img src={MYSTERY_SKINS[4].image} alt="" className="w-14 rounded-lg object-cover aspect-[3/4]" />
                 <div className="flex-1">
                   <p className="font-bold text-sm">Media Multi · 3 qty</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Three random drops · better rate</p>
