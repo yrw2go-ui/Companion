@@ -125,6 +125,15 @@ export default function Cards() {
   const [conceptRarity, setConceptRarity] = useState('random')
   const [drafting, setDrafting] = useState(false)
   const [draft, setDraft] = useState(null)
+  // 'generate' = AI prompts | 'gallery' = pick existing gallery images
+  const [createArtSource, setCreateArtSource] = useState('generate')
+  const [draftFrontUrl, setDraftFrontUrl] = useState('')
+  const [draftBackUrl, setDraftBackUrl] = useState('')
+  // gallery image picker overlay
+  const [galleryPicker, setGalleryPicker] = useState(null) // 'create-front' | 'create-back' | 'edit-front' | 'edit-back' | null
+  const [galleryPool, setGalleryPool] = useState([])
+  const [galleryPoolLoading, setGalleryPoolLoading] = useState(false)
+  const [galleryPoolSearch, setGalleryPoolSearch] = useState('')
   const [negative, setNegative] = useState(DEFAULT_NEGATIVE)
   const [size, setSize] = useState('768*1024')
   const [artStyle, setArtStyle] = useState((ART_STYLES.find(s => s.label === 'Studio Beauty') || ART_STYLES[1]).value)
@@ -520,6 +529,119 @@ export default function Cards() {
     return res.json()
   }
 
+
+  const loadGalleryPool = async () => {
+    setGalleryPoolLoading(true)
+    try {
+      let rows = []
+      let offset = 0
+      while (true) {
+        const { data: page, error } = await supabase
+          .from('gallery_media')
+          .select('id, url, prompt, type, created_at, thumbnail_url')
+          .eq('type', 'image')
+          .order('created_at', { ascending: false })
+          .range(offset, offset + 199)
+        if (error || !page || page.length === 0) break
+        rows = rows.concat(page)
+        if (page.length < 200) break
+        offset += 200
+        if (offset >= 600) break // soft cap for picker UI
+      }
+      setGalleryPool(rows)
+    } catch (err) {
+      console.error(err)
+      setGalleryPool([])
+    }
+    setGalleryPoolLoading(false)
+  }
+
+  const openGalleryPicker = async (target) => {
+    setGalleryPicker(target)
+    setGalleryPoolSearch('')
+    if (galleryPool.length === 0) await loadGalleryPool()
+  }
+
+  const applyGalleryPick = async (url) => {
+    if (!galleryPicker || !url) return
+    const target = galleryPicker
+    setGalleryPicker(null)
+
+    if (target === 'create-front') {
+      setDraftFrontUrl(url)
+      return
+    }
+    if (target === 'create-back') {
+      setDraftBackUrl(url)
+      return
+    }
+    if (target === 'edit-front' || target === 'edit-back') {
+      if (!editing) return
+      const which = target === 'edit-front' ? 'front' : 'back'
+      const oldUrl = which === 'front' ? editing.image_url : editing.back_image_url
+      const patch = which === 'front'
+        ? { image_url: url }
+        : { back_image_url: url }
+      const { error } = await supabase.from('cards').update(patch).eq('id', editing.id)
+      if (error) { alert('Save error: ' + error.message); return }
+      // Do not delete gallery source files — only drop card-owned storage if different path
+      if (oldUrl && oldUrl !== url) {
+        const f = oldUrl.split('/character-images/')[1]
+        // only remove if it looks generated for cards (optional — skip to avoid nuking gallery assets)
+        // leave storage alone when swapping from gallery
+      }
+      setEditing({ ...editing, ...patch })
+      if (selected?.id === editing.id) setSelected(prev => prev ? { ...prev, ...patch } : prev)
+      loadCards()
+    }
+  }
+
+  const i2iSide = async (which) => {
+    if (!editing || regenProgress) return
+    const src = which === 'front' ? editing.image_url : editing.back_image_url
+    if (!src) { alert('No existing ' + which + ' image to edit'); return }
+    const promptText = which === 'front' ? editing.image_prompt : editing.back_image_prompt
+    if (!promptText?.trim()) { alert('Add an art prompt describing the change'); return }
+
+    setRegenProgress(`I2I editing ${which}...`)
+    try {
+      const finalPrompt = which === 'back' ? withBackFraming(promptText) : promptText
+      const res = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: withStyle(finalPrompt, editStyle),
+          referenceImageUrl: src,
+          model: 'alibaba/wan-2.7-pro/image-edit',
+          negativePrompt: editNegative,
+        }),
+      })
+      const result = await res.json()
+      if (!result.imageUrl) { alert('Error: ' + (result.error || 'failed')); setRegenProgress(''); return }
+
+      const oldUrl = src
+      const patch = which === 'front'
+        ? { image_url: result.imageUrl, seed: result.seed ?? null }
+        : { back_image_url: result.imageUrl, back_seed: result.seed ?? null }
+
+      const { error } = await supabase.from('cards').update(patch).eq('id', editing.id)
+      if (error) { alert('Save error: ' + error.message); setRegenProgress(''); return }
+
+      if (oldUrl && oldUrl !== result.imageUrl) {
+        const f = oldUrl.split('/character-images/')[1]
+        // keep gallery originals; only remove if not also used as a gallery URL — skip safe
+      }
+
+      setEditing({ ...editing, ...patch })
+      if (selected?.id === editing.id) setSelected(prev => prev ? { ...prev, ...patch } : prev)
+      setRegenProgress('')
+      loadCards()
+    } catch (err) {
+      alert('Error: ' + err.message)
+      setRegenProgress('')
+    }
+  }
+
   const makeCardNumber = async (rarity) => {
     const code = treatOf(rarity).code
     // fill the lowest unused number for this rarity
@@ -541,18 +663,39 @@ export default function Cards() {
 
   const createCard = async () => {
     if (!draft || generating) return
-    if (!draft.image_prompt?.trim()) { alert('Front art prompt is required'); return }
+
+    const fromGallery = createArtSource === 'gallery'
+    if (fromGallery) {
+      if (!draftFrontUrl) { alert('Pick a front image from the gallery'); return }
+    } else {
+      if (!draft.image_prompt?.trim()) { alert('Front art prompt is required'); return }
+    }
+
     setGenerating(true)
     try {
-      setProgress('Generating front art...')
-      const front = await genImage(draft.image_prompt, seedInput, negative, size, artStyle)
-      if (!front.imageUrl) { alert('Front image error: ' + (front.error || 'failed')); setGenerating(false); setProgress(''); return }
+      let frontUrl = null
+      let frontSeed = null
+      let backUrl = null
+      let backSeed = null
 
-      let back = { imageUrl: null, seed: null }
-      if (draft.back_image_prompt?.trim()) {
-        setProgress('Generating back art...')
-        back = await genImage(withBackFraming(draft.back_image_prompt), '', negative, size, artStyle)
-        if (!back.imageUrl) { alert('Back image error: ' + (back.error || 'failed')); setGenerating(false); setProgress(''); return }
+      if (fromGallery) {
+        setProgress('Using gallery images...')
+        frontUrl = draftFrontUrl
+        backUrl = draftBackUrl || null
+      } else {
+        setProgress('Generating front art...')
+        const front = await genImage(draft.image_prompt, seedInput, negative, size, artStyle)
+        if (!front.imageUrl) { alert('Front image error: ' + (front.error || 'failed')); setGenerating(false); setProgress(''); return }
+        frontUrl = front.imageUrl
+        frontSeed = front.seed
+
+        if (draft.back_image_prompt?.trim()) {
+          setProgress('Generating back art...')
+          const back = await genImage(withBackFraming(draft.back_image_prompt), '', negative, size, artStyle)
+          if (!back.imageUrl) { alert('Back image error: ' + (back.error || 'failed')); setGenerating(false); setProgress(''); return }
+          backUrl = back.imageUrl
+          backSeed = back.seed
+        }
       }
 
       setProgress('Saving...')
@@ -567,20 +710,28 @@ export default function Cards() {
         rarity,
         card_number: cardNumber,
         stats: draft.stats || [],
-        image_url: front.imageUrl,
-        image_prompt: withStyle(draft.image_prompt, artStyle),
-        seed: front.seed,
-        back_image_url: back.imageUrl,
+        image_url: frontUrl,
+        image_prompt: draft.image_prompt ? withStyle(draft.image_prompt, artStyle) : (draft.image_prompt || null),
+        seed: frontSeed,
+        back_image_url: backUrl,
         back_image_prompt: draft.back_image_prompt ? withStyle(draft.back_image_prompt, artStyle) : null,
-        back_seed: back.seed,
-        negative_prompt: negative,
-        image_model: imageModel,
+        back_seed: backSeed,
+        negative_prompt: fromGallery ? null : negative,
+        image_model: fromGallery ? 'gallery' : imageModel,
         edition_size: parseInt(draft.edition_size) || 500,
         series_name: (draft.series_name || '').trim() || null,
       }])
       if (error) { alert('Save error: ' + error.message); setGenerating(false); setProgress(''); return }
 
-      setShowCreate(false); setDraft(null); setConcept(''); setSeedInput(''); setNegative(DEFAULT_NEGATIVE); setVariantOf(null)
+      setShowCreate(false)
+      setDraft(null)
+      setConcept('')
+      setSeedInput('')
+      setNegative(DEFAULT_NEGATIVE)
+      setVariantOf(null)
+      setCreateArtSource('generate')
+      setDraftFrontUrl('')
+      setDraftBackUrl('')
       loadCards()
     } catch (err) { alert('Error: ' + err.message) }
     setGenerating(false); setProgress('')
@@ -1025,7 +1176,12 @@ export default function Cards() {
           <button onClick={() => router.push('/gallery')} className="text-gray-400 hover:text-white text-sm">Gallery</button>
         </div>
         <h1 className="text-xl font-bold tracking-wide">Cards</h1>
-        <button onClick={() => setShowCreate(true)} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">+ New</button>
+        <button onClick={() => {
+          setCreateArtSource('generate')
+          setDraftFrontUrl('')
+          setDraftBackUrl('')
+          setShowCreate(true)
+        }} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">+ New</button>
       </div>
 
       <div className="flex gap-2 mb-4">
@@ -1310,29 +1466,88 @@ export default function Cards() {
                   {ART_STYLES.map(s => <option key={s.label} value={s.value}>{s.label}</option>)}
                 </select>
 
-                {inputRow('Front Art Prompt', draft.image_prompt, v => setDraft({ ...draft, image_prompt: v }), true, 4)}
-                {inputRow('Back Art Prompt (optional)', draft.back_image_prompt, v => setDraft({ ...draft, back_image_prompt: v }), true, 4)}
-                {inputRow('Negative Prompt', negative, setNegative, true, 3)}
+                <div className="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setCreateArtSource('generate')}
+                    className={`flex-1 rounded-lg py-2 text-xs font-semibold ${createArtSource === 'generate' ? 'bg-purple-600' : 'bg-gray-800 text-gray-400'}`}
+                  >
+                    Generate art
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreateArtSource('gallery')}
+                    className={`flex-1 rounded-lg py-2 text-xs font-semibold ${createArtSource === 'gallery' ? 'bg-purple-600' : 'bg-gray-800 text-gray-400'}`}
+                  >
+                    From gallery
+                  </button>
+                </div>
 
-                <label className="block text-xs text-gray-400 mb-1">Aspect Ratio</label>
-                <select value={size} onChange={e => setSize(e.target.value)}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
-                  {SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
+                {createArtSource === 'gallery' ? (
+                  <>
+                    <p className="text-[10px] text-gray-500 mb-2">
+                      Pick existing Studio images for front/back. Name, stats, series, and the rest still apply.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1">Front</p>
+                        {draftFrontUrl ? (
+                          <img src={draftFrontUrl} alt="" className="w-full aspect-[3/4] object-cover object-top rounded-lg border border-gray-700 mb-1" />
+                        ) : (
+                          <div className="w-full aspect-[3/4] rounded-lg bg-gray-800 border border-dashed border-gray-600 mb-1" />
+                        )}
+                        <button type="button" onClick={() => openGalleryPicker('create-front')}
+                          className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-[11px] font-semibold">
+                          {draftFrontUrl ? 'Change front' : 'Pick front'}
+                        </button>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1">Back (optional)</p>
+                        {draftBackUrl ? (
+                          <img src={draftBackUrl} alt="" className="w-full aspect-[3/4] object-cover object-top rounded-lg border border-gray-700 mb-1" />
+                        ) : (
+                          <div className="w-full aspect-[3/4] rounded-lg bg-gray-800 border border-dashed border-gray-600 mb-1" />
+                        )}
+                        <button type="button" onClick={() => openGalleryPicker('create-back')}
+                          className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-[11px] font-semibold">
+                          {draftBackUrl ? 'Change back' : 'Pick back'}
+                        </button>
+                        {draftBackUrl && (
+                          <button type="button" onClick={() => setDraftBackUrl('')}
+                            className="w-full text-[10px] text-gray-500 hover:text-white mt-1">Clear back</button>
+                        )}
+                      </div>
+                    </div>
+                    {inputRow('Front note / prompt (optional)', draft.image_prompt, v => setDraft({ ...draft, image_prompt: v }), true, 2)}
+                    {inputRow('Back note / prompt (optional)', draft.back_image_prompt, v => setDraft({ ...draft, back_image_prompt: v }), true, 2)}
+                  </>
+                ) : (
+                  <>
+                    {inputRow('Front Art Prompt', draft.image_prompt, v => setDraft({ ...draft, image_prompt: v }), true, 4)}
+                    {inputRow('Back Art Prompt (optional)', draft.back_image_prompt, v => setDraft({ ...draft, back_image_prompt: v }), true, 4)}
+                    {inputRow('Negative Prompt', negative, setNegative, true, 3)}
 
-                {inputRow('Front Seed (optional)', seedInput, setSeedInput)}
+                    <label className="block text-xs text-gray-400 mb-1">Aspect Ratio</label>
+                    <select value={size} onChange={e => setSize(e.target.value)}
+                      className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+                      {SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
 
-                <label className="block text-xs text-gray-400 mb-1">Guidance: {guidance}</label>
-                <input type="range" min="1" max="10" step="0.5" value={guidance}
-                  onChange={e => setGuidance(parseFloat(e.target.value))}
-                  className="w-full mb-1 accent-purple-500" />
-                <p className="text-[10px] text-gray-600 mb-3">Low (2-4) = softer, more natural. High (6+) = rigid, can look over-cooked. Flux likes 3-4.</p>
+                    {inputRow('Front Seed (optional)', seedInput, setSeedInput)}
 
-                <label className="block text-xs text-gray-400 mb-1">Steps: {steps}</label>
-                <input type="range" min="10" max="50" step="1" value={steps}
-                  onChange={e => setSteps(parseInt(e.target.value))}
-                  className="w-full mb-1 accent-purple-500" />
-                <p className="text-[10px] text-gray-600 mb-3">More steps = more detail, slower. 28 is a good default.</p>
+                    <label className="block text-xs text-gray-400 mb-1">Guidance: {guidance}</label>
+                    <input type="range" min="1" max="10" step="0.5" value={guidance}
+                      onChange={e => setGuidance(parseFloat(e.target.value))}
+                      className="w-full mb-1 accent-purple-500" />
+                    <p className="text-[10px] text-gray-600 mb-3">Low (2-4) = softer, more natural. High (6+) = rigid, can look over-cooked. Flux likes 3-4.</p>
+
+                    <label className="block text-xs text-gray-400 mb-1">Steps: {steps}</label>
+                    <input type="range" min="10" max="50" step="1" value={steps}
+                      onChange={e => setSteps(parseInt(e.target.value))}
+                      className="w-full mb-1 accent-purple-500" />
+                    <p className="text-[10px] text-gray-600 mb-3">More steps = more detail, slower. 28 is a good default.</p>
+                  </>
+                )}
 
                 {progress && <p className="text-xs text-purple-400 mb-3">{progress}</p>}
 
@@ -1393,7 +1608,19 @@ export default function Cards() {
             )}
 
             <div className="border-t border-gray-800 pt-4 mt-2">
-              <p className="text-xs text-gray-400 mb-2 font-semibold">Regenerate Art</p>
+              <p className="text-xs text-gray-400 mb-2 font-semibold">Card art</p>
+
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <button type="button" onClick={() => openGalleryPicker('edit-front')} disabled={!!regenProgress}
+                  className="bg-pink-900/60 hover:bg-pink-800 disabled:opacity-50 rounded-lg py-2 text-[11px] font-semibold">
+                  Front from gallery
+                </button>
+                <button type="button" onClick={() => openGalleryPicker('edit-back')} disabled={!!regenProgress}
+                  className="bg-pink-900/60 hover:bg-pink-800 disabled:opacity-50 rounded-lg py-2 text-[11px] font-semibold">
+                  Back from gallery
+                </button>
+              </div>
+
               {inputRow('Front Art Prompt', editing.image_prompt, v => setEditing({ ...editing, image_prompt: v }), true, 3)}
               {inputRow('Back Art Prompt', editing.back_image_prompt, v => setEditing({ ...editing, back_image_prompt: v }), true, 3)}
               {inputRow('Negative Prompt', editNegative, setEditNegative, true, 2)}
@@ -1412,11 +1639,19 @@ export default function Cards() {
 
               {regenProgress && <p className="text-xs text-purple-400 mb-2">{regenProgress}</p>}
 
-              <div className="flex gap-2 mb-4">
+              <p className="text-[10px] text-gray-500 mb-1">AI regenerate (new image from prompt)</p>
+              <div className="flex gap-2 mb-2">
                 <button onClick={() => regenSide('front')} disabled={!!regenProgress}
-                  className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">Regenerate Front</button>
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">Regen Front</button>
                 <button onClick={() => regenSide('back')} disabled={!!regenProgress}
-                  className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">Regenerate Back</button>
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">Regen Back</button>
+              </div>
+              <p className="text-[10px] text-gray-500 mb-1">I2I edit (keeps composition, applies prompt change)</p>
+              <div className="flex gap-2 mb-4">
+                <button onClick={() => i2iSide('front')} disabled={!!regenProgress || !editing.image_url}
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">I2I Front</button>
+                <button onClick={() => i2iSide('back')} disabled={!!regenProgress || !editing.back_image_url}
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">I2I Back</button>
               </div>
             </div>
 
@@ -1797,6 +2032,57 @@ export default function Cards() {
               className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
               Close
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* GALLERY IMAGE PICKER */}
+      {galleryPicker && (
+        <div className="fixed inset-0 z-[90] bg-black/90 flex items-end sm:items-center justify-center p-0 sm:p-5">
+          <div className="bg-gray-950 border border-gray-800 rounded-t-2xl sm:rounded-2xl w-full max-w-lg max-h-[88vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+              <div>
+                <p className="font-bold text-sm">Pick from gallery</p>
+                <p className="text-[10px] text-gray-500">
+                  {galleryPicker.includes('front') ? 'Front image' : 'Back image'}
+                </p>
+              </div>
+              <button type="button" onClick={() => setGalleryPicker(null)} className="text-gray-400 hover:text-white text-lg px-2">✕</button>
+            </div>
+            <div className="px-4 py-2">
+              <input
+                value={galleryPoolSearch}
+                onChange={e => setGalleryPoolSearch(e.target.value)}
+                placeholder="Search prompts..."
+                className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500"
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 pb-4">
+              {galleryPoolLoading ? (
+                <p className="text-center text-gray-500 text-sm py-10">Loading images...</p>
+              ) : galleryPool.length === 0 ? (
+                <p className="text-center text-gray-500 text-sm py-10">No gallery images found.</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {galleryPool
+                    .filter(g => {
+                      const q = galleryPoolSearch.trim().toLowerCase()
+                      if (!q) return true
+                      return String(g.prompt || '').toLowerCase().includes(q)
+                    })
+                    .map(g => (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() => applyGalleryPick(g.url)}
+                        className="relative aspect-square rounded-lg overflow-hidden bg-gray-900 border border-gray-800 active:scale-95 transition"
+                      >
+                        <img src={g.thumbnail_url || g.url} alt="" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
