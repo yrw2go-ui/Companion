@@ -432,6 +432,16 @@ export default function Cards() {
     setSelected(prev => prev && prev.id === card.id ? { ...prev, published: next } : prev)
   }
 
+  const saveEditionSize = async () => {
+    if (!selected) return
+    const size = Math.max(1, parseInt(selected.edition_size) || 500)
+    const { error } = await supabase.from('cards').update({ edition_size: size }).eq('id', selected.id)
+    if (error) { alert('Could not save edition size: ' + error.message); return }
+    setCards(prev => prev.map(c => c.id === selected.id ? { ...c, edition_size: size } : c))
+    setSelected(prev => prev ? { ...prev, edition_size: size } : prev)
+    alert(`Edition size set to ${size}. Shop will allow up to ${size} copies of this card.`)
+  }
+
   const normalizeStats = (card) => {
     if (isStatless(card.rarity)) return []
     if (Array.isArray(card.stats) && card.stats.length) return card.stats
@@ -1310,6 +1320,28 @@ export default function Cards() {
                   <span className="font-mono text-gray-300">{selected.back_seed ?? '—'}</span>
                   {selected.back_seed && <button onClick={() => copy(selected.back_seed)} className="text-gray-500 hover:text-white">Copy</button>}
                 </div>
+              </div>
+              <div className="pt-2 border-t border-gray-800">
+                <label className="block text-gray-500 mb-1">Available copies (edition size)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    value={selected.edition_size ?? 500}
+                    onChange={e => setSelected({ ...selected, edition_size: e.target.value })}
+                    className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={saveEditionSize}
+                    className="bg-purple-700 hover:bg-purple-600 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                  >
+                    Save
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-600 mt-1">
+                  How many of this card can exist in the game (e.g. 50 → buyers get 1/50, 2/50…). Default 500.
+                </p>
               </div>
             </div>
 
