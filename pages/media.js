@@ -170,7 +170,8 @@ export default function MediaLibrary() {
                         ) : (
                           <img src={m.url} alt="" className="w-full h-full object-cover" />
                         )}
-                        <span className={`absolute top-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded ${m.published ? 'bg-emerald-500 text-black' : 'bg-gray-700 text-gray-300'}`}>
+                        <img src="/ga-mark.png" alt="" className="absolute top-2 left-2 h-5 w-5 object-contain drop-shadow pointer-events-none z-[1]" />
+                        <span className={`absolute top-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded z-[1] ${m.published ? 'bg-emerald-500 text-black' : 'bg-gray-700 text-gray-300'}`}>
                           {m.published ? 'Live' : 'Off'}
                         </span>
                         <span className="absolute bottom-2 left-2 text-[9px] bg-black/70 px-1.5 py-0.5 rounded uppercase tracking-wide">
@@ -202,12 +203,13 @@ export default function MediaLibrary() {
               <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-white text-lg px-1">✕</button>
             </div>
 
-            <div className="rounded-xl overflow-hidden bg-black mb-4">
+            <div className="relative rounded-xl overflow-hidden bg-black mb-4">
               {selected.type === 'video' ? (
                 <video src={selected.url} controls className="w-full max-h-[50vh]" playsInline />
               ) : (
                 <img src={selected.url} alt="" className="w-full max-h-[50vh] object-contain" />
               )}
+              <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-8 w-8 object-contain drop-shadow pointer-events-none" />
             </div>
 
             <label className="block text-xs text-gray-500 mb-1">Character name</label>

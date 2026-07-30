@@ -814,6 +814,11 @@ export default function Cards() {
                 title={card.series_name}
               >👑</span>
             )}
+            <img
+              src="/ga-mark.png"
+              alt=""
+              className={`absolute top-2 right-2 z-[6] object-contain drop-shadow pointer-events-none ${big ? 'h-8 w-8' : 'h-5 w-5'}`}
+            />
             <span className={`badge ${t.badge}`}>{card.rarity}</span>
             <div className="nameplate">
               <div className={`font-bold leading-tight truncate tracking-wide ${big ? 'text-2xl' : 'text-[15px]'}`}>{card.name}</div>
@@ -868,7 +873,7 @@ export default function Cards() {
               )}
               <div className="flex items-center justify-between pt-2 border-t border-white/15">
                 <span className={`font-mono text-gray-400 tracking-widest ${big ? 'text-[11px]' : 'text-[9px]'}`}>{card.card_number || '—'}</span>
-                <span className={`text-gray-500 tracking-widest uppercase ${big ? 'text-[11px]' : 'text-[9px]'}`}>Companion</span>
+                <span className={`text-gray-500 tracking-widest uppercase ${big ? 'text-[11px]' : 'text-[9px]'}`}>COMP-GA</span>
               </div>
             </div>
           </div>

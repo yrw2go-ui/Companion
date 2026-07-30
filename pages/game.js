@@ -708,13 +708,14 @@ export default function Game() {
                             onClick={() => setViewOwned({ kind: 'media', row: o })}
                             className="text-left bg-gray-900 border border-gray-800 rounded-xl overflow-hidden active:scale-[0.98] transition"
                           >
-                            {m.type === 'video' ? (
-                              <video src={m.url} className="w-full aspect-[3/4] object-cover" muted playsInline />
-                            ) : m.url ? (
-                              <img src={m.url} alt="" className="w-full aspect-[3/4] object-cover object-top" />
-                            ) : (
-                              <div className="w-full aspect-[3/4] bg-gray-800" />
-                            )}
+                            <div className="relative w-full aspect-[3/4] bg-gray-800">
+                              {m.type === 'video' ? (
+                                <video src={m.url} className="w-full h-full object-cover" muted playsInline />
+                              ) : m.url ? (
+                                <img src={m.url} alt="" className="w-full h-full object-cover object-top" />
+                              ) : null}
+                              <img src="/ga-mark.png" alt="" className="absolute top-1.5 right-1.5 h-5 w-5 object-contain drop-shadow pointer-events-none" />
+                            </div>
                             <div className="p-2">
                               <p className="text-xs font-semibold truncate">{m.title || m.character_name || 'Media'}</p>
                               <p className="text-[10px] text-gray-500 capitalize">{m.type || 'media'} · {m.character_name || ''}</p>
@@ -1009,9 +1010,14 @@ export default function Game() {
                             ))}
                           </div>
                         )}
-                        <div className="flex items-center justify-between pt-2 border-t border-white/15">
+                        <div className="flex items-center justify-between pt-2 border-t border-white/15 gap-2">
                           <span className="font-mono text-[9px] text-gray-400 tracking-widest">{c.card_number || '—'}</span>
-                          <span className="text-[9px] text-gray-500 tracking-widest uppercase">Companion</span>
+                          {(o.edition_number && o.edition_total) ? (
+                            <span className="text-[10px] text-amber-300 font-semibold tracking-wide shrink-0">
+                              {o.edition_number}/{o.edition_total}
+                            </span>
+                          ) : null}
+                          <span className="text-[9px] text-gray-300 tracking-widest font-semibold shrink-0">COMP-GA</span>
                         </div>
                       </div>
                     </>
@@ -1025,6 +1031,7 @@ export default function Game() {
                       {c.series_name && (
                         <span className="absolute top-3 left-3 text-lg drop-shadow z-[2]">👑</span>
                       )}
+                      <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 z-[2] h-7 w-7 object-contain drop-shadow" />
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10">
                         <p className="font-bold text-[15px] leading-tight truncate">{c.name}</p>
                         {c.title && <p className="text-[10px] text-gray-300 uppercase tracking-[0.12em] mt-0.5 truncate">{c.title}</p>}
@@ -1057,12 +1064,13 @@ export default function Game() {
             const m = o.character_media || {}
             return (
               <div className="w-full max-w-sm">
-                <div className="rounded-2xl overflow-hidden border border-white/10 bg-black">
+                <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-black">
                   {m.type === 'video' ? (
                     <video src={m.url} controls autoPlay playsInline className="w-full max-h-[70vh]" />
                   ) : (
                     <img src={m.url} alt="" className="w-full max-h-[70vh] object-contain" />
                   )}
+                  <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-8 w-8 object-contain drop-shadow pointer-events-none" />
                 </div>
                 <div className="mt-4 text-center">
                   <p className="text-lg font-bold">{m.title || m.character_name || 'Media'}</p>
