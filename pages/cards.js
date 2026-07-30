@@ -829,15 +829,15 @@ export default function Cards() {
             )}
             <span className={`badge ${t.badge}`}>{card.rarity}</span>
             <div className="nameplate" style={{ zIndex: 8 }}>
-              <div className={`font-bold leading-tight truncate tracking-wide pr-12 ${big ? 'text-2xl' : 'text-[15px]'}`}>{card.name}</div>
+              <div className={`font-bold leading-tight truncate tracking-wide ${big ? 'text-2xl pr-28' : 'text-[15px] pr-20'}`}>{card.name}</div>
               {card.title && (
-                <div className={`text-gray-300 truncate uppercase tracking-[0.12em] mt-0.5 pr-12 ${big ? 'text-xs' : 'text-[10px]'}`}>{card.title}</div>
+                <div className={`text-gray-300 truncate uppercase tracking-[0.12em] mt-0.5 ${big ? 'text-xs pr-28' : 'text-[10px] pr-20'}`}>{card.title}</div>
               )}
             </div>
             <img
               src="/ga-mark.png"
               alt=""
-              className={`absolute bottom-3 right-2 z-[20] object-contain drop-shadow-lg pointer-events-none ${big ? 'h-16 w-16' : 'h-11 w-11'}`}
+              className={`absolute bottom-2 right-1.5 z-[20] object-contain drop-shadow-lg pointer-events-none ${big ? 'h-24 w-24' : 'h-16 w-16'}`}
             />
           </div>
         </div>

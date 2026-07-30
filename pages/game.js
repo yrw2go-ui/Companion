@@ -1032,10 +1032,10 @@ export default function Game() {
                         <span className="absolute top-3 left-3 text-lg drop-shadow z-[2]">👑</span>
                       )}
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10 z-[5]">
-                        <p className="font-bold text-[15px] leading-tight truncate pr-14">{c.name}</p>
-                        {c.title && <p className="text-[10px] text-gray-300 uppercase tracking-[0.12em] mt-0.5 truncate pr-14">{c.title}</p>}
+                        <p className="font-bold text-[15px] leading-tight truncate pr-24">{c.name}</p>
+                        {c.title && <p className="text-[10px] text-gray-300 uppercase tracking-[0.12em] mt-0.5 truncate pr-24">{c.title}</p>}
                       </div>
-                      <img src="/ga-mark.png" alt="" className="absolute bottom-3 right-2 z-[12] h-12 w-12 object-contain drop-shadow-md pointer-events-none" />
+                      <img src="/ga-mark.png" alt="" className="absolute bottom-2 right-1.5 z-[20] h-20 w-20 object-contain drop-shadow-lg pointer-events-none" />
                     </>
                   )}
                 </div>
