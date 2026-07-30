@@ -204,7 +204,7 @@ export default function Game() {
     // owned card instances (Harem)
     const { data: owned } = await supabase
       .from('player_cards')
-      .select('id, instance_id, card_id, purchase_price, acquired_via, edition_number, edition_total, sale_count, current_sale_price, created_at, cards(id, name, card_number, image_url, back_image_url, video_url, poster_url, rarity, title, series_name, edition_size)')
+      .select('id, instance_id, card_id, purchase_price, acquired_via, edition_number, edition_total, sale_count, current_sale_price, created_at, cards(id, name, card_number, image_url, back_image_url, video_url, poster_url, rarity, title, series_name, edition_size, description, flavor_text, stats)')
       .eq('owner_id', 1)
       .order('created_at', { ascending: false })
     setOwnedCards(owned || [])
@@ -947,6 +947,7 @@ export default function Game() {
             const o = viewOwned.row
             const c = o.cards || {}
             const showBack = ownedSide === 'back'
+            const stats = Array.isArray(c.stats) ? c.stats : []
             return (
               <div className="w-full max-w-sm">
                 <div
@@ -954,38 +955,72 @@ export default function Game() {
                   onClick={() => setOwnedSide(s => s === 'front' ? 'back' : 'front')}
                 >
                   {showBack ? (
-                    c.back_image_url ? (
-                      <img src={c.back_image_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">No back art</div>
-                    )
+                    <>
+                      {c.back_image_url ? (
+                        <img src={c.back_image_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
+                      ) : (
+                        <div className="absolute inset-0 bg-gray-900" />
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 h-[70%] bg-gradient-to-t from-black from-40% via-black/85 to-transparent" />
+                      {c.series_name && (
+                        <div className="absolute top-3 inset-x-0 text-center z-[2]">
+                          <span className="text-[10px] text-black font-semibold tracking-[0.15em] uppercase"
+                            style={{ fontFamily: 'Georgia, serif', textShadow: '0 0 1px rgba(255,255,255,0.4)' }}>
+                            {c.series_name}
+                          </span>
+                        </div>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 z-[3] p-4 flex flex-col justify-end">
+                        {c.description && (
+                          <p className="text-[11px] text-gray-200 leading-snug mb-2">{c.description}</p>
+                        )}
+                        {c.flavor_text && (
+                          <p className="text-[10px] italic text-gray-400 mb-3 leading-snug">&quot;{c.flavor_text}&quot;</p>
+                        )}
+                        {stats.length > 0 && (
+                          <div className="space-y-1.5 mb-2">
+                            {stats.map((s, i) => (
+                              <div key={i} className="flex items-center gap-2 text-[9px]">
+                                <span className="w-16 text-gray-200 truncate uppercase tracking-wide">{s.label}</span>
+                                <div className="flex-1 bg-white/25 rounded-full h-1">
+                                  <div className="bg-white h-1 rounded-full" style={{ width: `${Math.min(100, Number(s.value) || 0)}%` }} />
+                                </div>
+                                <span className="w-6 text-right text-gray-100">{s.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between pt-2 border-t border-white/15">
+                          <span className="font-mono text-[9px] text-gray-400 tracking-widest">{c.card_number || '—'}</span>
+                          <span className="text-[9px] text-gray-500 tracking-widest uppercase">Companion</span>
+                        </div>
+                      </div>
+                    </>
                   ) : (
-                    c.image_url ? (
-                      <img src={c.image_url} alt={c.name || ''} className="absolute inset-0 w-full h-full object-cover object-top" />
-                    ) : (
-                      <div className="absolute inset-0 bg-gray-800" />
-                    )
-                  )}
-                  {c.series_name && !showBack && (
-                    <span className="absolute top-3 left-3 text-lg drop-shadow">👑</span>
-                  )}
-                  {c.series_name && showBack && (
-                    <div className="absolute top-3 inset-x-0 text-center">
-                      <span className="text-[10px] text-black font-semibold tracking-[0.15em] uppercase"
-                        style={{ fontFamily: 'Georgia, serif', textShadow: '0 0 1px rgba(255,255,255,0.4)' }}>
-                        {c.series_name}
-                      </span>
-                    </div>
+                    <>
+                      {c.image_url ? (
+                        <img src={c.image_url} alt={c.name || ''} className="absolute inset-0 w-full h-full object-cover object-top" />
+                      ) : (
+                        <div className="absolute inset-0 bg-gray-800" />
+                      )}
+                      {c.series_name && (
+                        <span className="absolute top-3 left-3 text-lg drop-shadow z-[2]">👑</span>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10">
+                        <p className="font-bold text-[15px] leading-tight truncate">{c.name}</p>
+                        {c.title && <p className="text-[10px] text-gray-300 uppercase tracking-[0.12em] mt-0.5 truncate">{c.title}</p>}
+                      </div>
+                    </>
                   )}
                 </div>
                 <p className="text-center text-[10px] text-gray-500 mt-2">Tap card to flip · {showBack ? 'back' : 'front'}</p>
-                <div className="mt-4 text-center">
-                  <p className="text-lg font-bold">{c.name}{c.series_name ? ' 👑' : ''}</p>
-                  <p className="text-xs text-gray-400 capitalize mt-1">{c.rarity}</p>
+                <div className="mt-3 text-center">
+                  <p className="text-sm font-bold">{c.name}{c.series_name ? ' 👑' : ''}</p>
+                  <p className="text-xs text-gray-400 capitalize mt-0.5">{c.rarity}</p>
                   {o.edition_number && (
-                    <p className="text-sm text-amber-300 mt-2">{o.edition_number} of {o.edition_total}</p>
+                    <p className="text-sm text-amber-300 mt-1">{o.edition_number} of {o.edition_total}</p>
                   )}
-                  <p className="text-[11px] text-pink-400 font-mono mt-2">{o.instance_id}</p>
+                  <p className="text-[11px] text-pink-400 font-mono mt-1">{o.instance_id}</p>
                   <p className="text-[10px] text-gray-500 mt-1">Paid {Number(o.purchase_price || 0).toLocaleString()} BabeBucks</p>
                 </div>
                 <div className="flex gap-2 mt-4">
