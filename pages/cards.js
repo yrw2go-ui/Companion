@@ -952,7 +952,11 @@ export default function Cards() {
   return (
     <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
+          <button onClick={() => router.push('/media')} className="text-pink-400 hover:text-pink-300 text-sm font-semibold">Media</button>
+          <button onClick={() => router.push('/gallery')} className="text-gray-400 hover:text-white text-sm">Gallery</button>
+        </div>
         <h1 className="text-xl font-bold tracking-wide">Cards</h1>
         <button onClick={() => setShowCreate(true)} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">+ New</button>
       </div>

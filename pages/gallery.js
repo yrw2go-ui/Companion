@@ -1166,6 +1166,8 @@ export default function Gallery() {
       <div className="flex items-center justify-between mb-4">
         <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <h1 className="text-xl font-bold">Gallery</h1>
+        <button onClick={() => router.push('/media')} className="text-pink-400 hover:text-pink-300 text-sm font-semibold ml-2">Media</button>
+        <button onClick={() => router.push('/cards')} className="text-gray-400 hover:text-white text-sm ml-2">Cards</button>
         <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={downloadAll} disabled={bulkBusy} className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 py-2 text-sm font-semibold" title="Download all media">
             ⬇ All
