@@ -935,6 +935,42 @@ export default function Cards() {
     return list
   })()
 
+  const seriesNames = [...new Set(
+    cards.map(c => (c.series_name || '').trim()).filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b))
+
+  const seriesStats = seriesNames.map(name => {
+    const members = cards.filter(c => (c.series_name || '').trim() === name)
+    const byRarity = {}
+    let totalPrint = 0
+    for (const c of members) {
+      const r = (c.rarity || 'common').toLowerCase()
+      if (!byRarity[r]) byRarity[r] = { count: 0, print: 0 }
+      byRarity[r].count += 1
+      const ed = parseInt(c.edition_size) || 500
+      byRarity[r].print += ed
+      totalPrint += ed
+    }
+    return {
+      name,
+      unique: members.length,
+      published: members.filter(c => c.published).length,
+      totalPrint,
+      byRarity,
+      members,
+    }
+  })
+
+  const assignSeries = async (card, seriesName) => {
+    const value = (seriesName || '').trim() || null
+    const { error } = await supabase.from('cards').update({ series_name: value }).eq('id', card.id)
+    if (error) { alert(error.message); return }
+    setCards(prev => prev.map(c => c.id === card.id ? { ...c, series_name: value } : c))
+    setSelected(prev => prev && prev.id === card.id ? { ...prev, series_name: value } : prev)
+    if (editing?.id === card.id) setEditing(prev => prev ? { ...prev, series_name: value || '' } : prev)
+  }
+
+
   const inputRow = (label, value, onChange, multiline = false, rows = 2) => (
     <>
       <label className="block text-xs text-gray-400 mb-1">{label}</label>
@@ -989,7 +1025,102 @@ export default function Cards() {
         <button onClick={() => setShowCreate(true)} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">+ New</button>
       </div>
 
-      {!loading && cards.length > 0 && (
+      <div className="flex gap-2 mb-4">
+        <button
+          type="button"
+          onClick={() => { setPageMode('cards'); setSelectedSeries(null) }}
+          className={`flex-1 rounded-lg py-2 text-sm font-semibold ${pageMode === 'cards' ? 'bg-purple-600' : 'bg-gray-900 text-gray-400'}`}
+        >
+          All cards
+        </button>
+        <button
+          type="button"
+          onClick={() => setPageMode('series')}
+          className={`flex-1 rounded-lg py-2 text-sm font-semibold ${pageMode === 'series' ? 'bg-purple-600' : 'bg-gray-900 text-gray-400'}`}
+        >
+          Series 👑
+        </button>
+      </div>
+
+      {pageMode === 'series' && (
+        <div className="mb-8">
+          {seriesStats.length === 0 ? (
+            <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-6 text-center text-sm text-gray-500">
+              <p>No series yet.</p>
+              <p className="text-xs mt-2">Open a card → set Series name, or use Edit / Create.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {seriesStats.map(s => (
+                <button
+                  key={s.name}
+                  type="button"
+                  onClick={() => setSelectedSeries(selectedSeries === s.name ? null : s.name)}
+                  className={`w-full text-left rounded-xl border p-4 transition ${selectedSeries === s.name ? 'border-pink-600 bg-pink-950/30' : 'border-gray-800 bg-gray-900'}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-bold text-sm">👑 {s.name}</p>
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        {s.unique} unique card{s.unique === 1 ? '' : 's'}
+                        {' · '}{s.published} published
+                        {' · '}{s.totalPrint.toLocaleString()} max copies total
+                      </p>
+                    </div>
+                    <span className="text-gray-500 text-xs">{selectedSeries === s.name ? '▲' : '▼'}</span>
+                  </div>
+                  {selectedSeries === s.name && (
+                    <div className="mt-3 pt-3 border-t border-gray-800 space-y-3" onClick={e => e.stopPropagation()}>
+                      <p className="text-[10px] tracking-wide uppercase text-gray-500">By rarity</p>
+                      <div className="space-y-1">
+                        {Object.entries(s.byRarity).map(([r, info]) => (
+                          <div key={r} className="flex justify-between text-[11px] text-gray-300">
+                            <span className="capitalize">{rarityLabel(r)}</span>
+                            <span className="text-gray-500">
+                              {info.count} unique · {info.print.toLocaleString()} print capacity
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] tracking-wide uppercase text-gray-500 pt-1">Cards in series</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {s.members.map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => openCard(c)}
+                            className="text-left bg-black/40 rounded-lg overflow-hidden border border-gray-800"
+                          >
+                            {c.image_url ? (
+                              <img src={c.image_url} alt="" className="w-full aspect-[3/4] object-cover object-top" />
+                            ) : (
+                              <div className="w-full aspect-[3/4] bg-gray-800" />
+                            )}
+                            <div className="p-1.5">
+                              <p className="text-[10px] font-semibold truncate">{c.name}</p>
+                              <p className="text-[9px] text-gray-500 capitalize">{c.rarity} · ed. {c.edition_size || 500}</p>
+                              {c.published && <p className="text-[9px] text-emerald-400">Live</p>}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setSeriesFilter(s.name); setPageMode('cards') }}
+                        className="w-full text-xs text-pink-400 hover:text-pink-300 py-2"
+                      >
+                        Show these in card grid →
+                      </button>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {pageMode === 'cards' && !loading && cards.length > 0 && (
         <div className="mb-4 space-y-2">
           <input
             value={search}
@@ -1018,16 +1149,35 @@ export default function Cards() {
               </button>
             ))}
           </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            <button type="button" onClick={() => setSeriesFilter('all')}
+              className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${seriesFilter === 'all' ? 'bg-pink-700 text-white' : 'bg-gray-900 text-gray-400'}`}>
+              Any series
+            </button>
+            <button type="button" onClick={() => setSeriesFilter('none')}
+              className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${seriesFilter === 'none' ? 'bg-pink-700 text-white' : 'bg-gray-900 text-gray-400'}`}>
+              No series
+            </button>
+            {seriesNames.map(n => (
+              <button key={n} type="button" onClick={() => setSeriesFilter(n)}
+                className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${seriesFilter === n ? 'bg-pink-700 text-white' : 'bg-gray-900 text-gray-400'}`}>
+                👑 {n}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
-      {loading ? (
+      {pageMode === 'cards' && loading && (
         <p className="text-gray-500">Loading...</p>
-      ) : cards.length === 0 ? (
+      )}
+      {pageMode === 'cards' && !loading && cards.length === 0 && (
         <p className="text-gray-500 text-sm">No cards yet. Tap "+ New" to summon one.</p>
-      ) : visibleCards.length === 0 ? (
-        <p className="text-gray-500 text-sm">No cards match "{search}".</p>
-      ) : (
+      )}
+      {pageMode === 'cards' && !loading && cards.length > 0 && visibleCards.length === 0 && (
+        <p className="text-gray-500 text-sm">No cards match filters.</p>
+      )}
+      {pageMode === 'cards' && !loading && visibleCards.length > 0 && (
         <div className="grid grid-cols-2 gap-4">
           {visibleCards.map(c => (
             <button key={c.id} onClick={() => openCard(c)} className="text-left relative">
@@ -1320,6 +1470,37 @@ export default function Cards() {
                   <span className="font-mono text-gray-300">{selected.back_seed ?? '—'}</span>
                   {selected.back_seed && <button onClick={() => copy(selected.back_seed)} className="text-gray-500 hover:text-white">Copy</button>}
                 </div>
+              </div>
+              <div className="pt-2 border-t border-gray-800">
+                <label className="block text-gray-500 mb-1">Series</label>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    list="series-name-options"
+                    value={selected.series_name || ''}
+                    onChange={e => setSelected({ ...selected, series_name: e.target.value })}
+                    placeholder="Series name or blank"
+                    className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-500"
+                  />
+                  <datalist id="series-name-options">
+                    {seriesNames.map(n => <option key={n} value={n} />)}
+                  </datalist>
+                  <button
+                    type="button"
+                    onClick={() => assignSeries(selected, selected.series_name)}
+                    className="bg-pink-800 hover:bg-pink-700 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                  >
+                    Save
+                  </button>
+                </div>
+                {selected.series_name && (
+                  <button
+                    type="button"
+                    onClick={() => assignSeries(selected, '')}
+                    className="text-[10px] text-gray-500 hover:text-white mb-2"
+                  >
+                    Remove from series
+                  </button>
+                )}
               </div>
               <div className="pt-2 border-t border-gray-800">
                 <label className="block text-gray-500 mb-1">Available copies (edition size)</label>
