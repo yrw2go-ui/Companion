@@ -117,6 +117,40 @@ export default function Game() {
     load()
   }, [])
 
+  // Force splash video to play; keep splash up at least ~2.5s even if autoplay flakes
+  useEffect(() => {
+    if (!showSplash) return
+    const minMs = 2500
+    const started = Date.now()
+    let closed = false
+    const close = () => {
+      if (closed) return
+      closed = true
+      setShowSplash(false)
+    }
+    const tryPlay = () => {
+      const v = splashRef.current
+      if (!v) return
+      v.muted = true
+      v.playsInline = true
+      const p = v.play()
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {
+          // autoplay blocked — show for min time then close
+          const left = minMs - (Date.now() - started)
+          setTimeout(close, Math.max(0, left))
+        })
+      }
+    }
+    // slight delay so video element is mounted
+    const t = setTimeout(tryPlay, 50)
+    const safety = setTimeout(close, 12000) // never hang forever
+    return () => {
+      clearTimeout(t)
+      clearTimeout(safety)
+    }
+  }, [showSplash])
+
   const load = async () => {
     const { data: cards } = await supabase
       .from('cards')
@@ -841,17 +875,29 @@ export default function Game() {
 
       {/* Initial load splash — animated logo */}
       {showSplash && (
-        <div className="fixed inset-0 z-[90] bg-black flex items-center justify-center">
+        <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center">
           <video
             ref={splashRef}
             src="/goddess-arena-logo.mp4"
+            poster="/goddess-arena-logo.png"
             autoPlay
             muted
             playsInline
+            preload="auto"
             className="w-full max-w-md px-6 object-contain"
             onEnded={() => setShowSplash(false)}
-            onError={() => setShowSplash(false)}
+            onError={() => {
+              // fall back: keep static logo briefly then dismiss
+              setTimeout(() => setShowSplash(false), 2000)
+            }}
           />
+          <button
+            type="button"
+            onClick={() => setShowSplash(false)}
+            className="mt-6 text-xs text-gray-500 hover:text-white"
+          >
+            Skip
+          </button>
         </div>
       )}
 
