@@ -185,6 +185,25 @@ export default function Cards() {
 
   useEffect(() => { loadCards() }, [])
 
+  // Keep card detail / edit open across refresh via ?card=&edit=
+  useEffect(() => {
+    if (loading || !router.isReady) return
+    if (!cards.length) return
+    const cardId = router.query.card
+    if (!cardId || typeof cardId !== 'string') return
+    const found = cards.find(c => String(c.id) === String(cardId))
+    if (!found) return
+    const wantEdit = router.query.edit === '1'
+    if (wantEdit) {
+      setEditing(prev => (prev && prev.id === found.id ? prev : { ...found, stats: normalizeStats(found) }))
+      setEditNegative(found.negative_prompt || DEFAULT_NEGATIVE)
+      setSelected(null)
+    } else {
+      setSelected(prev => (prev && prev.id === found.id ? { ...prev, ...found } : found))
+      setSide('front')
+    }
+  }, [loading, cards, router.isReady, router.query.card, router.query.edit])
+
   const onCardTouchStart = (e) => {
     setTouchStartX(e.changedTouches?.[0]?.clientX ?? e.clientX)
   }
@@ -224,6 +243,11 @@ export default function Cards() {
     setView('static')
     setMediaTitle('')
     setMediaUrl('')
+    try {
+      const q = { ...router.query, card: card.id }
+      delete q.edit
+      router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
+    } catch {}
     // media linked by character name so all rarity variants share it
     const { data } = await supabase
       .from('character_media')
@@ -232,6 +256,24 @@ export default function Cards() {
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: false })
     setCharMedia(data || [])
+  }
+
+  const syncCardQuery = (cardId, edit = false) => {
+    const q = { ...router.query }
+    if (cardId) q.card = cardId
+    else delete q.card
+    if (edit) q.edit = '1'
+    else delete q.edit
+    try {
+      router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true })
+    } catch {}
+  }
+
+  const closeSelected = () => {
+    setSelected(null)
+    setExpanded(false)
+    setEditing(null)
+    syncCardQuery(null, false)
   }
 
   const addCharMedia = async () => {
@@ -743,6 +785,7 @@ export default function Cards() {
     setEditSize('768*1024')
     setEditStyle('')
     setSelected(null)
+    syncCardQuery(card.id, true)
   }
 
   const saveEdit = async () => {
@@ -764,8 +807,11 @@ export default function Cards() {
     }).eq('id', editing.id)
     setSaving(false)
     if (error) { alert('Save error: ' + error.message); return }
+    const id = editing.id
     setEditing(null)
+    syncCardQuery(id, false)
     loadCards()
+    // detail reopens via URL restore when cards refresh
   }
 
   const regenSide = async (which) => {
@@ -807,7 +853,7 @@ export default function Cards() {
       }
     }
     if (files.length) await supabase.storage.from('character-images').remove(files)
-    setSelected(null); setEditing(null); setExpanded(false)
+    closeSelected()
     loadCards()
   }
 
@@ -1656,7 +1702,15 @@ export default function Cards() {
             </div>
 
             <div className="flex gap-2">
-              <button onClick={() => setEditing(null)} disabled={saving} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={() => {
+                const id = editing?.id
+                setEditing(null)
+                if (id) {
+                  syncCardQuery(id, false)
+                  const found = cards.find(c => c.id === id)
+                  if (found) openCard(found)
+                } else syncCardQuery(null, false)
+              }} disabled={saving} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
               <button onClick={saveEdit} disabled={saving} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
                 {saving ? 'Saving...' : 'Save'}
               </button>
@@ -1669,7 +1723,7 @@ export default function Cards() {
 
       {/* DETAIL — one large card, front/back toggle, tap to expand */}
       {selected && !expanded && (
-        <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
+        <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={closeSelected}>
           <div className="w-full max-w-sm my-6" onClick={e => e.stopPropagation()}>
             {sideToggle()}
             {side === 'front' && viewToggle()}
@@ -1855,7 +1909,7 @@ export default function Cards() {
 
             <button onClick={() => openEdit(selected)} className="w-full bg-purple-600 hover:bg-purple-700 rounded-lg py-2 text-sm font-semibold mt-2">Edit Card</button>
             <button onClick={() => deleteCard(selected)} className="w-full bg-red-900 hover:bg-red-800 rounded-lg py-2 text-sm font-semibold mt-2">Delete Card</button>
-            <button onClick={() => setSelected(null)} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
+            <button onClick={closeSelected} className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">Close</button>
           </div>
         </div>
       )}
