@@ -236,24 +236,10 @@ export default function Game() {
     setPublishedCards(cards || [])
 
     // Scrolling home banner: images filed in Gallery folder "Main Banner"
-    // Prefer thumbnail_url; otherwise force Supabase image render at small size to cut egress
-    const toBannerThumb = (rawUrl) => {
-      if (!rawUrl) return rawUrl
-      // already a tiny/thumb path
-      if (/thumbnail|thumb|_sm\.|_thumb/i.test(rawUrl)) return rawUrl
-      // Supabase public object → render/image with width cap
-      const m = String(rawUrl).match(/\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/)
-      if (m) {
-        const bucket = m[1]
-        const path = m[2].split('?')[0]
-        const base = String(rawUrl).split('/storage/v1/')[0]
-        return `${base}/storage/v1/render/image/public/${bucket}/${path}?width=360&height=520&resize=cover&quality=55`
-      }
-      return rawUrl
-    }
+    // Use full gallery urls (do not invent transform paths — those 404 without Image Transformations)
     const mapBanner = (f) => ({
       id: 'gal_' + f.id,
-      url: f.thumbnail_url || toBannerThumb(f.url),
+      url: f.url,
       prompt: f.prompt,
     })
     let strip = []

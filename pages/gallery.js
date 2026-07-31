@@ -1034,6 +1034,26 @@ export default function Gallery() {
     if (activeFolder === folder.id) setActiveFolder('all')
   }
 
+
+  const backfillMainBannerThumbs = async () => {
+    const main = folders.find(f => String(f.name || '').trim().toLowerCase() === 'main banner')
+    if (!main) { alert('Create a folder named "Main Banner" first'); return }
+    const keys = Object.entries(folderMap).filter(([, fid]) => fid === main.id).map(([k]) => k)
+    const items = media.filter(m => keys.includes(m.key) && m.source === 'gallery_media' && m.type === 'image')
+    if (!items.length) { alert('No images in Main Banner'); return }
+    let done = 0
+    let skipped = 0
+    for (const item of items) {
+      if (item.thumbnail_url) { skipped++; continue }
+      const thumb = await makeBannerThumb(item.url)
+      if (!thumb) continue
+      await supabase.from('gallery_media').update({ thumbnail_url: thumb }).eq('id', item.id)
+      setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, thumbnail_url: thumb } : m)))
+      done++
+    }
+    alert(`Thumbnails ready: ${done} created, ${skipped} already had one`)
+  }
+
   const assignFolder = async (item, folderId) => {
     // update the local map immediately so the UI feels instant, but the
     // actual write below is what makes it durable across a refresh, so we
@@ -1064,6 +1084,24 @@ export default function Gallery() {
         .from('folder_items')
         .upsert({ source: item.source, item_key: item.key, folder_id: folderId }, { onConflict: 'source,item_key' })
       if (error) alert('Could not move: ' + error.message)
+
+      // Main Banner: create a real stored thumbnail for the game strip (egress)
+      const folderMeta = folders.find(f => f.id === folderId)
+      const isMainBanner = folderMeta && String(folderMeta.name || '').trim().toLowerCase() === 'main banner'
+      if (
+        isMainBanner &&
+        item.source === 'gallery_media' &&
+        item.type === 'image' &&
+        item.id &&
+        !item.thumbnail_url
+      ) {
+        const thumb = await makeBannerThumb(item.url)
+        if (thumb) {
+          await supabase.from('gallery_media').update({ thumbnail_url: thumb }).eq('id', item.id)
+          setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, thumbnail_url: thumb } : m)))
+          setSelected(prev => (prev && prev.key === item.key ? { ...prev, thumbnail_url: thumb } : prev))
+        }
+      }
     } finally {
       window.removeEventListener('beforeunload', warnBeforeUnload)
       setSavingFolder(false)
@@ -1471,6 +1509,10 @@ export default function Gallery() {
           <button onClick={createFolder}
             className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-900 text-blue-400 border border-blue-900">
             ＋ Folder
+          </button>
+          <button type="button" onClick={backfillMainBannerThumbs}
+            className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-900 text-emerald-400 border border-emerald-900">
+            🖼 Banner thumbs
           </button>
           {activeFolder !== 'all' && activeFolder !== 'unfiled' && (
             <button onClick={() => { const f = folders.find(x => x.id === activeFolder); if (f) deleteFolder(f) }}
