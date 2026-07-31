@@ -320,7 +320,17 @@ export default function Game() {
       .select('*')
       .eq('active', true)
       .order('created_at', { ascending: false })
-    setFreebies(fb || [])
+    // Hide sold-out freebies after 24h past the moment they hit max redemptions
+    // (we approximate with updated_at if present, else created_at + still show until 24h after created when sold out)
+    const now = Date.now()
+    const DAY = 24 * 60 * 60 * 1000
+    const visible = (fb || []).filter(row => {
+      const left = Math.max(0, (row.max_redemptions || 0) - (row.redemption_count || 0))
+      if (left > 0) return true
+      const soldAt = new Date(row.sold_out_at || row.updated_at || row.created_at).getTime()
+      return now - soldAt < DAY
+    })
+    setFreebies(visible)
 
     setLoading(false)
   }
@@ -425,9 +435,12 @@ export default function Game() {
         return
       }
 
-      await supabase.from('freebies').update({
-        redemption_count: (fresh.redemption_count || 0) + 1,
-      }).eq('id', fb.id)
+      const nextCount = (fresh.redemption_count || 0) + 1
+      const patch = { redemption_count: nextCount }
+      if (nextCount >= (fresh.max_redemptions || 0)) {
+        patch.sold_out_at = new Date().toISOString()
+      }
+      await supabase.from('freebies').update(patch).eq('id', fb.id)
 
       if (fresh.type === 'tokens') {
         const amt = Number(fresh.token_amount) || 0
@@ -1538,15 +1551,27 @@ export default function Game() {
                     <div key={fb.id} className={`rounded-2xl border p-4 ${soldOut ? 'border-gray-800 bg-gray-900/40 opacity-60' : 'border-emerald-800/40 bg-gray-900'}`}>
                       <div className="flex gap-3">
                         {fb.type === 'media' && fb.media_url ? (
-                          <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-800 shrink-0">
+                          <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-gray-800 shrink-0">
                             {fb.media_type === 'video' ? (
                               <video src={fb.media_url} className="w-full h-full object-cover" muted playsInline />
                             ) : (
                               <img src={fb.media_url} alt="" className="w-full h-full object-cover" />
                             )}
+                            {soldOut && (
+                              <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                                <span className="text-[8px] font-bold tracking-wide text-red-300 text-center leading-tight px-0.5">UNAVAILABLE</span>
+                              </div>
+                            )}
                           </div>
                         ) : (
-                          <div className="w-16 h-16 rounded-lg bg-emerald-900/50 flex items-center justify-center text-2xl shrink-0">💎</div>
+                          <div className="relative w-16 h-16 rounded-lg bg-emerald-900/50 flex items-center justify-center text-2xl shrink-0 overflow-hidden">
+                            💎
+                            {soldOut && (
+                              <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                                <span className="text-[8px] font-bold tracking-wide text-red-300 text-center leading-tight px-0.5">UNAVAILABLE</span>
+                              </div>
+                            )}
+                          </div>
                         )}
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-sm truncate">{fb.title || (fb.type === 'tokens' ? 'BabeBucks drop' : 'Free media')}</p>

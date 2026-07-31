@@ -301,6 +301,19 @@ export default function Gallery() {
       addPub(m.url, (`Misc Beauties ${m.public_id || ''}${setPart}`).trim())
     }
 
+    // Live freebies (media)
+    const { data: freebieRows } = await supabase
+      .from('freebies')
+      .select('*')
+      .eq('active', true)
+      .order('created_at', { ascending: false })
+    for (const fb of freebieRows || []) {
+      if (fb.type === 'media' && fb.media_url) {
+        const left = Math.max(0, (fb.max_redemptions || 0) - (fb.redemption_count || 0))
+        addPub(fb.media_url, left > 0 ? 'Freebie · LIVE' : 'Freebie · sold out')
+      }
+    }
+
     // url -> misc_items rows (for remove)
     const miscByUrl = {}
     for (const m of miscItemRows || []) {
@@ -308,11 +321,18 @@ export default function Gallery() {
       if (!miscByUrl[m.url]) miscByUrl[m.url] = []
       miscByUrl[m.url].push(m)
     }
+    const freebieByUrl = {}
+    for (const fb of freebieRows || []) {
+      if (fb.type !== 'media' || !fb.media_url) continue
+      if (!freebieByUrl[fb.media_url]) freebieByUrl[fb.media_url] = []
+      freebieByUrl[fb.media_url].push(fb)
+    }
 
     const tagPublished = (item) => {
       const links = publishedLinkMap[item.url] || []
       const miscRows = miscByUrl[item.url] || []
-      if (!links.length && !miscRows.length) return item
+      const fbRows = freebieByUrl[item.url] || []
+      if (!links.length && !miscRows.length && !fbRows.length) return item
       return {
         ...item,
         linkedPublished: links.length > 0,
@@ -320,6 +340,9 @@ export default function Gallery() {
         protected: true,
         miscItems: miscRows,
         inMiscBeauties: miscRows.length > 0,
+        freebies: fbRows,
+        inFreebies: fbRows.length > 0,
+        freebieId: fbRows[0]?.id || null,
       }
     }
 
@@ -1154,6 +1177,19 @@ export default function Gallery() {
   }
 
 
+
+  const removeFromFreebies = async () => {
+    if (!selected?.inFreebies) return
+    const rows = selected.freebies || []
+    if (!rows.length) return
+    if (!confirm('Remove this from Freebies? Players will no longer see it in the FREEBIES tab.')) return
+    for (const fb of rows) {
+      await supabase.from('freebies').update({ active: false }).eq('id', fb.id)
+    }
+    await load()
+    // keep selection refreshed
+    alert('Removed from Freebies')
+  }
 
   const openMakeFreebie = (mode = 'media') => {
     if (!selected && mode === 'media') return
@@ -2193,12 +2229,21 @@ export default function Gallery() {
             )}
 
                         {selected.source !== 'cards' && (
-              <button
-                onClick={() => openMakeFreebie('media')}
-                className="w-full bg-emerald-800 hover:bg-emerald-700 rounded-lg py-2 text-sm font-semibold mt-2"
-              >
-                🎁 Make Freebie
-              </button>
+              selected.inFreebies ? (
+                <button
+                  onClick={removeFromFreebies}
+                  className="w-full bg-gray-800 hover:bg-red-900/40 border border-red-800/50 rounded-lg py-2 text-sm font-semibold mt-2 text-red-300"
+                >
+                  Remove from Freebies
+                </button>
+              ) : (
+                <button
+                  onClick={() => openMakeFreebie('media')}
+                  className="w-full bg-emerald-800 hover:bg-emerald-700 rounded-lg py-2 text-sm font-semibold mt-2"
+                >
+                  🎁 Make Freebie
+                </button>
+              )
             )}
 
 {selected.source !== 'cards' && (
