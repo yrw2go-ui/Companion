@@ -97,11 +97,13 @@ const rarityLabel = (r) =>
 
 const STANDARD_LABELS = ['Star Power', 'Physique', 'Allure', 'Charisma']
 
+const EDITION_QTY_OPTIONS = [5, 10, 25, 50, 100, 150, 200, 250, 300, 350, 500, 700, 1000, 2000]
+
 const emptyDraft = () => ({
   name: '', title: '', description: '', flavor_text: '', rarity: 'common',
   stats: rollStats(STANDARD_LABELS, 'common'),
   image_prompt: '', back_image_prompt: '',
-  edition_size: 500,
+  edition_size: 300,
   series_name: '',
 })
 
@@ -168,7 +170,7 @@ export default function Cards() {
   const [mediaType, setMediaType] = useState('image')
   const [mediaUnlock, setMediaUnlock] = useState('shop')
   const [mediaCost, setMediaCost] = useState('100')
-  const [mediaEdition, setMediaEdition] = useState('100')
+  const [mediaEdition, setMediaEdition] = useState('300')
   const [mediaBusy, setMediaBusy] = useState(false)
   const [showCreateMedia, setShowCreateMedia] = useState(false)
   const [cmMode, setCmMode] = useState('t2i') // t2i | i2i_front | i2i_back | i2v_front | i2v_back
@@ -287,8 +289,9 @@ export default function Cards() {
       url: mediaUrl.trim(),
       title: mediaTitle.trim() || null,
       unlock_method: mediaUnlock,
-      token_cost: parseInt(mediaCost) || 0,
-      edition_size: parseInt(mediaEdition) || 100,
+      token_cost: 0, // price set in Shop
+
+      edition_size: parseInt(mediaEdition) || 300,
       published: false,
     }]).select().single()
     setMediaBusy(false)
@@ -351,8 +354,9 @@ export default function Cards() {
       url,
       title: title || null,
       unlock_method: mediaUnlock || 'shop',
-      token_cost: parseInt(mediaCost) || 0,
-      edition_size: parseInt(mediaEdition) || 100,
+      token_cost: 0, // price set in Shop
+
+      edition_size: parseInt(mediaEdition) || 300,
       published: false,
     }
     let lastErr = null
@@ -760,7 +764,7 @@ export default function Cards() {
         back_seed: backSeed,
         negative_prompt: fromGallery ? null : negative,
         image_model: fromGallery ? 'gallery' : imageModel,
-        edition_size: parseInt(draft.edition_size) || 500,
+        edition_size: parseInt(draft.edition_size) || 300,
         series_name: (draft.series_name || '').trim() || null,
       }])
       if (error) { alert('Save error: ' + error.message); setGenerating(false); setProgress(''); return }
@@ -802,7 +806,7 @@ export default function Cards() {
       image_prompt: editing.image_prompt,
       back_image_prompt: editing.back_image_prompt,
       negative_prompt: editNegative,
-      edition_size: parseInt(editing.edition_size) || 500,
+      edition_size: parseInt(editing.edition_size) || 300,
       series_name: (editing.series_name || '').trim() || null,
     }).eq('id', editing.id)
     setSaving(false)
@@ -1474,14 +1478,16 @@ export default function Cards() {
                 {inputRow('Series name (optional)', draft.series_name || '', v => setDraft({ ...draft, series_name: v }))}
                 <p className="text-[10px] text-gray-600 mb-2 -mt-2">Series cards get a 👑 on the front and the name on the back.</p>
                 <label className="block text-xs text-gray-400 mb-1">Edition size (print run)</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={draft.edition_size ?? 500}
+                <select
+                  value={String(EDITION_QTY_OPTIONS.includes(Number(draft.edition_size)) ? draft.edition_size : 300)}
                   onChange={e => setDraft({ ...draft, edition_size: e.target.value })}
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
-                />
-                <p className="text-[10px] text-gray-600 mb-3 -mt-2">Players get &quot;3 of {draft.edition_size || 500}&quot; style numbers. Default 500.</p>
+                >
+                  {EDITION_QTY_OPTIONS.map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-600 mb-3 -mt-2">Players get &quot;3 of {draft.edition_size || 300}&quot; style numbers. Default 300. Price is set in the Shop.</p>
 
                 {isStatless(draft.rarity) ? (
                   <p className="text-[11px] text-gray-500 mb-3">
@@ -1634,13 +1640,16 @@ export default function Cards() {
             {inputRow('Flavor Text', editing.flavor_text, v => setEditing({ ...editing, flavor_text: v }))}
             {inputRow('Series name (optional)', editing.series_name || '', v => setEditing({ ...editing, series_name: v }))}
             <label className="block text-xs text-gray-400 mb-1">Edition size (print run)</label>
-            <input
-              type="number"
-              min="1"
-              value={editing.edition_size ?? 500}
+            <select
+              value={String(EDITION_QTY_OPTIONS.includes(Number(editing.edition_size)) ? editing.edition_size : 300)}
               onChange={e => setEditing({ ...editing, edition_size: e.target.value })}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
-            />
+            >
+              {EDITION_QTY_OPTIONS.map(n => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+            <p className="text-[10px] text-gray-600 mb-3 -mt-2">Default 300. Price is set in the Shop.</p>
 
             {isStatless(editing.rarity) ? (
               <p className="text-[11px] text-gray-500 mb-3">
@@ -1797,13 +1806,15 @@ export default function Cards() {
               <div className="pt-2 border-t border-gray-800">
                 <label className="block text-gray-500 mb-1">Available copies (edition size)</label>
                 <div className="flex gap-2">
-                  <input
-                    type="number"
-                    min="1"
-                    value={selected.edition_size ?? 500}
+                  <select
+                    value={String(EDITION_QTY_OPTIONS.includes(Number(selected.edition_size)) ? selected.edition_size : 300)}
                     onChange={e => setSelected({ ...selected, edition_size: e.target.value })}
                     className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-500"
-                  />
+                  >
+                    {EDITION_QTY_OPTIONS.map(n => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
                   <button
                     type="button"
                     onClick={saveEditionSize}
@@ -1813,7 +1824,7 @@ export default function Cards() {
                   </button>
                 </div>
                 <p className="text-[10px] text-gray-600 mt-1">
-                  How many of this card can exist in the game (e.g. 50 → buyers get 1/50, 2/50…). Default 500.
+                  How many of this card can exist in the game (e.g. 50 → buyers get 1/50, 2/50…). Default 300. Price is set in the Shop.
                 </p>
               </div>
             </div>
@@ -1886,16 +1897,16 @@ export default function Cards() {
                 <select value={mediaUnlock} onChange={e => setMediaUnlock(e.target.value)}
                   className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none">
                   <option value="shop">Shop</option>
-                  <option value="pack">Pack</option>
                   <option value="mine">Mine</option>
-                  <option value="trade">Trade</option>
-                  <option value="battle">Battle</option>
+                  <option value="both">Both</option>
                 </select>
-                <input value={mediaCost} onChange={e => setMediaCost(e.target.value)} placeholder="Cost"
-                  className="w-16 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none" />
-                <input value={mediaEdition} onChange={e => setMediaEdition(e.target.value)} placeholder="Ed."
-                  title="Edition size"
-                  className="w-14 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none" />
+                <select value={String(mediaEdition)} onChange={e => setMediaEdition(e.target.value)}
+                  title="Qty available"
+                  className="w-20 bg-black border border-gray-700 rounded-lg px-1 py-1.5 text-xs outline-none">
+                  {EDITION_QTY_OPTIONS.map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
               </div>
               <button onClick={openCreateMedia}
                 className="w-full bg-pink-600 hover:bg-pink-500 rounded-lg py-2 text-xs font-semibold mb-2">
