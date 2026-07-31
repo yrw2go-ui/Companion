@@ -76,6 +76,9 @@ export default function Gallery() {
   const [folderModal, setFolderModal] = useState(null)  // { mode:'create'|'rename', id?, name }
   const [folderMap, setFolderMap] = useState({})  // item_key -> folder_id
   const [savingFolder, setSavingFolder] = useState(false)
+  // Folder sort: alpha (default A-Z) | recent | size — second click inverts
+  const [folderSort, setFolderSort] = useState('alpha')
+  const [folderSortAsc, setFolderSortAsc] = useState(true)
   const downloadCounter = useRef(0)
   const [gSort, setGSort] = useState('date_desc')
   const [gSearch, setGSearch] = useState('')
@@ -1485,6 +1488,54 @@ export default function Gallery() {
     return list
   })()
 
+  // Folder counts from folderMap
+  const folderCounts = (() => {
+    const counts = {}
+    for (const fid of Object.values(folderMap || {})) {
+      if (!fid) continue
+      counts[fid] = (counts[fid] || 0) + 1
+    }
+    return counts
+  })()
+
+  const sortedFolders = (() => {
+    const list = (folders || []).map(f => ({ ...f, _count: folderCounts[f.id] || 0 }))
+    const startsWithNum = (name) => /^\d/.test(String(name || '').trim())
+    const cmpAlpha = (a, b) => {
+      const an = String(a.name || '')
+      const bn = String(b.name || '')
+      const aNum = startsWithNum(an)
+      const bNum = startsWithNum(bn)
+      // numbered folders always before pure alpha (when sorting alpha)
+      if (folderSort === 'alpha') {
+        if (aNum && !bNum) return -1
+        if (!aNum && bNum) return 1
+      }
+      return an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' })
+    }
+    if (folderSort === 'recent') {
+      list.sort((a, b) => {
+        const da = new Date(a.created_at || 0).getTime()
+        const db = new Date(b.created_at || 0).getTime()
+        return folderSortAsc ? da - db : db - da
+      })
+    } else if (folderSort === 'size') {
+      list.sort((a, b) => {
+        const d = (a._count || 0) - (b._count || 0)
+        // default Largest = desc when folderSortAsc false... we set asc=false for size on first click
+        // first click size sets asc=false → want largest first → db - da style
+        return folderSortAsc ? d : -d
+      })
+    } else {
+      // alpha
+      list.sort((a, b) => {
+        const c = cmpAlpha(a, b)
+        return folderSortAsc ? c : -c
+      })
+    }
+    return list
+  })()
+
   const tab = (key, label) => (
     <button onClick={() => setFilter(key)}
       className={`px-4 py-1.5 rounded-full text-sm font-semibold ${filter === key ? 'bg-purple-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
@@ -1553,35 +1604,63 @@ export default function Gallery() {
       </div>
 
       {(
-        <div className="flex gap-2 mb-5 overflow-x-auto pb-1 items-center">
-          {[['all', 'All'], ['unfiled', 'Unfiled']].map(([val, label]) => (
-            <button key={val} onClick={() => setActiveFolder(val)}
-              className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${activeFolder === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
-              {label}
+        <div className="mb-5">
+          <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1 items-center">
+            <span className="text-[10px] text-gray-600 uppercase tracking-wide shrink-0">Folders</span>
+            {[
+              { key: 'alpha', label: folderSort === 'alpha' ? (folderSortAsc ? 'A–Z' : 'Z–A') : 'A–Z' },
+              { key: 'recent', label: folderSort === 'recent' ? (folderSortAsc ? 'Recent ↑' : 'Recent ↓') : 'Recent' },
+              { key: 'size', label: folderSort === 'size' ? (folderSortAsc ? 'Largest' : 'Smallest') : 'Largest' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  if (folderSort === key) setFolderSortAsc(a => !a)
+                  else {
+                    setFolderSort(key)
+                    // defaults: alpha A-Z, recent newest-first, size largest-first
+                    setFolderSortAsc(key === 'alpha')
+                  }
+                }}
+                className={`whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-semibold ${
+                  folderSort === key ? 'bg-blue-700 text-white' : 'bg-gray-900 text-gray-500'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1 items-center">
+            {[['all', 'All'], ['unfiled', 'Unfiled']].map(([val, label]) => (
+              <button key={val} onClick={() => setActiveFolder(val)}
+                className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${activeFolder === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
+                {label}
+              </button>
+            ))}
+            {sortedFolders.map(f => (
+              <button key={f.id}
+                onClick={() => setActiveFolder(f.id)}
+                onDoubleClick={() => renameFolder(f)}
+                className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${activeFolder === f.id ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
+                📁 {f.name}{folderSort === 'size' ? ` (${f._count || 0})` : ''}
+              </button>
+            ))}
+            <button onClick={createFolder}
+              className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-900 text-blue-400 border border-blue-900">
+              ＋ Folder
             </button>
-          ))}
-          {folders.map(f => (
-            <button key={f.id}
-              onClick={() => setActiveFolder(f.id)}
-              onDoubleClick={() => renameFolder(f)}
-              className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${activeFolder === f.id ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
-              📁 {f.name}
+            <button type="button" onClick={backfillMainBannerThumbs}
+              className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-900 text-emerald-400 border border-emerald-900">
+              🖼 Banner thumbs
             </button>
-          ))}
-          <button onClick={createFolder}
-            className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-900 text-blue-400 border border-blue-900">
-            ＋ Folder
-          </button>
-          <button type="button" onClick={backfillMainBannerThumbs}
-            className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-900 text-emerald-400 border border-emerald-900">
-            🖼 Banner thumbs
-          </button>
-          {activeFolder !== 'all' && activeFolder !== 'unfiled' && (
-            <button onClick={() => { const f = folders.find(x => x.id === activeFolder); if (f) deleteFolder(f) }}
-              className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 text-red-300">
-              🗑 Delete
-            </button>
-          )}
+            {activeFolder !== 'all' && activeFolder !== 'unfiled' && (
+              <button onClick={() => { const f = folders.find(x => x.id === activeFolder); if (f) deleteFolder(f) }}
+                className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 text-red-300">
+                🗑 Delete
+              </button>
+            )}
+          </div>
         </div>
       )}
 

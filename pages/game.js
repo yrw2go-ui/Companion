@@ -38,6 +38,17 @@ export default function Game() {
   const [tokenAnim, setTokenAnim] = useState(false) // play coin mp4 briefly on spend/earn
   const tokenAnimRef = useRef(null)
   const [buying, setBuying] = useState(false)
+  const [showUserSettings, setShowUserSettings] = useState(false)
+  const [muted, setMuted] = useState(() => {
+    try { return localStorage.getItem('ga_muted') === '1' } catch { return false }
+  })
+  const toggleMuted = () => {
+    setMuted(prev => {
+      const next = !prev
+      try { localStorage.setItem('ga_muted', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
   const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
   const revealVideoRef = useRef(null)
 
@@ -1131,8 +1142,13 @@ export default function Game() {
     <div className="min-h-screen bg-black text-white overflow-x-hidden">
       <div className="fixed top-0 inset-x-0 z-40 bg-black/70 backdrop-blur border-b border-white/10">
         <div className="max-w-lg mx-auto flex items-center justify-between px-4 py-3">
-          <button onClick={() => router.push('/settings')} className="text-xs text-gray-400 hover:text-white">
-            ⚙ Mode
+          <button
+            type="button"
+            onClick={() => setShowUserSettings(true)}
+            className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-base hover:bg-white/10"
+            aria-label="Settings"
+          >
+            ⚙
           </button>
           <img src="/goddess-arena-logo.png" alt="Goddess Arena" className="h-16 object-contain" />
           <button onClick={() => {
@@ -1972,6 +1988,53 @@ export default function Game() {
         )
       })()}
 
+      {/* Player settings */}
+      {showUserSettings && (
+        <div className="fixed inset-0 z-[95] bg-black/90 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl p-5 mb-safe">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-lg">Settings</h2>
+              <button type="button" onClick={() => setShowUserSettings(false)} className="text-gray-400 hover:text-white text-xl px-2">✕</button>
+            </div>
+
+            <button
+              type="button"
+              onClick={toggleMuted}
+              className="w-full flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 mb-3"
+            >
+              <span className="text-sm font-semibold">{muted ? '🔇 Media muted' : '🔊 Media on'}</span>
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${muted ? 'bg-gray-700 text-gray-300' : 'bg-pink-700 text-white'}`}>
+                {muted ? 'OFF' : 'ON'}
+              </span>
+            </button>
+            <p className="text-[10px] text-gray-600 mb-4 -mt-1 px-1">Mutes shop intros, reveals, and in-app video sound.</p>
+
+            <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 mb-3 opacity-70">
+              <p className="text-sm font-semibold">Account</p>
+              <p className="text-[11px] text-gray-500 mt-1">Coming soon — profile, login, and BabeBucks history will live here.</p>
+            </div>
+
+            <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 mb-3 opacity-70">
+              <p className="text-sm font-semibold">Notifications</p>
+              <p className="text-[11px] text-gray-500 mt-1">Coming soon — freebie drops, trades, and alerts.</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => alert('Help: email support@goddessarena.app (placeholder).\n\nDescribe the issue and include screenshots if you can.')}
+              className="w-full bg-gray-900 border border-gray-800 hover:bg-gray-800 rounded-xl px-4 py-3 text-left mb-2"
+            >
+              <p className="text-sm font-semibold">Help</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">Report a problem or get support</p>
+            </button>
+
+            <button type="button" onClick={() => setShowUserSettings(false)} className="w-full mt-2 text-sm text-gray-400 hover:text-white py-2">
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Initial load splash — animated logo */}
       {showSplash && (
         <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center">
@@ -2014,6 +2077,7 @@ export default function Game() {
             src={shopIntroUrl}
             autoPlay
             playsInline
+            muted={muted}
             className="w-full h-full object-contain max-w-lg"
             onEnded={closeShopIntro}
             onError={closeShopIntro}
