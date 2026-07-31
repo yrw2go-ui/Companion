@@ -236,10 +236,24 @@ export default function Game() {
     setPublishedCards(cards || [])
 
     // Scrolling home banner: images filed in Gallery folder "Main Banner"
-    // Prefer thumbnail_url to cut egress; no hard low cap — use everything in the folder
+    // Prefer thumbnail_url; otherwise force Supabase image render at small size to cut egress
+    const toBannerThumb = (rawUrl) => {
+      if (!rawUrl) return rawUrl
+      // already a tiny/thumb path
+      if (/thumbnail|thumb|_sm\.|_thumb/i.test(rawUrl)) return rawUrl
+      // Supabase public object → render/image with width cap
+      const m = String(rawUrl).match(/\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/)
+      if (m) {
+        const bucket = m[1]
+        const path = m[2].split('?')[0]
+        const base = String(rawUrl).split('/storage/v1/')[0]
+        return `${base}/storage/v1/render/image/public/${bucket}/${path}?width=360&height=520&resize=cover&quality=55`
+      }
+      return rawUrl
+    }
     const mapBanner = (f) => ({
       id: 'gal_' + f.id,
-      url: f.thumbnail_url || f.url,
+      url: f.thumbnail_url || toBannerThumb(f.url),
       prompt: f.prompt,
     })
     let strip = []
@@ -1114,7 +1128,7 @@ export default function Game() {
           <button onClick={() => router.push('/settings')} className="text-xs text-gray-400 hover:text-white">
             ⚙ Mode
           </button>
-          <img src="/goddess-arena-logo.png" alt="Goddess Arena" className="h-11 object-contain" />
+          <img src="/goddess-arena-logo.png" alt="Goddess Arena" className="h-16 object-contain" />
           <button onClick={() => router.push('/gallery')} className="text-xs text-gray-400 hover:text-white">
             Studio
           </button>
@@ -1137,7 +1151,7 @@ export default function Game() {
                 <div className="flex h-full gap-2 animate-marquee" style={{ width: 'max-content' }}>
                   {strip.map((b, i) => (
                     <div key={`${b.id}-${i}`} className="relative h-56 w-40 shrink-0 overflow-hidden rounded-xl">
-                      <img src={b.url} alt="" className="h-full w-full object-cover" />
+                      <img src={b.url} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
                     </div>
                   ))}
@@ -1151,7 +1165,7 @@ export default function Game() {
               <div className="flex h-full gap-2 animate-marquee-slow" style={{ width: 'max-content' }}>
                 {[...marquee].reverse().concat([...marquee].reverse()).map((b, i) => (
                   <div key={`r-${b.id}-${i}`} className="relative h-36 w-28 shrink-0 overflow-hidden rounded-lg">
-                    <img src={b.url} alt="" className="h-full w-full object-cover" />
+                    <img src={b.url} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                   </div>
                 ))}
               </div>
@@ -1334,7 +1348,7 @@ export default function Game() {
                                 {st.count > 1 && (
                                   <span className="absolute bottom-2 right-2 bg-pink-600 text-white text-[10px] font-bold rounded-full min-w-[1.5rem] h-6 px-1.5 flex items-center justify-center shadow z-[5]">×{st.count}</span>
                                 )}
-                                <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-10 w-10 object-contain drop-shadow-lg pointer-events-none z-[5]" />
+                                <img src="/ga-mark.png" alt="" className="absolute top-4 right-1.5 object-contain drop-shadow-lg pointer-events-none z-[5]" style={{ height: '4.25rem', width: '4.25rem' }} />
                               </div>
                               <div className="p-2">
                                 <p className="text-[9px] text-gray-500">{m.type} · {Number(o.purchase_price || 0)} BB</p>
