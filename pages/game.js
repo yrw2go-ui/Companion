@@ -58,6 +58,24 @@ export default function Game() {
   const MISC_SINGLE_PRICE = 200
   const MISC_SET_PRICE = 700
   const VIDEO_UNLOCK_PRICE = 100
+  // Sell back to system (fixed)
+  const SYSTEM_BUYBACK_CARD = {
+    common: 25,
+    uncommon: 50,
+    rare: 100,
+    epic: 150,
+    legendary: 200,
+    'ultra elite': 250,
+    ultra: 250,
+    'after hours': 500,
+    afterhours: 500,
+  }
+  const SYSTEM_BUYBACK_MEDIA = 100 // character media
+  const SYSTEM_BUYBACK_MISC = 50
+  const systemBuybackCard = (rarity) => {
+    const key = String(rarity || 'common').toLowerCase()
+    return SYSTEM_BUYBACK_CARD[key] ?? SYSTEM_BUYBACK_CARD.common
+  }
   const MEDIA_VIDEO_CHANCE = 0.18
   const BUCKS = 'BabeBucks'
 
@@ -419,6 +437,58 @@ export default function Game() {
       alert('Claim failed: ' + err.message)
     }
     setClaimingFreebie(null)
+  }
+
+  const sellToSystem = async () => {
+    if (!viewOwned) return
+    const o = viewOwned.row
+    if (!o?.id) return
+
+    let price = 0
+    let label = 'item'
+    if (viewOwned.kind === 'card') {
+      const c = o.cards || {}
+      price = systemBuybackCard(c.rarity)
+      label = c.name || 'card'
+    } else if (viewOwned.kind === 'media') {
+      price = SYSTEM_BUYBACK_MEDIA
+      const m = o.character_media || {}
+      label = m.title || m.character_name || 'media'
+    } else if (viewOwned.kind === 'misc') {
+      price = SYSTEM_BUYBACK_MISC
+      const m = o.misc_items || {}
+      label = m.public_id || m.title || 'misc'
+    } else {
+      return
+    }
+
+    if (!confirm(`Sell ${label} back to the system for ${price} BabeBucks?\n\nThis cannot be undone.`)) return
+
+    try {
+      if (viewOwned.kind === 'card') {
+        const { error } = await supabase.from('player_cards').delete().eq('id', o.id)
+        if (error) throw new Error(error.message)
+        setOwnedCards(prev => prev.filter(x => x.id !== o.id))
+      } else if (viewOwned.kind === 'media') {
+        const { error } = await supabase.from('player_media').delete().eq('id', o.id)
+        if (error) throw new Error(error.message)
+        setOwnedMedia(prev => prev.filter(x => x.id !== o.id))
+      } else if (viewOwned.kind === 'misc') {
+        const { error } = await supabase.from('player_misc').delete().eq('id', o.id)
+        if (error) throw new Error(error.message)
+        setOwnedMisc(prev => prev.filter(x => x.id !== o.id))
+      }
+
+      const newBalance = tokens + price
+      const { error: tErr } = await supabase.from('user_settings').upsert({ id: 1, tokens: newBalance })
+      if (tErr) throw new Error(tErr.message)
+      setTokens(newBalance)
+      setViewOwned(null)
+      setPlayOwnedVideo(false)
+      alert(`Sold for ${price} BabeBucks`)
+    } catch (err) {
+      alert('Sell failed: ' + err.message)
+    }
   }
 
   const unlockCardVideo = async () => {
@@ -1548,12 +1618,19 @@ export default function Game() {
         const o = viewOwned.row
         const stack = viewOwned.stack || [o]
         const stackLen = stack.length
+        const sellPrice = viewOwned.kind === 'card'
+          ? systemBuybackCard((o.cards || {}).rarity)
+          : viewOwned.kind === 'media'
+            ? SYSTEM_BUYBACK_MEDIA
+            : SYSTEM_BUYBACK_MISC
         const tradeSell = (
           <div className="flex gap-2 mt-3">
             <button type="button" onClick={() => alert('Trade is coming soon')}
               className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-xl py-3 text-sm font-semibold border border-gray-700">Trade</button>
-            <button type="button" onClick={() => alert('Sell is coming soon')}
-              className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-xl py-3 text-sm font-semibold border border-gray-700">Sell</button>
+            <button type="button" onClick={sellToSystem}
+              className="flex-1 bg-amber-900/80 hover:bg-amber-800 rounded-xl py-3 text-sm font-semibold border border-amber-700/50">
+              Sell · {sellPrice} BB
+            </button>
           </div>
         )
         const stackNav = stackLen > 1 ? (
