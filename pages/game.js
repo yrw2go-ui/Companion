@@ -235,11 +235,10 @@ export default function Game() {
 
     setPublishedCards(cards || [])
 
-    // Scrolling home banner: images filed in Gallery folder "Main Banner"
-    // Use full gallery urls (do not invent transform paths — those 404 without Image Transformations)
+    // Scrolling home banner: Gallery folder "Main Banner" only (deduped by media id)
     const mapBanner = (f) => ({
       id: 'gal_' + f.id,
-      url: f.url,
+      url: f.thumbnail_url || f.url,
       prompt: f.prompt,
     })
     let strip = []
@@ -250,15 +249,16 @@ export default function Game() {
         .from('folder_items')
         .select('item_key')
         .eq('folder_id', mainFolder.id)
-      const ids = (fis || []).map(x => {
+      const idSet = new Set()
+      for (const x of fis || []) {
         const k = String(x.item_key || '')
-        if (k.startsWith('gal_')) return k.slice(4)
-        // raw uuid
-        if (/^[0-9a-f-]{36}$/i.test(k)) return k
-        return null
-      }).filter(Boolean)
+        let id = null
+        if (k.startsWith('gal_')) id = k.slice(4)
+        else if (/^[0-9a-f-]{36}$/i.test(k)) id = k
+        if (id) idSet.add(id)
+      }
+      const ids = [...idSet]
       if (ids.length) {
-        // chunk in() in case of large folders
         const media = []
         for (let i = 0; i < ids.length; i += 100) {
           const chunk = ids.slice(i, i + 100)
@@ -269,7 +269,14 @@ export default function Game() {
             .eq('type', 'image')
           if (data) media.push(...data)
         }
-        strip = media.map(mapBanner)
+        // dedupe by id again after fetch
+        const seen = new Set()
+        strip = []
+        for (const f of media) {
+          if (seen.has(f.id)) continue
+          seen.add(f.id)
+          strip.push(mapBanner(f))
+        }
       }
     }
     setMarquee(strip)

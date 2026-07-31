@@ -1071,13 +1071,38 @@ export default function Gallery() {
 
     try {
       if (!folderId) {
-        const { error } = await supabase
-          .from('folder_items')
-          .delete()
-          .eq('source', item.source)
-          .eq('item_key', item.key)
-        if (error) alert('Could not unfile: ' + error.message)
+        // Remove every key variant so we don't leave duplicate folder rows
+        const keys = [item.key]
+        if (item.source === 'gallery_media' && item.id) {
+          keys.push(String(item.id))
+          keys.push('gal_' + item.id)
+        }
+        for (const k of keys) {
+          await supabase.from('folder_items').delete().eq('source', item.source).eq('item_key', k)
+          await supabase.from('folder_items').delete().eq('item_key', k)
+        }
+        // If this was Main Banner art, drop stored banner thumb so swaps stay clean
+        if (item.source === 'gallery_media' && item.id && item.thumbnail_url) {
+          try {
+            const path = String(item.thumbnail_url).split('/character-images/')[1]
+            if (path && path.startsWith('thumb_')) {
+              await supabase.storage.from('character-images').remove([path.split('?')[0]])
+            }
+          } catch {}
+          await supabase.from('gallery_media').update({ thumbnail_url: null }).eq('id', item.id)
+          setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, thumbnail_url: null } : m)))
+          setSelected(prev => (prev && prev.key === item.key ? { ...prev, thumbnail_url: null } : prev))
+        }
         return
+      }
+
+      // Clear other key variants for this item so Main Banner can't double-list it
+      if (item.source === 'gallery_media' && item.id) {
+        const variants = [String(item.id), 'gal_' + item.id, item.key]
+        for (const k of variants) {
+          if (k === item.key) continue
+          await supabase.from('folder_items').delete().eq('item_key', k)
+        }
       }
 
       const { error } = await supabase
@@ -1085,21 +1110,22 @@ export default function Gallery() {
         .upsert({ source: item.source, item_key: item.key, folder_id: folderId }, { onConflict: 'source,item_key' })
       if (error) alert('Could not move: ' + error.message)
 
-      // Main Banner: create a real stored thumbnail for the game strip (egress)
+      // Main Banner: always ensure a stored thumbnail for the game strip
       const folderMeta = folders.find(f => f.id === folderId)
       const isMainBanner = folderMeta && String(folderMeta.name || '').trim().toLowerCase() === 'main banner'
       if (
         isMainBanner &&
         item.source === 'gallery_media' &&
         item.type === 'image' &&
-        item.id &&
-        !item.thumbnail_url
+        item.id
       ) {
-        const thumb = await makeBannerThumb(item.url)
-        if (thumb) {
-          await supabase.from('gallery_media').update({ thumbnail_url: thumb }).eq('id', item.id)
-          setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, thumbnail_url: thumb } : m)))
-          setSelected(prev => (prev && prev.key === item.key ? { ...prev, thumbnail_url: thumb } : prev))
+        if (!item.thumbnail_url) {
+          const thumb = await makeBannerThumb(item.url)
+          if (thumb) {
+            await supabase.from('gallery_media').update({ thumbnail_url: thumb }).eq('id', item.id)
+            setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, thumbnail_url: thumb } : m)))
+            setSelected(prev => (prev && prev.key === item.key ? { ...prev, thumbnail_url: thumb } : prev))
+          }
         }
       }
     } finally {
