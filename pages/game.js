@@ -1135,7 +1135,10 @@ export default function Game() {
             ⚙ Mode
           </button>
           <img src="/goddess-arena-logo.png" alt="Goddess Arena" className="h-16 object-contain" />
-          <button onClick={() => router.push('/gallery')} className="text-xs text-gray-400 hover:text-white">
+          <button onClick={() => {
+            try { sessionStorage.setItem('skip_auto_game', '1') } catch {}
+            router.push('/')
+          }} className="text-xs text-gray-400 hover:text-white">
             Studio
           </button>
         </div>
