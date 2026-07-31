@@ -14,7 +14,7 @@ export default function Game() {
   const [tabBanners, setTabBanners] = useState({})
   const [tabTitles, setTabTitles] = useState({
     home: 'Home',
-    packs: 'Mystery Packs',
+    packs: 'FREEBIES',
     shop: 'Shop',
     collection: 'My Collection',
     duel: 'Duel',
@@ -33,6 +33,8 @@ export default function Game() {
   const [stackIndex, setStackIndex] = useState(0)
   const [mediaFullscreen, setMediaFullscreen] = useState(false)
   const [playOwnedVideo, setPlayOwnedVideo] = useState(false)
+  const [freebies, setFreebies] = useState([])
+  const [claimingFreebie, setClaimingFreebie] = useState(null)
   const [buying, setBuying] = useState(false)
   const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
   const revealVideoRef = useRef(null)
@@ -243,6 +245,13 @@ export default function Game() {
       .order('created_at', { ascending: false })
     setOwnedMisc(ownedX || [])
 
+    const { data: fb } = await supabase
+      .from('freebies')
+      .select('*')
+      .eq('active', true)
+      .order('created_at', { ascending: false })
+    setFreebies(fb || [])
+
     setLoading(false)
   }
 
@@ -300,6 +309,116 @@ export default function Game() {
       setOwnedSide('front')
       return { ...prev, row: prev.stack[next] }
     })
+  }
+
+  const claimFreebie = async (fb) => {
+    if (!fb || claimingFreebie) return
+    if (fb.redemption_count >= fb.max_redemptions) {
+      alert('This freebie is sold out')
+      return
+    }
+    setClaimingFreebie(fb.id)
+    try {
+      // already claimed?
+      const { data: existing } = await supabase
+        .from('freebie_claims')
+        .select('id')
+        .eq('freebie_id', fb.id)
+        .eq('owner_id', 1)
+        .maybeSingle()
+      if (existing) {
+        alert('You already claimed this freebie')
+        setClaimingFreebie(null)
+        return
+      }
+
+      // re-check stock
+      const { data: fresh } = await supabase.from('freebies').select('*').eq('id', fb.id).single()
+      if (!fresh || !fresh.active || fresh.redemption_count >= fresh.max_redemptions) {
+        alert('While supplies last — this one is gone')
+        setClaimingFreebie(null)
+        await load()
+        return
+      }
+
+      const { error: cErr } = await supabase.from('freebie_claims').insert([{
+        freebie_id: fb.id,
+        owner_id: 1,
+      }])
+      if (cErr) {
+        if (String(cErr.message || '').includes('duplicate') || cErr.code === '23505') {
+          alert('You already claimed this freebie')
+        } else {
+          alert(cErr.message)
+        }
+        setClaimingFreebie(null)
+        return
+      }
+
+      await supabase.from('freebies').update({
+        redemption_count: (fresh.redemption_count || 0) + 1,
+      }).eq('id', fb.id)
+
+      if (fresh.type === 'tokens') {
+        const amt = Number(fresh.token_amount) || 0
+        const newBal = tokens + amt
+        await supabase.from('user_settings').upsert({ id: 1, tokens: newBal })
+        setTokens(newBal)
+        alert(`+${amt.toLocaleString()} BabeBucks claimed!`)
+      } else if (fresh.type === 'media' && fresh.media_url) {
+        // grant as player_misc if we can find matching misc_item, else create owned misc-like entry via player_misc optional
+        // Prefer insert into player_misc linked to misc_item_id if set
+        if (fresh.misc_item_id) {
+          const instanceId = 'FB-' + Math.random().toString(36).slice(2, 8).toUpperCase()
+          await supabase.from('player_misc').insert([{
+            instance_id: instanceId,
+            misc_item_id: fresh.misc_item_id,
+            owner_id: 1,
+            purchase_price: 0,
+            acquired_via: 'freebie',
+          }])
+        } else if (fresh.character_media_id) {
+          const instanceId = 'FB-' + Math.random().toString(36).slice(2, 8).toUpperCase()
+          await supabase.from('player_media').insert([{
+            instance_id: instanceId,
+            media_id: fresh.character_media_id,
+            owner_id: 1,
+            purchase_price: 0,
+            acquired_via: 'freebie',
+            edition_number: 1,
+            edition_total: 1,
+          }])
+        } else {
+          // standalone free media → create misc item + claim
+          const publicId = 'FREE' + Date.now().toString().slice(-6)
+          const { data: item } = await supabase.from('misc_items').insert([{
+            type: fresh.media_type || 'image',
+            url: fresh.media_url,
+            title: fresh.title || 'Freebie',
+            public_id: publicId,
+            sort_index: 1,
+            published: true,
+          }]).select().single()
+          if (item) {
+            const instanceId = 'FB-' + Math.random().toString(36).slice(2, 8).toUpperCase()
+            await supabase.from('player_misc').insert([{
+              instance_id: instanceId,
+              misc_item_id: item.id,
+              owner_id: 1,
+              purchase_price: 0,
+              acquired_via: 'freebie',
+            }])
+          }
+        }
+        alert('Free media claimed! Check My Collection.')
+      } else {
+        alert('Claimed!')
+      }
+      await load()
+    } catch (err) {
+      alert('Claim failed: ' + err.message)
+    }
+    setClaimingFreebie(null)
   }
 
   const unlockCardVideo = async () => {
@@ -904,10 +1023,10 @@ export default function Game() {
           <div className="max-w-lg mx-auto px-4 mt-8 space-y-3 pb-24">
             <p className="text-[10px] tracking-[0.25em] uppercase text-gray-500 mb-1">Play</p>
 
-            <button onClick={() => openTab('packs')} className="w-full text-left bg-gradient-to-r from-pink-700 to-purple-800 rounded-2xl p-4 active:scale-[0.98] transition">
+            <button onClick={() => openTab('packs')} className="w-full text-left bg-gradient-to-r from-emerald-700 to-teal-800 rounded-2xl p-4 active:scale-[0.98] transition">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-bold text-lg">{tabTitles.packs || 'Mystery Packs'}</p>
+                  <p className="font-bold text-lg">{tabTitles.packs || 'FREEBIES'}</p>
                   <p className="text-xs text-pink-200/80 mt-0.5">Spend BabeBucks · unlock rare cards</p>
                 </div>
                 <span className="text-2xl">🎴</span>
@@ -1193,18 +1312,67 @@ export default function Game() {
 
       {tab === 'packs' && (
         <div className="pt-16 pb-24">
-          <TabHeader title={tabTitles.packs || "Mystery Packs"} />
+          <TabHeader title={tabTitles.packs || "FREEBIES"} />
           <TabBanner tabKey="packs" />
           <div className="max-w-lg mx-auto px-4">
-            <p className="text-xs text-gray-500 mb-6">Unlock flow comes next. Packs will pull from published cards + extra media.</p>
-            <div className="bg-gradient-to-br from-pink-800 to-purple-900 rounded-2xl p-6 text-center">
-              <p className="text-4xl mb-2">🎴</p>
-              <p className="font-bold text-lg">Starter Pack</p>
-              <p className="text-xs text-pink-200/80 mt-1 mb-4">3 cards · placeholder</p>
-              <button disabled className="bg-white/20 rounded-full px-6 py-2 text-sm font-semibold opacity-50">
-                100 BabeBucks
-              </button>
+            <div className="rounded-2xl border border-emerald-900/50 bg-emerald-950/30 p-4 mb-5">
+              <p className="font-bold text-lg text-emerald-200">Random Freebies</p>
+              <p className="text-xs text-emerald-200/70 mt-1">(while supplies last)</p>
+              <p className="text-[11px] text-gray-400 mt-3 leading-relaxed">
+                Continue to check regularly for miscellaneous free stuff.
+              </p>
             </div>
+
+            {freebies.length === 0 ? (
+              <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-8 text-center">
+                <p className="text-3xl mb-2">🎁</p>
+                <p className="text-sm text-gray-400">No freebies right now</p>
+                <p className="text-xs text-gray-600 mt-1">Check back later</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {freebies.map(fb => {
+                  const left = Math.max(0, (fb.max_redemptions || 0) - (fb.redemption_count || 0))
+                  const soldOut = left <= 0
+                  return (
+                    <div key={fb.id} className={`rounded-2xl border p-4 ${soldOut ? 'border-gray-800 bg-gray-900/40 opacity-60' : 'border-emerald-800/40 bg-gray-900'}`}>
+                      <div className="flex gap-3">
+                        {fb.type === 'media' && fb.media_url ? (
+                          <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-800 shrink-0">
+                            {fb.media_type === 'video' ? (
+                              <video src={fb.media_url} className="w-full h-full object-cover" muted playsInline />
+                            ) : (
+                              <img src={fb.media_url} alt="" className="w-full h-full object-cover" />
+                            )}
+                          </div>
+                        ) : (
+                          <div className="w-16 h-16 rounded-lg bg-emerald-900/50 flex items-center justify-center text-2xl shrink-0">💎</div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm truncate">{fb.title || (fb.type === 'tokens' ? 'BabeBucks drop' : 'Free media')}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">
+                            {fb.type === 'tokens'
+                              ? `${Number(fb.token_amount || 0).toLocaleString()} BB`
+                              : 'Free media item'}
+                          </p>
+                          <p className="text-[10px] text-emerald-400/80 mt-1">
+                            {soldOut ? 'Sold out' : `${left} of ${fb.max_redemptions} left`}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={soldOut || claimingFreebie === fb.id}
+                        onClick={() => claimFreebie(fb)}
+                        className="w-full mt-3 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 rounded-xl py-2.5 text-sm font-semibold"
+                      >
+                        {soldOut ? 'Gone' : claimingFreebie === fb.id ? 'Claiming…' : 'Claim free'}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1624,7 +1792,7 @@ export default function Game() {
             <div className="text-lg">🏠</div>{(tabTitles.home || 'Home').split(' ')[0]}
           </button>
           <button onClick={() => openTab('packs')} className={`py-2 ${tab === 'packs' ? 'text-pink-400' : ''}`}>
-            <div className="text-lg">🎴</div>{(tabTitles.packs || 'Packs').split(' ')[0]}
+            <div className="text-lg">🎁</div>{(tabTitles.packs || 'FREEBIES').split(' ')[0]}
           </button>
           <button onClick={() => openTab('shop')} className={`py-2 ${tab === 'shop' ? 'text-pink-400' : ''}`}>
             <div className="text-lg">🛒</div>{(tabTitles.shop || 'Shop').split(' ')[0]}

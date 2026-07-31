@@ -147,6 +147,12 @@ export default function Gallery() {
   const [miscSetName, setMiscSetName] = useState('')
   const [miscPrefix, setMiscPrefix] = useState('')
   const [miscBusy, setMiscBusy] = useState(false)
+  const [showFreebieModal, setShowFreebieModal] = useState(false)
+  const [freebieTitle, setFreebieTitle] = useState('')
+  const [freebieType, setFreebieType] = useState('media') // media | tokens
+  const [freebieTokens, setFreebieTokens] = useState('100')
+  const [freebieMax, setFreebieMax] = useState('50')
+  const [freebieBusy, setFreebieBusy] = useState(false)
 
 
   useEffect(() => { load() }, [])
@@ -1083,6 +1089,41 @@ export default function Gallery() {
     setSelected(prev => prev && prev.cardId === item.cardId ? { ...prev, published: next } : prev)
   }
 
+
+
+  const openMakeFreebie = (mode = 'media') => {
+    if (!selected && mode === 'media') return
+    setFreebieType(mode)
+    setFreebieTitle(mode === 'tokens' ? 'BabeBucks drop' : (selected?.prompt ? String(selected.prompt).slice(0, 40) : 'Free media'))
+    setFreebieTokens('100')
+    setFreebieMax('50')
+    setShowFreebieModal(true)
+  }
+
+  const publishFreebie = async () => {
+    if (freebieBusy) return
+    const maxR = Math.max(1, parseInt(freebieMax) || 50)
+    setFreebieBusy(true)
+    try {
+      const row = {
+        type: freebieType,
+        title: (freebieTitle || '').trim() || (freebieType === 'tokens' ? 'BabeBucks drop' : 'Free media'),
+        token_amount: freebieType === 'tokens' ? (parseInt(freebieTokens) || 0) : null,
+        media_url: freebieType === 'media' && selected ? selected.url : null,
+        media_type: freebieType === 'media' && selected ? (selected.type === 'video' ? 'video' : 'image') : null,
+        max_redemptions: maxR,
+        redemption_count: 0,
+        active: true,
+      }
+      const { error } = await supabase.from('freebies').insert([row])
+      if (error) throw new Error(error.message)
+      setShowFreebieModal(false)
+      alert(`Freebie live: first ${maxR} people can redeem`)
+    } catch (err) {
+      alert('Freebie failed: ' + err.message)
+    }
+    setFreebieBusy(false)
+  }
 
   const openAddMisc = () => {
     if (!selected) return
@@ -2083,7 +2124,16 @@ export default function Gallery() {
               <p className="text-[11px] text-pink-300 text-center mt-3 mb-1 font-semibold">📡 Published card art</p>
             )}
 
-            {selected.source !== 'cards' && (
+                        {selected.source !== 'cards' && (
+              <button
+                onClick={() => openMakeFreebie('media')}
+                className="w-full bg-emerald-800 hover:bg-emerald-700 rounded-lg py-2 text-sm font-semibold mt-2"
+              >
+                🎁 Make Freebie
+              </button>
+            )}
+
+{selected.source !== 'cards' && (
               selected.inMiscBeauties || (selected.publishedLinks || []).some(l => String(l).startsWith('Misc Beauties')) ? (
                 <button
                   onClick={removeFromMisc}
@@ -2159,6 +2209,58 @@ export default function Gallery() {
               <button type="button" onClick={addToMisc} disabled={miscBusy}
                 className="flex-1 bg-pink-600 hover:bg-pink-500 rounded-lg py-3 font-semibold disabled:opacity-50">
                 {miscBusy ? 'Saving…' : 'Publish to Misc'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FREEBIE MODAL */}
+      {showFreebieModal && (
+        <div className="fixed inset-0 z-[80] bg-black/90 flex items-center justify-center p-5">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-md">
+            <h2 className="font-bold text-lg mb-1">Make Freebie</h2>
+            <p className="text-xs text-gray-500 mb-4">First X people to redeem get it free. Then it&apos;s gone.</p>
+
+            <label className="block text-xs text-gray-400 mb-1">Type</label>
+            <select value={freebieType} onChange={e => setFreebieType(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+              <option value="media">This media file</option>
+              <option value="tokens">BabeBucks (coins)</option>
+            </select>
+
+            <label className="block text-xs text-gray-400 mb-1">Title</label>
+            <input value={freebieTitle} onChange={e => setFreebieTitle(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none" />
+
+            {freebieType === 'tokens' && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">BabeBucks each person gets</label>
+                <input value={freebieTokens} onChange={e => setFreebieTokens(e.target.value)} type="number" min="1"
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none" />
+              </>
+            )}
+
+            {freebieType === 'media' && selected && (
+              <div className="mb-3 rounded-lg overflow-hidden border border-gray-800">
+                {selected.type === 'video' ? (
+                  <video src={selected.url} className="w-full max-h-40 object-cover" muted playsInline />
+                ) : (
+                  <img src={selected.url} alt="" className="w-full max-h-40 object-cover" />
+                )}
+              </div>
+            )}
+
+            <label className="block text-xs text-gray-400 mb-1">How many people can redeem (first X)</label>
+            <input value={freebieMax} onChange={e => setFreebieMax(e.target.value)} type="number" min="1"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none" />
+
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setShowFreebieModal(false)} disabled={freebieBusy}
+                className="flex-1 bg-gray-800 rounded-lg py-3 font-semibold">Cancel</button>
+              <button type="button" onClick={publishFreebie} disabled={freebieBusy}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-lg py-3 font-semibold disabled:opacity-50">
+                {freebieBusy ? 'Publishing…' : 'Go live'}
               </button>
             </div>
           </div>
