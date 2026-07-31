@@ -58,6 +58,7 @@ export default function Game() {
   const MEDIA_MULTI_PRICE = 1100
   const MEDIA_MULTI_QTY = 3
   const MISC_SINGLE_PRICE = 200
+  const MISC_MULTI_PRICE = 500 // 3 qty bundle
   const MISC_SET_PRICE = 700
   const VIDEO_UNLOCK_PRICE = 100
   // Sell back to system (fixed)
@@ -804,47 +805,63 @@ export default function Game() {
   }
 
 
-  const buyMiscRandom = async () => {
-    if (buying || reveal) return
-    const price = MISC_SINGLE_PRICE
+  const buyMiscRandom = async (qty = 1) => {
+    qty = Math.max(1, Math.min(10, parseInt(qty) || 1))
+    const price = qty >= 3 ? MISC_MULTI_PRICE : MISC_SINGLE_PRICE * qty
     if (tokens < price) {
       alert(`Need ${price} ${BUCKS}`)
       return
     }
-    if (!confirm(`Random Misc Beauty for ${price} ${BUCKS}?`)) return
+    if (!confirm(qty === 1
+      ? `Random Misc Beauty for ${price} ${BUCKS}?`
+      : `${qty} random Misc for ${price} ${BUCKS}?`)) return
+
     setBuying(true)
     try {
-      const { data: items } = await supabase.from('misc_items').select('*, misc_sets(id, name, code_prefix)').eq('published', true)
-      if (!items?.length) throw new Error('No Misc Beauties published yet')
-      const item = items[Math.floor(Math.random() * items.length)]
-      const instanceId = makeInstanceId()
+      const { data: pool } = await supabase
+        .from('misc_items')
+        .select('id, url, type, public_id, title, set_id')
+        .eq('published', true)
+      if (!pool?.length) {
+        alert('No misc items published yet')
+        setBuying(false)
+        return
+      }
+
       const newBalance = tokens - price
       const { error: tErr } = await supabase.from('user_settings').upsert({ id: 1, tokens: newBalance })
-      if (tErr) throw new Error(tErr.message)
-      const { data: row, error } = await supabase.from('player_misc').insert([{
-        instance_id: instanceId,
-        misc_item_id: item.id,
-        owner_id: 1,
-        purchase_price: price,
-        acquired_via: 'shop',
-      }]).select('id, instance_id, misc_item_id, purchase_price, acquired_via, created_at').single()
-      if (error) {
-        await supabase.from('user_settings').upsert({ id: 1, tokens })
-        throw new Error(error.message)
+      if (tErr) { alert(tErr.message); setBuying(false); return }
+
+      const picks = []
+      for (let i = 0; i < qty; i++) {
+        const item = pool[Math.floor(Math.random() * pool.length)]
+        const instanceId = 'MSC-' + Math.random().toString(36).slice(2, 8).toUpperCase()
+        const { data: row, error } = await supabase.from('player_misc').insert([{
+          instance_id: instanceId,
+          misc_item_id: item.id,
+          owner_id: 1,
+          purchase_price: Math.round(price / qty),
+          acquired_via: 'shop',
+        }]).select('id, instance_id, misc_item_id, purchase_price, acquired_via, created_at').single()
+        if (error) {
+          await supabase.from('user_settings').upsert({ id: 1, tokens })
+          alert(error.message)
+          setBuying(false)
+          return
+        }
+        picks.push({ ...row, misc_items: item })
       }
+
       setTokens(newBalance)
       flashTokenCoin()
-      setOwnedMisc(prev => [{ ...row, misc_items: item }, ...prev])
-      setReveal({
-        phase: 'show',
-        kind: 'misc',
-        miscItem: item,
-        instanceId,
-        price,
-        packItems: null,
-      })
+      setOwnedMisc(prev => [...picks, ...prev])
+      // simple reveal: show first
+      if (picks[0]) {
+        setViewOwned({ kind: 'misc', row: picks[0], stack: picks })
+        setStackIndex(0)
+      }
     } catch (err) {
-      alert('Misc buy failed: ' + err.message)
+      alert(err.message)
     }
     setBuying(false)
   }
@@ -1272,7 +1289,7 @@ export default function Game() {
                                 ) : m.url ? (
                                   <img src={m.url} alt="" className="w-full h-full object-cover object-top" />
                                 ) : null}
-                                <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-12 w-12 object-contain drop-shadow-lg pointer-events-none z-[5]" />
+                                <img src="/ga-mark.png" alt="" className="absolute top-3 right-2 h-16 w-16 object-contain drop-shadow-lg pointer-events-none z-[5]" />
                                 {st.count > 1 && (
                                   <span className="absolute top-2 left-2 bg-pink-600 text-white text-[10px] font-bold rounded-full min-w-[1.5rem] h-6 px-1.5 flex items-center justify-center shadow z-[5]">×{st.count}</span>
                                 )}
@@ -1438,7 +1455,47 @@ export default function Game() {
                 <div className="flex-1">
                   <p className="font-bold text-sm">Media Multi · 3 qty</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Three random drops · better rate</p>
-                  <p className="text-pink-400 text-xs font-semibold mt-2">{MEDIA_MULTI_PRICE.toLocaleString()} {BUCKS}</p>
+                  <p className="text-pink-400 text-xs font-semibold mt-2 inline-flex items-center gap-1.5">
+                    <img src={TOKEN_ICON} alt="" className="w-4 h-4 rounded-full" />
+                    {MEDIA_MULTI_PRICE.toLocaleString()} BB
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2 mt-6">Misc Beauties</p>
+            <p className="text-[10px] text-gray-600 mb-3">
+              Random images/videos not tied to a character card. Unlimited supply of each item.
+            </p>
+            <div className="space-y-2 mb-8">
+              <button
+                onClick={() => buyMiscRandom(1)}
+                disabled={buying}
+                className="w-full flex gap-3 items-center text-left bg-gray-900 border border-pink-900/40 rounded-2xl p-3 disabled:opacity-50"
+              >
+                <img src={MYSTERY_SKINS[0]?.image || '/mystery-card-1.jpg'} alt="" className="w-14 rounded-lg object-cover aspect-[3/4]" />
+                <div className="flex-1">
+                  <p className="font-bold text-sm">Random Misc · 1 qty</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Standalone beauty drop</p>
+                  <p className="text-pink-400 text-xs font-semibold mt-2 inline-flex items-center gap-1.5">
+                    <img src={TOKEN_ICON} alt="" className="w-4 h-4 rounded-full" />
+                    {MISC_SINGLE_PRICE} BB
+                  </p>
+                </div>
+              </button>
+              <button
+                onClick={() => buyMiscRandom(3)}
+                disabled={buying}
+                className="w-full flex gap-3 items-center text-left bg-gray-900 border border-pink-900/40 rounded-2xl p-3 disabled:opacity-50"
+              >
+                <img src={MYSTERY_SKINS[1]?.image || '/mystery-card-2.jpg'} alt="" className="w-14 rounded-lg object-cover aspect-[3/4]" />
+                <div className="flex-1">
+                  <p className="font-bold text-sm">Misc Multi · 3 qty</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Three random misc drops</p>
+                  <p className="text-pink-400 text-xs font-semibold mt-2 inline-flex items-center gap-1.5">
+                    <img src={TOKEN_ICON} alt="" className="w-4 h-4 rounded-full" />
+                    {MISC_MULTI_PRICE} BB
+                  </p>
                 </div>
               </button>
             </div>
@@ -1559,7 +1616,7 @@ export default function Game() {
                       <p className="text-[9px] text-gray-400">{m.sort_index} of set</p>
                     )}
                   </div>
-                  <img src="/ga-mark.png" alt="" className="absolute top-3 right-3 h-14 w-14 object-contain drop-shadow-lg pointer-events-none" />
+                  <img src="/ga-mark.png" alt="" className="absolute top-4 right-2 h-18 w-18 object-contain drop-shadow-lg pointer-events-none" style={{ height: '4.5rem', width: '4.5rem' }} />
                 </div>
                 {reveal.setName && (
                   <p className="text-center text-xs text-pink-300 mt-3">Set: {reveal.setName}</p>
@@ -1772,7 +1829,7 @@ export default function Game() {
                         <p className="font-bold text-[15px] leading-tight truncate pr-24">{c.name}</p>
                         {c.title && <p className="text-[10px] text-gray-300 uppercase tracking-[0.12em] mt-0.5 truncate pr-24">{c.title}</p>}
                       </div>
-                      <img src="/ga-mark.png" alt="" className="absolute bottom-2 right-1.5 z-[20] h-20 w-20 object-contain drop-shadow-lg pointer-events-none" />
+                      <img src="/ga-mark.png" alt="" className="absolute bottom-0.5 right-1 z-[20] h-28 w-28 object-contain drop-shadow-lg pointer-events-none" />
                     </>
                   )}
                 </div>
@@ -1858,7 +1915,7 @@ export default function Game() {
                     <p className="text-[9px] text-white truncate">{set.name || 'Standalone'}</p>
                   </div>
                 )}
-                <img src="/ga-mark.png" alt="" className="absolute top-3 right-3 h-14 w-14 object-contain drop-shadow-lg pointer-events-none z-[5]" />
+                <img src="/ga-mark.png" alt="" className="absolute top-4 right-2 object-contain drop-shadow-lg pointer-events-none z-[5]" style={{ height: '4.5rem', width: '4.5rem' }} />
                 <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] bg-black/70 text-gray-200 px-2 py-1 rounded-full">Tap to expand</span>
               </button>
               {stackNav}
