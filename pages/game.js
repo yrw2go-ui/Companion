@@ -35,6 +35,8 @@ export default function Game() {
   const [playOwnedVideo, setPlayOwnedVideo] = useState(false)
   const [freebies, setFreebies] = useState([])
   const [claimingFreebie, setClaimingFreebie] = useState(null)
+  const [tokenAnim, setTokenAnim] = useState(false) // play coin mp4 briefly on spend/earn
+  const tokenAnimRef = useRef(null)
   const [buying, setBuying] = useState(false)
   const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
   const revealVideoRef = useRef(null)
@@ -78,6 +80,48 @@ export default function Game() {
   }
   const MEDIA_VIDEO_CHANCE = 0.18
   const BUCKS = 'BabeBucks'
+  const TOKEN_ICON = '/babe-bucks.png'
+  const TOKEN_ANIM = '/babe-bucks.mp4'
+
+  const flashTokenCoin = () => {
+    setTokenAnim(true)
+    // restart video if already playing
+    requestAnimationFrame(() => {
+      const v = tokenAnimRef.current
+      if (v) {
+        try {
+          v.currentTime = 0
+          v.play().catch(() => {})
+        } catch {}
+      }
+    })
+    setTimeout(() => setTokenAnim(false), 1600)
+  }
+
+  const TokenBalance = ({ amount, size = 'md', className = '' }) => {
+    const iconCls = size === 'lg' ? 'w-9 h-9' : size === 'sm' ? 'w-5 h-5' : 'w-7 h-7'
+    const textCls = size === 'lg' ? 'text-3xl font-bold' : size === 'sm' ? 'text-sm font-semibold' : 'text-2xl font-bold'
+    return (
+      <div className={`inline-flex items-center gap-2 ${className}`}>
+        <div className={`relative ${iconCls} shrink-0`}>
+          {tokenAnim ? (
+            <video
+              ref={tokenAnimRef}
+              src={TOKEN_ANIM}
+              className={`${iconCls} rounded-full object-cover`}
+              autoPlay
+              muted
+              playsInline
+              onEnded={() => setTokenAnim(false)}
+            />
+          ) : (
+            <img src={TOKEN_ICON} alt="" className={`${iconCls} rounded-full object-cover`} />
+          )}
+        </div>
+        <span className={textCls}>{Number(amount || 0).toLocaleString()}</span>
+      </div>
+    )
+  }
 
   // Real-money token packs (display only until payments wired)
   const TOKEN_PACKS = [
@@ -382,6 +426,7 @@ export default function Game() {
         const newBal = tokens + amt
         await supabase.from('user_settings').upsert({ id: 1, tokens: newBal })
         setTokens(newBal)
+        flashTokenCoin()
         alert(`+${amt.toLocaleString()} BabeBucks claimed!`)
       } else if (fresh.type === 'media' && fresh.media_url) {
         // grant as player_misc if we can find matching misc_item, else create owned misc-like entry via player_misc optional
@@ -483,6 +528,7 @@ export default function Game() {
       const { error: tErr } = await supabase.from('user_settings').upsert({ id: 1, tokens: newBalance })
       if (tErr) throw new Error(tErr.message)
       setTokens(newBalance)
+      flashTokenCoin()
       setViewOwned(null)
       setPlayOwnedVideo(false)
       alert(`Sold for ${price} BabeBucks`)
@@ -512,6 +558,7 @@ export default function Game() {
       return
     }
     setTokens(newBalance)
+    flashTokenCoin()
     const patch = { video_unlocked: true }
     setOwnedCards(prev => prev.map(row => row.id === o.id ? { ...row, ...patch } : row))
     setViewOwned(prev => {
@@ -678,6 +725,7 @@ export default function Game() {
       }
 
       setTokens(newBalance)
+      flashTokenCoin()
       setOwnedCards(prev => [
         ...won.map(w => ({ ...w.row, cards: w.card })),
         ...prev,
@@ -785,6 +833,7 @@ export default function Game() {
         throw new Error(error.message)
       }
       setTokens(newBalance)
+      flashTokenCoin()
       setOwnedMisc(prev => [{ ...row, misc_items: item }, ...prev])
       setReveal({
         phase: 'show',
@@ -852,6 +901,7 @@ export default function Game() {
         throw new Error('Could not grant set items')
       }
       setTokens(newBalance)
+      flashTokenCoin()
       setOwnedMisc(prev => [
         ...won.map(w => ({ ...w.row, misc_items: w.item })),
         ...prev,
@@ -907,6 +957,7 @@ export default function Game() {
       }
 
       setTokens(newBalance)
+      flashTokenCoin()
       setOwnedMedia(prev => [
         ...won.map(w => ({
           ...w.row,
@@ -1109,7 +1160,7 @@ export default function Game() {
                   <p className="font-bold">{tabTitles.shop || 'Shop'}</p>
                   <p className="text-xs text-gray-500 mt-0.5">Buy cards &amp; BabeBucks</p>
                 </div>
-                <span className="text-2xl">🛒</span>
+                <img src={TOKEN_ICON} alt="" className="w-8 h-8 rounded-full object-cover" />
               </div>
             </button>
 
@@ -1135,7 +1186,7 @@ export default function Game() {
 
             <div className="mt-8 rounded-2xl border border-pink-900/40 bg-pink-950/30 p-4">
               <p className="text-xs text-pink-300 font-semibold mb-1">BabeBucks</p>
-              <p className="text-3xl font-bold">{tokens.toLocaleString()}</p>
+              <TokenBalance amount={tokens} size="lg" />
               <p className="text-[10px] text-gray-500 mt-1">Spend on packs · earn more later</p>
             </div>
           </div>
@@ -1291,15 +1342,24 @@ export default function Game() {
           <div className="max-w-lg mx-auto px-4">
             <div className="rounded-2xl border border-pink-900/40 bg-pink-950/30 p-4 mb-6">
               <p className="text-xs text-pink-300 font-semibold mb-1">Your balance</p>
-              <p className="text-2xl font-bold">{tokens.toLocaleString()} BabeBucks</p>
+              <div className="flex items-center gap-3">
+                <img src={TOKEN_ICON} alt="" className="w-12 h-12 rounded-full object-cover shrink-0" />
+                <div>
+                  <p className="text-3xl font-bold leading-none">{Number(tokens).toLocaleString()}</p>
+                  <p className="text-xs text-gray-400 mt-1">BabeBucks</p>
+                </div>
+              </div>
             </div>
 
             <p className="text-[10px] tracking-[0.2em] uppercase text-gray-500 mb-2">BabeBucks packs</p>
             <div className="grid grid-cols-2 gap-2 mb-6">
               {TOKEN_PACKS.map(tp => (
-                <button key={tp.amount} disabled className="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center opacity-70">
-                  <p className="text-sm font-bold text-pink-300">{tp.amount.toLocaleString()} BB</p>
-                  <p className="text-[11px] text-gray-400 mt-1">{tp.price}</p>
+                <button key={tp.amount} disabled className="bg-gray-900 border border-gray-800 rounded-xl p-3 text-left opacity-70 flex items-center gap-2.5">
+                  <img src={TOKEN_ICON} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                  <div>
+                    <p className="text-sm font-bold text-pink-300">{tp.amount.toLocaleString()} BB</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{tp.price}</p>
+                  </div>
                 </button>
               ))}
             </div>
@@ -1321,7 +1381,10 @@ export default function Game() {
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-sm">{t.title}</p>
                       <p className="text-[10px] text-gray-500 mt-0.5">{t.blurb}</p>
-                      <p className="text-pink-400 text-xs font-semibold mt-1">{TIER_PRICE[t.tier]} BB each</p>
+                      <p className="text-pink-400 text-xs font-semibold mt-1 inline-flex items-center gap-1.5">
+                        <img src={TOKEN_ICON} alt="" className="w-4 h-4 rounded-full object-cover" />
+                        {TIER_PRICE[t.tier]} BB each
+                      </p>
                     </div>
                   </div>
                   <div className="grid grid-cols-4 gap-1.5">
@@ -1360,7 +1423,10 @@ export default function Game() {
                 <div className="flex-1">
                   <p className="font-bold text-sm">Random Media · 1 qty</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Image or video · numbered edition</p>
-                  <p className="text-pink-400 text-xs font-semibold mt-2">{MEDIA_SINGLE_PRICE.toLocaleString()} {BUCKS}</p>
+                  <p className="text-pink-400 text-xs font-semibold mt-2 inline-flex items-center gap-1.5">
+                    <img src={TOKEN_ICON} alt="" className="w-4 h-4 rounded-full" />
+                    {MEDIA_SINGLE_PRICE.toLocaleString()} BB
+                  </p>
                 </div>
               </button>
               <button
@@ -1872,7 +1938,8 @@ export default function Game() {
             <div className="text-lg">🎁</div>{(tabTitles.packs || 'FREEBIES').split(' ')[0]}
           </button>
           <button onClick={() => openTab('shop')} className={`py-2 ${tab === 'shop' ? 'text-pink-400' : ''}`}>
-            <div className="text-lg">🛒</div>{(tabTitles.shop || 'Shop').split(' ')[0]}
+            <div className="flex justify-center"><img src={TOKEN_ICON} alt="" className="w-6 h-6 rounded-full object-cover" /></div>
+            {(tabTitles.shop || 'Shop').split(' ')[0]}
           </button>
           <button onClick={() => openTab('collection')} className={`py-2 ${tab === 'collection' ? 'text-pink-400' : ''}`}>
             <div className="text-lg">💎</div>{(tabTitles.collection || 'Mine').split(' ')[0]}
