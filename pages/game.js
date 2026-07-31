@@ -80,8 +80,8 @@ export default function Game() {
   }
   const MEDIA_VIDEO_CHANCE = 0.18
   const BUCKS = 'BabeBucks'
-  const TOKEN_ICON = '/babe-bucks.png'
-  const TOKEN_ANIM = '/babe-bucks.mp4'
+  const TOKEN_ICON = '/icons/babe-bucks.png'
+  const TOKEN_ANIM = '/icons/babe-bucks.mp4'
 
   const flashTokenCoin = () => {
     setTokenAnim(true)
