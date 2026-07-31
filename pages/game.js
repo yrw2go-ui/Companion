@@ -32,6 +32,7 @@ export default function Game() {
   const [ownedSide, setOwnedSide] = useState('front') // card front/back
   const [stackIndex, setStackIndex] = useState(0)
   const [mediaFullscreen, setMediaFullscreen] = useState(false)
+  const [playOwnedVideo, setPlayOwnedVideo] = useState(false)
   const [buying, setBuying] = useState(false)
   const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
   const revealVideoRef = useRef(null)
@@ -54,6 +55,7 @@ export default function Game() {
   const MEDIA_MULTI_QTY = 3
   const MISC_SINGLE_PRICE = 200
   const MISC_SET_PRICE = 700
+  const VIDEO_UNLOCK_PRICE = 100
   const MEDIA_VIDEO_CHANCE = 0.18
   const BUCKS = 'BabeBucks'
 
@@ -222,7 +224,7 @@ export default function Game() {
     // owned card instances (Harem)
     const { data: owned } = await supabase
       .from('player_cards')
-      .select('id, instance_id, card_id, purchase_price, acquired_via, edition_number, edition_total, sale_count, current_sale_price, created_at, cards(id, name, card_number, image_url, back_image_url, video_url, poster_url, rarity, title, series_name, edition_size, description, flavor_text, stats)')
+      .select('id, instance_id, card_id, purchase_price, acquired_via, edition_number, edition_total, sale_count, current_sale_price, video_unlocked, created_at, cards(id, name, card_number, image_url, back_image_url, video_url, poster_url, rarity, title, series_name, edition_size, description, flavor_text, stats)')
       .eq('owner_id', 1)
       .order('created_at', { ascending: false })
     setOwnedCards(owned || [])
@@ -285,6 +287,7 @@ export default function Game() {
     setStackIndex(0)
     setOwnedSide('front')
     setMediaFullscreen(false)
+    setPlayOwnedVideo(false)
     setViewOwned({ kind: stack.kind, row: stack.rows[0], stack: stack.rows })
   }
 
@@ -297,6 +300,38 @@ export default function Game() {
       setOwnedSide('front')
       return { ...prev, row: prev.stack[next] }
     })
+  }
+
+  const unlockCardVideo = async () => {
+    if (!viewOwned || viewOwned.kind !== 'card') return
+    const o = viewOwned.row
+    if (o.video_unlocked) return
+    const c = o.cards || {}
+    if (!c.video_url) return
+    if (tokens < VIDEO_UNLOCK_PRICE) {
+      alert(`Need ${VIDEO_UNLOCK_PRICE} BabeBucks (you have ${tokens})`)
+      return
+    }
+    if (!confirm(`Unlock animation for ${VIDEO_UNLOCK_PRICE} BabeBucks?`)) return
+    const newBalance = tokens - VIDEO_UNLOCK_PRICE
+    const { error: tErr } = await supabase.from('user_settings').upsert({ id: 1, tokens: newBalance })
+    if (tErr) { alert(tErr.message); return }
+    const { error } = await supabase.from('player_cards').update({ video_unlocked: true }).eq('id', o.id)
+    if (error) {
+      await supabase.from('user_settings').upsert({ id: 1, tokens })
+      alert(error.message)
+      return
+    }
+    setTokens(newBalance)
+    const patch = { video_unlocked: true }
+    setOwnedCards(prev => prev.map(row => row.id === o.id ? { ...row, ...patch } : row))
+    setViewOwned(prev => {
+      if (!prev) return prev
+      const stack = (prev.stack || []).map(row => row.id === o.id ? { ...row, ...patch } : row)
+      const row = prev.row?.id === o.id ? { ...prev.row, ...patch } : prev.row
+      return { ...prev, row, stack }
+    })
+    setPlayOwnedVideo(true)
   }
 
   const downloadOwnedMedia = async (url, nameHint) => {
@@ -1409,7 +1444,16 @@ export default function Game() {
                     </>
                   ) : (
                     <>
-                      {c.image_url ? (
+                      {playOwnedVideo && o.video_unlocked && c.video_url ? (
+                        <video
+                          src={c.video_url}
+                          className="absolute inset-0 w-full h-full object-cover object-top"
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                        />
+                      ) : c.image_url ? (
                         <img src={c.image_url} alt={c.name || ''} className="absolute inset-0 w-full h-full object-cover object-top" />
                       ) : <div className="absolute inset-0 bg-gray-800" />}
                       {c.series_name && <span className="absolute top-3 left-3 text-lg drop-shadow z-[2]">👑</span>}
@@ -1431,9 +1475,30 @@ export default function Game() {
                   <p className="text-[10px] text-gray-500 mt-1">Paid {Number(o.purchase_price || 0).toLocaleString()} BabeBucks</p>
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <button type="button" onClick={() => setOwnedSide('front')} className={`flex-1 rounded-lg py-2 text-sm font-semibold ${!showBack ? 'bg-pink-600' : 'bg-gray-800'}`}>Front</button>
-                  <button type="button" onClick={() => setOwnedSide('back')} className={`flex-1 rounded-lg py-2 text-sm font-semibold ${showBack ? 'bg-pink-600' : 'bg-gray-800'}`}>Back</button>
+                  <button type="button" onClick={() => { setOwnedSide('front'); setPlayOwnedVideo(false) }} className={`flex-1 rounded-lg py-2 text-sm font-semibold ${!showBack ? 'bg-pink-600' : 'bg-gray-800'}`}>Front</button>
+                  <button type="button" onClick={() => { setOwnedSide('back'); setPlayOwnedVideo(false) }} className={`flex-1 rounded-lg py-2 text-sm font-semibold ${showBack ? 'bg-pink-600' : 'bg-gray-800'}`}>Back</button>
                 </div>
+                {c.video_url && (
+                  <div className="mt-3">
+                    {o.video_unlocked ? (
+                      <button
+                        type="button"
+                        onClick={() => { setOwnedSide('front'); setPlayOwnedVideo(v => !v) }}
+                        className="w-full bg-purple-700 hover:bg-purple-600 rounded-xl py-3 text-sm font-semibold"
+                      >
+                        {playOwnedVideo ? '⏸ Show still' : '▶ Play animation'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={unlockCardVideo}
+                        className="w-full bg-gray-800 border border-pink-700/60 hover:bg-gray-700 rounded-xl py-3 text-sm font-semibold"
+                      >
+                        🔒 Locked · {VIDEO_UNLOCK_PRICE} BB to unlock
+                      </button>
+                    )}
+                  </div>
+                )}
                 {tradeSell}
                 <button type="button" onClick={() => setViewOwned(null)} className="w-full mt-3 text-sm text-gray-400 hover:text-white py-2">Close</button>
               </div>
