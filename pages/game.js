@@ -55,7 +55,20 @@ export default function Game() {
   const [volumeMode, setVolumeMode] = useState(() => {
     try { return localStorage.getItem('ga_volume_mode') === 'low' ? 'low' : 'normal' } catch { return 'normal' }
   })
+  // Low = 65% of full (35% quieter). Only elements marked data-ga-sound get volume control
+  // (preview thumbs stay muted so the strip doesn't blast audio).
   const mediaVolume = muted ? 0 : (volumeMode === 'low' ? 0.65 : 1)
+  const applyMediaVolume = () => {
+    const vol = muted ? 0 : (volumeMode === 'low' ? 0.65 : 1)
+    if (typeof document !== 'undefined') {
+      document.querySelectorAll('[data-ga-sound]').forEach((el) => {
+        try {
+          el.muted = !!muted
+          el.volume = vol
+        } catch {}
+      })
+    }
+  }
   const toggleMuted = () => {
     setMuted(prev => {
       const next = !prev
@@ -67,6 +80,9 @@ export default function Game() {
     setVolumeMode(mode)
     try { localStorage.setItem('ga_volume_mode', mode) } catch {}
   }
+  useEffect(() => {
+    applyMediaVolume()
+  }, [muted, volumeMode])
   const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
   const revealVideoRef = useRef(null)
 
@@ -373,16 +389,62 @@ export default function Game() {
     setLoading(false)
   }
 
-  // --- Shows: periods end at noon & midnight local; lock last hour ---
+  // --- Shows: periods end at noon & midnight America/Chicago (CST/CDT); lock last hour ---
+  const CHICAGO_TZ = 'America/Chicago'
+  const chicagoParts = (date = new Date()) => {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: CHICAGO_TZ,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    })
+    const map = {}
+    for (const { type, value } of fmt.formatToParts(date)) {
+      if (type !== 'literal') map[type] = value
+    }
+    // hour12:false can still yield "24" in some engines for midnight — normalize
+    let hour = parseInt(map.hour, 10)
+    if (hour === 24) hour = 0
+    return {
+      year: parseInt(map.year, 10),
+      month: parseInt(map.month, 10),
+      day: parseInt(map.day, 10),
+      hour,
+      minute: parseInt(map.minute, 10),
+      second: parseInt(map.second, 10),
+    }
+  }
+  // Build a UTC Date that is Y-M-D H:00:00 in Chicago
+  const chicagoWallToUtc = (year, month, day, hour) => {
+    // Approximate: start from UTC guess, then nudge by Chicago offset
+    let guess = new Date(Date.UTC(year, month - 1, day, hour, 0, 0, 0))
+    for (let i = 0; i < 3; i++) {
+      const p = chicagoParts(guess)
+      const asUtcMs = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second)
+      const wantMs = Date.UTC(year, month - 1, day, hour, 0, 0, 0)
+      guess = new Date(guess.getTime() + (wantMs - asUtcMs))
+    }
+    return guess
+  }
   const getShowWindow = (date = new Date()) => {
-    const d = new Date(date)
-    const y = d.getFullYear()
-    const m = d.getMonth()
-    const day = d.getDate()
-    const noon = new Date(y, m, day, 12, 0, 0, 0)
-    const midnight = new Date(y, m, day, 0, 0, 0, 0)
-    const nextMidnight = new Date(y, m, day + 1, 0, 0, 0, 0)
-    if (d < noon) {
+    const p = chicagoParts(date)
+    const midnight = chicagoWallToUtc(p.year, p.month, p.day, 0)
+    const noon = chicagoWallToUtc(p.year, p.month, p.day, 12)
+    // next midnight = tomorrow 00:00 Chicago
+    const nextDay = new Date(Date.UTC(p.year, p.month - 1, p.day + 1))
+    const nd = chicagoParts(new Date(Date.UTC(p.year, p.month - 1, p.day, 12, 0, 0))) // mid-day same calendar day UTC-ish
+    // safer next calendar day in Chicago:
+    const tomorrowProbe = new Date(date.getTime() + 24 * 60 * 60 * 1000)
+    // if still same Chicago day, add more
+    let probe = new Date(date.getTime() + 12 * 60 * 60 * 1000)
+    while (true) {
+      const pp = chicagoParts(probe)
+      if (pp.year !== p.year || pp.month !== p.month || pp.day !== p.day) break
+      probe = new Date(probe.getTime() + 60 * 60 * 1000)
+    }
+    const tp = chicagoParts(probe)
+    const nextMidnight = chicagoWallToUtc(tp.year, tp.month, tp.day, 0)
+    if (date < noon) {
       return { startsAt: midnight, endsAt: noon }
     }
     return { startsAt: noon, endsAt: nextMidnight }
@@ -1962,7 +2024,7 @@ export default function Game() {
                 <div>
                   <p className="font-bold text-fuchsia-200">Current Show</p>
                   <p className="text-[11px] text-gray-400 mt-0.5">
-                    Ends at noon &amp; midnight · lock last hour
+                    Ends noon &amp; midnight CST · lock last hour
                   </p>
                 </div>
                 <div className="text-right">
@@ -2063,12 +2125,20 @@ export default function Game() {
             <>
               <video
                 ref={revealVideoRef}
+                data-ga-sound
                 src={reveal.video || '/mystery-card-1.mp4'}
                 autoPlay
                 playsInline
+                muted={muted}
                 className="w-full max-w-sm rounded-2xl"
                 onEnded={finishReveal}
                 onError={finishReveal}
+                onLoadedData={(e) => {
+                  try {
+                    e.target.muted = !!muted
+                    e.target.volume = mediaVolume
+                  } catch {}
+                }}
               />
               <p className="text-xs text-gray-500 mt-4">Revealing...</p>
               <button onClick={finishReveal} className="mt-3 text-xs text-gray-400 hover:text-white">Skip</button>
@@ -2459,7 +2529,7 @@ export default function Game() {
             <div className={`w-full flex gap-2 mb-3 ${muted ? 'opacity-40 pointer-events-none' : ''}`}>
               <button
                 type="button"
-                onClick={() => setVolumeModePersist('normal')}
+                onClick={() => { setVolumeModePersist('normal'); setTimeout(applyMediaVolume, 0) }}
                 className={`flex-1 rounded-xl py-2.5 text-xs font-semibold border ${
                   volumeMode === 'normal' ? 'bg-pink-800 border-pink-600 text-white' : 'bg-gray-900 border-gray-800 text-gray-400'
                 }`}
@@ -2468,7 +2538,7 @@ export default function Game() {
               </button>
               <button
                 type="button"
-                onClick={() => setVolumeModePersist('low')}
+                onClick={() => { setVolumeModePersist('low'); setTimeout(applyMediaVolume, 0) }}
                 className={`flex-1 rounded-xl py-2.5 text-xs font-semibold border ${
                   volumeMode === 'low' ? 'bg-pink-800 border-pink-600 text-white' : 'bg-gray-900 border-gray-800 text-gray-400'
                 }`}
@@ -2550,15 +2620,20 @@ export default function Game() {
           </button>
           <video
             ref={shopVideoRef}
+            data-ga-sound
             src={shopIntroUrl}
             autoPlay
             playsInline
             muted={muted}
-            volume={mediaVolume}
             className="w-full h-full object-contain max-w-lg"
             onEnded={closeShopIntro}
             onError={closeShopIntro}
-            onLoadedData={(e) => { try { e.target.volume = mediaVolume } catch {} }}
+            onLoadedData={(e) => {
+              try {
+                e.target.muted = !!muted
+                e.target.volume = mediaVolume
+              } catch {}
+            }}
           />
         </div>
       )}
