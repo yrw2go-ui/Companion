@@ -1253,11 +1253,27 @@ export default function Game() {
       setTokens(newBalance)
       flashTokenCoin()
       setOwnedMisc(prev => [...picks, ...prev])
-      // simple reveal: show first
-      if (picks[0]) {
-        setViewOwned({ kind: 'misc', row: picks[0], stack: picks })
-        setStackIndex(0)
-      }
+
+      // Same pack reveal animation as mystery cards / character media
+      const packItems = picks.map(p => ({
+        kind: 'misc',
+        miscItem: p.misc_items,
+        instanceId: p.instance_id,
+        price: p.purchase_price,
+      }))
+      const skin = randomSkin()
+      setReveal({
+        phase: 'anim',
+        kind: 'misc',
+        miscItem: picks[0].misc_items,
+        instanceId: picks[0].instance_id,
+        price,
+        video: skin.video,
+        packItems,
+        packIndex: 0,
+        packWon: picks.length,
+        packSize: qty,
+      })
     } catch (err) {
       alert(err.message)
     }
@@ -1327,12 +1343,14 @@ export default function Game() {
         instanceId: w.row.instance_id,
         price: w.row.purchase_price,
       }))
+      const skin = randomSkin()
       setReveal({
-        phase: 'show',
+        phase: 'anim',
         kind: 'misc',
         miscItem: won[0].item,
         instanceId: won[0].row.instance_id,
         price,
+        video: skin.video,
         packItems,
         packIndex: 0,
         setName: pick.set.name,
@@ -1408,13 +1426,39 @@ export default function Game() {
       const items = prev.packItems || []
       if (items.length > 1) {
         const first = items[0]
+        if (first.kind === 'media') {
+          return {
+            ...prev,
+            phase: 'show',
+            packIndex: 0,
+            kind: 'media',
+            media: first.media,
+            instanceId: first.instanceId,
+            editionNumber: first.editionNumber,
+            editionTotal: first.editionTotal,
+            trim: first.trim,
+          }
+        }
+        if (first.kind === 'misc') {
+          return {
+            ...prev,
+            phase: 'show',
+            packIndex: 0,
+            kind: 'misc',
+            miscItem: first.miscItem,
+            instanceId: first.instanceId,
+            price: first.price ?? prev.price,
+          }
+        }
         return {
           ...prev,
           phase: 'show',
           packIndex: 0,
-          ...(first.kind === 'media'
-            ? { kind: 'media', media: first.media, instanceId: first.instanceId, editionNumber: first.editionNumber, editionTotal: first.editionTotal, trim: first.trim }
-            : { kind: 'card', card: first.card, instanceId: first.instanceId, editionNumber: first.editionNumber, editionTotal: first.editionTotal }),
+          kind: 'card',
+          card: first.card,
+          instanceId: first.instanceId,
+          editionNumber: first.editionNumber,
+          editionTotal: first.editionTotal,
         }
       }
       return { ...prev, phase: 'show' }
