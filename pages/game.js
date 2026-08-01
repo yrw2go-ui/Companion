@@ -8,8 +8,10 @@ export default function Game() {
   const [marquee, setMarquee] = useState([])
   const [publishedCards, setPublishedCards] = useState([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('home') // home | packs | collection | shop | duel
+  const [tab, setTab] = useState('home') // home | packs | collection | shop | shows
   const [tokens, setTokens] = useState(0)
+  const [stars, setStars] = useState(0)
+  const [displayName, setDisplayName] = useState('Player')
   // landscape banners per tab — set in Settings
   const [tabBanners, setTabBanners] = useState({})
   const [tabTitles, setTabTitles] = useState({
@@ -17,8 +19,16 @@ export default function Game() {
     packs: 'FREEBIES',
     shop: 'Shop',
     collection: 'My Collection',
-    duel: 'Duel',
+    shows: 'Shows',
   })
+  // Shows competition
+  const [currentShow, setCurrentShow] = useState(null)
+  const [showEntries, setShowEntries] = useState([])
+  const [myShowVotes, setMyShowVotes] = useState({}) // entry_id -> 1 | -1
+  const [myShowReactions, setMyShowReactions] = useState({}) // entry_id -> emoji
+  const [lastShowWinner, setLastShowWinner] = useState(null)
+  const [showBusy, setShowBusy] = useState(false)
+  const SHOW_EMOJIS = ['🔥', '😍', '👏', '💯', '👑', '✨', '🥰', '😱']
   const [shopIntroUrl, setShopIntroUrl] = useState('')
   const [showShopIntro, setShowShopIntro] = useState(false)
   const shopVideoRef = useRef(null)
@@ -42,12 +52,20 @@ export default function Game() {
   const [muted, setMuted] = useState(() => {
     try { return localStorage.getItem('ga_muted') === '1' } catch { return false }
   })
+  const [volumeMode, setVolumeMode] = useState(() => {
+    try { return localStorage.getItem('ga_volume_mode') === 'low' ? 'low' : 'normal' } catch { return 'normal' }
+  })
+  const mediaVolume = muted ? 0 : (volumeMode === 'low' ? 0.65 : 1)
   const toggleMuted = () => {
     setMuted(prev => {
       const next = !prev
       try { localStorage.setItem('ga_muted', next ? '1' : '0') } catch {}
       return next
     })
+  }
+  const setVolumeModePersist = (mode) => {
+    setVolumeMode(mode)
+    try { localStorage.setItem('ga_volume_mode', mode) } catch {}
   }
   const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
   const revealVideoRef = useRef(null)
@@ -294,10 +312,12 @@ export default function Game() {
 
     const { data: settings } = await supabase
       .from('user_settings')
-      .select('tokens, tab_banners, tab_titles, shop_intro_url')
+      .select('tokens, tab_banners, tab_titles, shop_intro_url, stars, display_name')
       .eq('id', 1)
       .maybeSingle()
     setTokens(settings?.tokens ?? 0)
+    setStars(settings?.stars ?? 0)
+    setDisplayName(settings?.display_name || 'Player')
     setTabBanners(settings?.tab_banners || {})
     if (settings?.tab_titles) {
       setTabTitles(prev => ({ ...prev, ...settings.tab_titles }))
@@ -343,9 +363,294 @@ export default function Game() {
     })
     setFreebies(visible)
 
+    // Shows competition
+    try {
+      await ensureAndLoadShow()
+    } catch (e) {
+      console.warn('shows load', e)
+    }
+
     setLoading(false)
   }
 
+  // --- Shows: periods end at noon & midnight local; lock last hour ---
+  const getShowWindow = (date = new Date()) => {
+    const d = new Date(date)
+    const y = d.getFullYear()
+    const m = d.getMonth()
+    const day = d.getDate()
+    const noon = new Date(y, m, day, 12, 0, 0, 0)
+    const midnight = new Date(y, m, day, 0, 0, 0, 0)
+    const nextMidnight = new Date(y, m, day + 1, 0, 0, 0, 0)
+    if (d < noon) {
+      return { startsAt: midnight, endsAt: noon }
+    }
+    return { startsAt: noon, endsAt: nextMidnight }
+  }
+
+  const showStatusFor = (endsAt, now = new Date()) => {
+    const msLeft = endsAt.getTime() - now.getTime()
+    if (msLeft <= 0) return 'closed'
+    if (msLeft <= 60 * 60 * 1000) return 'locked' // last hour: no new entries
+    return 'open'
+  }
+
+  const ensureAndLoadShow = async () => {
+    const { startsAt, endsAt } = getShowWindow()
+    const now = new Date()
+    const status = showStatusFor(endsAt, now)
+
+    // find or create current window
+    let show = null
+    const { data: existing } = await supabase
+      .from('shows')
+      .select('*')
+      .eq('starts_at', startsAt.toISOString())
+      .maybeSingle()
+    if (existing) {
+      show = existing
+      if (existing.status !== status && status !== 'closed') {
+        await supabase.from('shows').update({ status }).eq('id', existing.id)
+        show = { ...existing, status }
+      }
+    } else {
+      const { data: created, error } = await supabase
+        .from('shows')
+        .insert([{
+          starts_at: startsAt.toISOString(),
+          ends_at: endsAt.toISOString(),
+          status: status === 'closed' ? 'open' : status,
+        }])
+        .select()
+        .single()
+      if (!error && created) show = created
+    }
+
+    // close previous show & pick winner if needed
+    const { data: prevOpen } = await supabase
+      .from('shows')
+      .select('*')
+      .lt('ends_at', now.toISOString())
+      .neq('status', 'closed')
+      .order('ends_at', { ascending: false })
+      .limit(3)
+    for (const prev of prevOpen || []) {
+      await finalizeShow(prev)
+    }
+
+    // last winner for feature
+    const { data: lastClosed } = await supabase
+      .from('shows')
+      .select('*, show_entries!shows_winner_entry_id_fkey(*)')
+      .eq('status', 'closed')
+      .not('winner_entry_id', 'is', null)
+      .order('ends_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (lastClosed?.winner_entry_id) {
+      const { data: winEntry } = await supabase
+        .from('show_entries')
+        .select('*')
+        .eq('id', lastClosed.winner_entry_id)
+        .maybeSingle()
+      setLastShowWinner(winEntry || null)
+    } else {
+      setLastShowWinner(null)
+    }
+
+    setCurrentShow(show)
+    if (show) {
+      const { data: entries } = await supabase
+        .from('show_entries')
+        .select('*')
+        .eq('show_id', show.id)
+        .order('created_at', { ascending: false })
+      // sort by score desc for display
+      const sorted = (entries || []).slice().sort((a, b) => {
+        const sa = (a.upvotes || 0) - (a.downvotes || 0)
+        const sb = (b.upvotes || 0) - (b.downvotes || 0)
+        return sb - sa
+      })
+      setShowEntries(sorted)
+
+      const { data: votes } = await supabase
+        .from('show_votes')
+        .select('entry_id, value')
+        .eq('voter_id', 1)
+      const vmap = {}
+      for (const v of votes || []) vmap[v.entry_id] = v.value
+      setMyShowVotes(vmap)
+
+      const { data: reacts } = await supabase
+        .from('show_reactions')
+        .select('entry_id, emoji')
+        .eq('reactor_id', 1)
+      const rmap = {}
+      for (const r of reacts || []) rmap[r.entry_id] = r.emoji
+      setMyShowReactions(rmap)
+    } else {
+      setShowEntries([])
+    }
+  }
+
+  const finalizeShow = async (show) => {
+    if (!show?.id || show.status === 'closed') return
+    const { data: entries } = await supabase
+      .from('show_entries')
+      .select('*')
+      .eq('show_id', show.id)
+    let winner = null
+    let best = -Infinity
+    for (const e of entries || []) {
+      const score = (e.upvotes || 0) - (e.downvotes || 0)
+      if (score > best) { best = score; winner = e }
+    }
+    await supabase.from('shows').update({
+      status: 'closed',
+      winner_entry_id: winner?.id || null,
+    }).eq('id', show.id)
+    if (winner) {
+      // stars for winner (+5) — only if owner is current player for now
+      if (winner.owner_id === 1) {
+        const { data: s } = await supabase.from('user_settings').select('stars').eq('id', 1).maybeSingle()
+        const nextStars = (s?.stars || 0) + 5
+        await supabase.from('user_settings').upsert({ id: 1, stars: nextStars })
+        setStars(nextStars)
+      }
+    }
+  }
+
+  const canSubmitToShow = () => {
+    if (!currentShow) return false
+    const ends = new Date(currentShow.ends_at)
+    return showStatusFor(ends) === 'open'
+  }
+
+  const myEntryCount = showEntries.filter(e => e.owner_id === 1).length
+
+  const submitShowOff = async () => {
+    if (!viewOwned || showBusy) return
+    if (!canSubmitToShow()) {
+      alert('Submissions are locked for the last hour of this Show (ends noon / midnight).')
+      return
+    }
+    if (myEntryCount >= 2) {
+      alert('You can only show off 2 items per Show.')
+      return
+    }
+    const o = viewOwned.row
+    let imageUrl = null
+    let title = ''
+    let kind = viewOwned.kind
+    let sourceId = o.id
+
+    if (kind === 'card') {
+      const c = o.cards || {}
+      imageUrl = c.image_url // front only, static
+      title = c.name || 'Card'
+      if (!imageUrl) { alert('This card has no front image'); return }
+    } else if (kind === 'media') {
+      const m = o.character_media || {}
+      if (m.type === 'video') { alert('Shows only allow static images (no animations)'); return }
+      imageUrl = m.url
+      title = m.title || m.character_name || 'Media'
+    } else if (kind === 'misc') {
+      const m = o.misc_items || {}
+      if (m.type === 'video') { alert('Shows only allow static images (no animations)'); return }
+      imageUrl = m.url
+      title = m.public_id || m.title || 'Misc'
+    } else {
+      return
+    }
+    if (!imageUrl) { alert('No image to show off'); return }
+
+    setShowBusy(true)
+    try {
+      if (!currentShow) await ensureAndLoadShow()
+      const show = currentShow
+      if (!show?.id) { alert('No active Show'); setShowBusy(false); return }
+
+      const { error } = await supabase.from('show_entries').insert([{
+        show_id: show.id,
+        owner_id: 1,
+        username: displayName || 'Player',
+        kind,
+        source_id: sourceId,
+        image_url: imageUrl,
+        title,
+        upvotes: 0,
+        downvotes: 0,
+      }])
+      if (error) throw new Error(error.message)
+      // +1 star for participating
+      const nextStars = (stars || 0) + 1
+      await supabase.from('user_settings').upsert({ id: 1, stars: nextStars })
+      setStars(nextStars)
+      await ensureAndLoadShow()
+      alert('Submitted to the Show! ⭐ +1 star')
+      setViewOwned(null)
+    } catch (err) {
+      alert('Show off failed: ' + err.message)
+    }
+    setShowBusy(false)
+  }
+
+  const voteShowEntry = async (entry, value) => {
+    // value: 1 | -1 | 0 (clear)
+    if (!entry?.id || showBusy) return
+    if (entry.owner_id === 1) { alert("You can't vote on your own entry"); return }
+    setShowBusy(true)
+    try {
+      const existing = myShowVotes[entry.id]
+      if (value === 0 || existing === value) {
+        // remove vote
+        await supabase.from('show_votes').delete().eq('entry_id', entry.id).eq('voter_id', 1)
+        let up = entry.upvotes || 0
+        let down = entry.downvotes || 0
+        if (existing === 1) up = Math.max(0, up - 1)
+        if (existing === -1) down = Math.max(0, down - 1)
+        await supabase.from('show_entries').update({ upvotes: up, downvotes: down }).eq('id', entry.id)
+        setMyShowVotes(prev => { const n = { ...prev }; delete n[entry.id]; return n })
+      } else {
+        // upsert vote
+        await supabase.from('show_votes').upsert({
+          entry_id: entry.id,
+          voter_id: 1,
+          value,
+        }, { onConflict: 'entry_id,voter_id' })
+        let up = entry.upvotes || 0
+        let down = entry.downvotes || 0
+        if (existing === 1) up = Math.max(0, up - 1)
+        if (existing === -1) down = Math.max(0, down - 1)
+        if (value === 1) up += 1
+        if (value === -1) down += 1
+        await supabase.from('show_entries').update({ upvotes: up, downvotes: down }).eq('id', entry.id)
+        setMyShowVotes(prev => ({ ...prev, [entry.id]: value }))
+      }
+      await ensureAndLoadShow()
+    } catch (err) {
+      alert(err.message)
+    }
+    setShowBusy(false)
+  }
+
+  const reactShowEntry = async (entry, emoji) => {
+    if (!entry?.id || showBusy) return
+    setShowBusy(true)
+    try {
+      if (myShowReactions[entry.id] === emoji) {
+        await supabase.from('show_reactions').delete().eq('entry_id', entry.id).eq('reactor_id', 1)
+        setMyShowReactions(prev => { const n = { ...prev }; delete n[entry.id]; return n })
+      } else {
+        await supabase.from('show_reactions').delete().eq('entry_id', entry.id).eq('reactor_id', 1)
+        await supabase.from('show_reactions').insert([{ entry_id: entry.id, reactor_id: 1, emoji }])
+        setMyShowReactions(prev => ({ ...prev, [entry.id]: emoji }))
+      }
+    } catch (err) {
+      alert(err.message)
+    }
+    setShowBusy(false)
+  }
 
   const stackCards = (() => {
     const map = {}
@@ -1230,13 +1535,13 @@ export default function Game() {
               </div>
             </button>
 
-            <button onClick={() => openTab('duel')} className="w-full text-left bg-gray-900 border border-gray-800 rounded-2xl p-4 active:scale-[0.98] transition opacity-60">
+            <button onClick={() => openTab('shows')} className="w-full text-left bg-gray-900 border border-fuchsia-900/40 rounded-2xl p-4 active:scale-[0.98] transition">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-bold">{tabTitles.duel || 'Duel'}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Coming soon</p>
+                  <p className="font-bold">{tabTitles.shows || 'Shows'}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Show off · vote · win stars</p>
                 </div>
-                <span className="text-2xl">⚔️</span>
+                <span className="text-2xl">✨</span>
               </div>
             </button>
 
@@ -1631,6 +1936,126 @@ export default function Game() {
         </div>
       )}
 
+      {tab === 'shows' && (
+        <div className="pt-16 pb-24">
+          <TabHeader title={tabTitles.shows || 'Shows'} />
+          <TabBanner tabKey="shows" />
+          <div className="max-w-lg mx-auto px-4">
+            {lastShowWinner && (
+              <div className="rounded-2xl border border-amber-700/40 bg-gradient-to-br from-amber-950/50 to-gray-900 p-4 mb-5">
+                <p className="text-[10px] tracking-[0.2em] uppercase text-amber-400 mb-2">Last Show Winner</p>
+                <div className="flex gap-3 items-center">
+                  <img src={lastShowWinner.image_url} alt="" className="w-16 h-20 rounded-lg object-cover object-top" />
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm truncate">{lastShowWinner.title}</p>
+                    <p className="text-xs text-pink-300 mt-0.5">@{lastShowWinner.username || 'Player'}</p>
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      Score {(lastShowWinner.upvotes || 0) - (lastShowWinner.downvotes || 0)} · ⭐ prize TBD
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-2xl border border-fuchsia-900/40 bg-fuchsia-950/20 p-4 mb-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="font-bold text-fuchsia-200">Current Show</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    Ends at noon &amp; midnight · lock last hour
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-semibold text-pink-300">⭐ {stars}</p>
+                  <p className="text-[10px] text-gray-500">your stars</p>
+                </div>
+              </div>
+              {currentShow && (
+                <p className="text-[11px] text-gray-400 mt-3">
+                  Status:{' '}
+                  <span className="text-white font-semibold">
+                    {showStatusFor(new Date(currentShow.ends_at))}
+                  </span>
+                  {' · '}
+                  Ends {new Date(currentShow.ends_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                  {' · '}
+                  Your entries {myEntryCount}/2
+                </p>
+              )}
+              <p className="text-[10px] text-gray-600 mt-2">
+                From Harem: open a static image (card front, media, or misc) → Show off.
+              </p>
+            </div>
+
+            {showEntries.length === 0 ? (
+              <div className="rounded-2xl border border-gray-800 bg-gray-900/50 p-8 text-center">
+                <p className="text-3xl mb-2">✨</p>
+                <p className="text-sm text-gray-400">No entries yet</p>
+                <p className="text-xs text-gray-600 mt-1">Be the first to show off</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {showEntries.map((entry, idx) => {
+                  const score = (entry.upvotes || 0) - (entry.downvotes || 0)
+                  const myVote = myShowVotes[entry.id]
+                  const myReact = myShowReactions[entry.id]
+                  return (
+                    <div key={entry.id} className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
+                      <div className="relative">
+                        <img src={entry.image_url} alt="" className="w-full max-h-80 object-cover object-top" />
+                        {idx === 0 && (
+                          <span className="absolute top-2 left-2 bg-amber-600/90 text-white text-[10px] font-bold px-2 py-1 rounded-full">#{idx + 1}</span>
+                        )}
+                      </div>
+                      <div className="p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-sm truncate">{entry.title}</p>
+                            <p className="text-[11px] text-pink-300">@{entry.username || 'Player'}</p>
+                          </div>
+                          <p className="text-sm font-bold text-amber-300 shrink-0">{score > 0 ? '+' : ''}{score}</p>
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          <button
+                            type="button"
+                            disabled={showBusy || entry.owner_id === 1}
+                            onClick={() => voteShowEntry(entry, 1)}
+                            className={`flex-1 rounded-lg py-2 text-sm font-semibold ${myVote === 1 ? 'bg-emerald-700' : 'bg-gray-800'}`}
+                          >
+                            ▲ {entry.upvotes || 0}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={showBusy || entry.owner_id === 1}
+                            onClick={() => voteShowEntry(entry, -1)}
+                            className={`flex-1 rounded-lg py-2 text-sm font-semibold ${myVote === -1 ? 'bg-red-800' : 'bg-gray-800'}`}
+                          >
+                            ▼ {entry.downvotes || 0}
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-3">
+                          {SHOW_EMOJIS.map(em => (
+                            <button
+                              key={em}
+                              type="button"
+                              disabled={showBusy}
+                              onClick={() => reactShowEntry(entry, em)}
+                              className={`w-9 h-9 rounded-full text-base ${myReact === em ? 'bg-pink-700 ring-2 ring-pink-400' : 'bg-gray-800'}`}
+                            >
+                              {em}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Purchase reveal: mystery animation then card face */}
       {reveal && (
         <div className="fixed inset-0 z-[85] bg-black/95 flex flex-col items-center justify-center p-5">
@@ -1797,14 +2222,38 @@ export default function Game() {
           : viewOwned.kind === 'media'
             ? SYSTEM_BUYBACK_MEDIA
             : SYSTEM_BUYBACK_MISC
+        const canShowOffImage = (() => {
+          if (viewOwned.kind === 'card') return !!(o.cards || {}).image_url
+          if (viewOwned.kind === 'media') {
+            const m = o.character_media || {}
+            return m.type !== 'video' && !!m.url
+          }
+          if (viewOwned.kind === 'misc') {
+            const m = o.misc_items || {}
+            return m.type !== 'video' && !!m.url
+          }
+          return false
+        })()
         const tradeSell = (
-          <div className="flex gap-2 mt-3">
-            <button type="button" onClick={() => alert('Trade is coming soon')}
-              className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-xl py-3 text-sm font-semibold border border-gray-700">Trade</button>
-            <button type="button" onClick={sellToSystem}
-              className="flex-1 bg-amber-900/80 hover:bg-amber-800 rounded-xl py-3 text-sm font-semibold border border-amber-700/50">
-              Sell · {sellPrice} BB
-            </button>
+          <div className="mt-3 space-y-2">
+            {canShowOffImage && (
+              <button
+                type="button"
+                disabled={showBusy || !canSubmitToShow() || myEntryCount >= 2}
+                onClick={submitShowOff}
+                className="w-full bg-fuchsia-800 hover:bg-fuchsia-700 disabled:opacity-40 rounded-xl py-3 text-sm font-semibold"
+              >
+                ✨ Show off {!canSubmitToShow() ? '(locked)' : myEntryCount >= 2 ? '(2/2 used)' : `(${myEntryCount}/2)`}
+              </button>
+            )}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => alert('Trade is coming soon')}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-xl py-3 text-sm font-semibold border border-gray-700">Trade</button>
+              <button type="button" onClick={sellToSystem}
+                className="flex-1 bg-amber-900/80 hover:bg-amber-800 rounded-xl py-3 text-sm font-semibold border border-amber-700/50">
+                Sell · {sellPrice} BB
+              </button>
+            </div>
           </div>
         )
         const stackNav = stackLen > 1 ? (
@@ -2000,14 +2449,41 @@ export default function Game() {
             <button
               type="button"
               onClick={toggleMuted}
-              className="w-full flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 mb-3"
+              className="w-full flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 mb-2"
             >
               <span className="text-sm font-semibold">{muted ? '🔇 Media muted' : '🔊 Media on'}</span>
               <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${muted ? 'bg-gray-700 text-gray-300' : 'bg-pink-700 text-white'}`}>
                 {muted ? 'OFF' : 'ON'}
               </span>
             </button>
-            <p className="text-[10px] text-gray-600 mb-4 -mt-1 px-1">Mutes shop intros, reveals, and in-app video sound.</p>
+            <div className={`w-full flex gap-2 mb-3 ${muted ? 'opacity-40 pointer-events-none' : ''}`}>
+              <button
+                type="button"
+                onClick={() => setVolumeModePersist('normal')}
+                className={`flex-1 rounded-xl py-2.5 text-xs font-semibold border ${
+                  volumeMode === 'normal' ? 'bg-pink-800 border-pink-600 text-white' : 'bg-gray-900 border-gray-800 text-gray-400'
+                }`}
+              >
+                Normal volume
+              </button>
+              <button
+                type="button"
+                onClick={() => setVolumeModePersist('low')}
+                className={`flex-1 rounded-xl py-2.5 text-xs font-semibold border ${
+                  volumeMode === 'low' ? 'bg-pink-800 border-pink-600 text-white' : 'bg-gray-900 border-gray-800 text-gray-400'
+                }`}
+              >
+                Low (−35%)
+              </button>
+            </div>
+            <p className="text-[10px] text-gray-600 mb-4 -mt-1 px-1">
+              Mute kills all in-app audio. Low uses ~65% of phone volume on videos.
+            </p>
+
+            <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 mb-3">
+              <p className="text-sm font-semibold">⭐ Stars · {stars}</p>
+              <p className="text-[11px] text-gray-500 mt-1">Earn stars in Shows (enter + win). Ranking coming soon.</p>
+            </div>
 
             <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 mb-3 opacity-70">
               <p className="text-sm font-semibold">Account</p>
@@ -2078,9 +2554,11 @@ export default function Game() {
             autoPlay
             playsInline
             muted={muted}
+            volume={mediaVolume}
             className="w-full h-full object-contain max-w-lg"
             onEnded={closeShopIntro}
             onError={closeShopIntro}
+            onLoadedData={(e) => { try { e.target.volume = mediaVolume } catch {} }}
           />
         </div>
       )}
@@ -2100,8 +2578,8 @@ export default function Game() {
           <button onClick={() => openTab('collection')} className={`py-2 ${tab === 'collection' ? 'text-pink-400' : ''}`}>
             <div className="text-lg">💎</div>{(tabTitles.collection || 'Mine').split(' ')[0]}
           </button>
-          <button onClick={() => openTab('duel')} className={`py-2 ${tab === 'duel' ? 'text-pink-400' : ''}`}>
-            <div className="text-lg">⚔️</div>{(tabTitles.duel || 'Duel').split(' ')[0]}
+          <button onClick={() => openTab('shows')} className={`py-2 ${tab === 'shows' ? 'text-pink-400' : ''}`}>
+            <div className="text-lg">✨</div>{(tabTitles.shows || 'Shows').split(' ')[0]}
           </button>
         </div>
       </div>
