@@ -1170,8 +1170,12 @@ export default function Cards() {
     const { error } = await supabase.from('cards').update({ series_name: value }).eq('id', card.id)
     if (error) { alert(error.message); return }
     setCards(prev => prev.map(c => c.id === card.id ? { ...c, series_name: value } : c))
-    setSelected(prev => prev && prev.id === card.id ? { ...prev, series_name: value } : prev)
-    if (editing?.id === card.id) setEditing(prev => prev ? { ...prev, series_name: value || '' } : prev)
+    setSelected(prev => prev && prev.id === card.id
+      ? { ...prev, series_name: value || '', _seriesNew: false }
+      : prev)
+    if (editing?.id === card.id) {
+      setEditing(prev => prev ? { ...prev, series_name: value || '', _seriesNew: false } : prev)
+    }
   }
 
 
@@ -1475,8 +1479,40 @@ export default function Cards() {
 
                 {inputRow('Description', draft.description, v => setDraft({ ...draft, description: v }), true, 2)}
                 {inputRow('Flavor Text', draft.flavor_text, v => setDraft({ ...draft, flavor_text: v }))}
-                {inputRow('Series name (optional)', draft.series_name || '', v => setDraft({ ...draft, series_name: v }))}
-                <p className="text-[10px] text-gray-600 mb-2 -mt-2">Series cards get a 👑 on the front and the name on the back.</p>
+                <label className="block text-xs text-gray-400 mb-1">Series (optional)</label>
+                <select
+                  value={
+                    seriesNames.includes(draft.series_name || '')
+                      ? draft.series_name
+                      : (draft._seriesNew ? '__new__' : '')
+                  }
+                  onChange={e => {
+                    const v = e.target.value
+                    if (v === '__new__') setDraft({ ...draft, series_name: '', _seriesNew: true })
+                    else setDraft({ ...draft, series_name: v, _seriesNew: false })
+                  }}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-purple-500"
+                >
+                  <option value="">No series</option>
+                  {seriesNames.map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                  <option value="__new__">＋ New series…</option>
+                </select>
+                {!!draft._seriesNew && (
+                  <input
+                    value={draft.series_name || ''}
+                    onChange={e => setDraft({ ...draft, series_name: e.target.value, _seriesNew: true })}
+                    placeholder="Type new series name"
+                    className="w-full bg-black border border-pink-800 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-pink-500"
+                  />
+                )}
+                <p className="text-[10px] text-gray-600 mb-2">
+                  Series cards get a 👑 on the front and the name on the back.
+                  {draft.series_name && seriesNames.includes(draft.series_name) && (
+                    <> · <button type="button" className="text-pink-400 hover:text-pink-300" onClick={() => { setPageMode('series'); setSelectedSeries(draft.series_name); setShowCreate(false) }}>Open in Series tab</button></>
+                  )}
+                </p>
                 <label className="block text-xs text-gray-400 mb-1">Edition size (print run)</label>
                 <select
                   value={String(EDITION_QTY_OPTIONS.includes(Number(draft.edition_size)) ? draft.edition_size : 300)}
@@ -1638,7 +1674,43 @@ export default function Cards() {
 
             {inputRow('Description', editing.description, v => setEditing({ ...editing, description: v }), true, 2)}
             {inputRow('Flavor Text', editing.flavor_text, v => setEditing({ ...editing, flavor_text: v }))}
-            {inputRow('Series name (optional)', editing.series_name || '', v => setEditing({ ...editing, series_name: v }))}
+            <label className="block text-xs text-gray-400 mb-1">Series (optional)</label>
+            <select
+              value={
+                seriesNames.includes(editing.series_name || '')
+                  ? editing.series_name
+                  : (editing._seriesNew ? '__new__' : (editing.series_name ? '__new__' : ''))
+              }
+              onChange={e => {
+                const v = e.target.value
+                if (v === '__new__') setEditing({ ...editing, series_name: '', _seriesNew: true })
+                else setEditing({ ...editing, series_name: v, _seriesNew: false })
+              }}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-purple-500"
+            >
+              <option value="">No series</option>
+              {seriesNames.map(n => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+              <option value="__new__">＋ New series…</option>
+            </select>
+            {(editing._seriesNew || (editing.series_name && !seriesNames.includes(editing.series_name))) && (
+              <input
+                value={editing.series_name || ''}
+                onChange={e => setEditing({ ...editing, series_name: e.target.value, _seriesNew: true })}
+                placeholder="Type new series name"
+                className="w-full bg-black border border-pink-800 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-pink-500"
+              />
+            )}
+            {editing.series_name && seriesNames.includes(editing.series_name) && (
+              <button
+                type="button"
+                className="text-[10px] text-pink-400 hover:text-pink-300 mb-2"
+                onClick={() => { setPageMode('series'); setSelectedSeries(editing.series_name); setEditing(null) }}
+              >
+                Open “{editing.series_name}” in Series tab →
+              </button>
+            )}
             <label className="block text-xs text-gray-400 mb-1">Edition size (print run)</label>
             <select
               value={String(EDITION_QTY_OPTIONS.includes(Number(editing.edition_size)) ? editing.edition_size : 300)}
@@ -1775,32 +1847,73 @@ export default function Cards() {
               <div className="pt-2 border-t border-gray-800">
                 <label className="block text-gray-500 mb-1">Series</label>
                 <div className="flex gap-2 mb-2">
-                  <input
-                    list="series-name-options"
-                    value={selected.series_name || ''}
-                    onChange={e => setSelected({ ...selected, series_name: e.target.value })}
-                    placeholder="Series name or blank"
+                  <select
+                    value={
+                      seriesNames.includes(selected.series_name || '')
+                        ? selected.series_name
+                        : (selected._seriesNew ? '__new__' : (selected.series_name ? '__new__' : ''))
+                    }
+                    onChange={e => {
+                      const v = e.target.value
+                      if (v === '__new__') setSelected({ ...selected, series_name: '', _seriesNew: true })
+                      else {
+                        setSelected({ ...selected, series_name: v, _seriesNew: false })
+                        assignSeries(selected, v)
+                      }
+                    }}
                     className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-500"
-                  />
-                  <datalist id="series-name-options">
-                    {seriesNames.map(n => <option key={n} value={n} />)}
-                  </datalist>
-                  <button
-                    type="button"
-                    onClick={() => assignSeries(selected, selected.series_name)}
-                    className="bg-pink-800 hover:bg-pink-700 rounded-lg px-3 py-1.5 text-xs font-semibold"
                   >
-                    Save
-                  </button>
+                    <option value="">No series</option>
+                    {seriesNames.map(n => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                    <option value="__new__">＋ New series…</option>
+                  </select>
+                  {selected.series_name && seriesNames.includes(selected.series_name) && (
+                    <button
+                      type="button"
+                      onClick={() => { setPageMode('series'); setSelectedSeries(selected.series_name); setSelected(null) }}
+                      className="bg-gray-800 hover:bg-gray-700 rounded-lg px-3 py-1.5 text-xs font-semibold text-pink-300"
+                      title="Open Series tab"
+                    >
+                      👑
+                    </button>
+                  )}
                 </div>
-                {selected.series_name && (
-                  <button
-                    type="button"
-                    onClick={() => assignSeries(selected, '')}
-                    className="text-[10px] text-gray-500 hover:text-white mb-2"
-                  >
-                    Remove from series
-                  </button>
+                {(selected._seriesNew || (selected.series_name && !seriesNames.includes(selected.series_name))) && (
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      value={selected.series_name || ''}
+                      onChange={e => setSelected({ ...selected, series_name: e.target.value, _seriesNew: true })}
+                      placeholder="New series name"
+                      className="flex-1 bg-black border border-pink-800 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-pink-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => assignSeries(selected, selected.series_name)}
+                      className="bg-pink-800 hover:bg-pink-700 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                    >
+                      Save
+                    </button>
+                  </div>
+                )}
+                {selected.series_name && seriesNames.includes(selected.series_name) && (
+                  <div className="flex flex-wrap gap-3 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => { setPageMode('series'); setSelectedSeries(selected.series_name); setSelected(null) }}
+                      className="text-[10px] text-pink-400 hover:text-pink-300"
+                    >
+                      View in Series tab →
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => assignSeries(selected, '')}
+                      className="text-[10px] text-gray-500 hover:text-white"
+                    >
+                      Remove from series
+                    </button>
+                  </div>
                 )}
               </div>
               <div className="pt-2 border-t border-gray-800">
