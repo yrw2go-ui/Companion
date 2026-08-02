@@ -188,8 +188,19 @@ export default function Gallery() {
   const fileInputRef = useRef(null)
   const [fetchingOrphans, setFetchingOrphans] = useState(false)
   const [fetchOrphanStatus, setFetchOrphanStatus] = useState('')
+  const [editPrompt, setEditPrompt] = useState('')
+  const [savingPrompt, setSavingPrompt] = useState(false)
 
   useEffect(() => { load() }, [])
+
+  // Keep editPrompt in sync when opening a detail item
+  useEffect(() => {
+    if (selected?.source === 'gallery_media') {
+      setEditPrompt(selected.prompt || '')
+    } else {
+      setEditPrompt('')
+    }
+  }, [selected?.key, selected?.id, selected?.prompt])
 
   // Same as Settings → Import Orphaned Media (scan + import)
   const fetchOrphansIntoGallery = async () => {
@@ -2469,7 +2480,62 @@ export default function Gallery() {
                 </div>
               )}
 
-              {selected.prompt && (
+              {selected.source === 'gallery_media' ? (
+                <div className="pt-1 border-t border-gray-800">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-gray-500">Prompt</p>
+                    <div className="flex items-center gap-2">
+                      {editPrompt && (
+                        <button
+                          type="button"
+                          onClick={() => copyUrl(editPrompt)}
+                          className="text-purple-400 hover:text-purple-300 font-semibold"
+                        >
+                          {copiedUrl ? 'Copied' : 'Copy'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={savingPrompt || editPrompt === (selected.prompt || '')}
+                        onClick={async () => {
+                          setSavingPrompt(true)
+                          try {
+                            const val = editPrompt.trim() || null
+                            const { error } = await supabase
+                              .from('gallery_media')
+                              .update({ prompt: val })
+                              .eq('id', selected.id)
+                            if (error) throw new Error(error.message)
+                            setSelected(prev => prev ? { ...prev, prompt: val || '' } : prev)
+                            setMedia(prev => prev.map(m =>
+                              m.key === selected.key || m.id === selected.id
+                                ? { ...m, prompt: val || '' }
+                                : m
+                            ))
+                          } catch (err) {
+                            alert('Could not save prompt: ' + err.message)
+                          }
+                          setSavingPrompt(false)
+                        }}
+                        className="text-emerald-400 hover:text-emerald-300 font-semibold disabled:opacity-40"
+                      >
+                        {savingPrompt ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    value={editPrompt}
+                    onChange={e => setEditPrompt(e.target.value)}
+                    rows={4}
+                    placeholder={
+                      selected.model === 'upload' || !selected.model
+                        ? 'Add a prompt or notes for this uploaded/imported file…'
+                        : 'Edit prompt…'
+                    }
+                    className="w-full bg-black border border-gray-700 rounded-lg px-2 py-2 text-xs text-gray-300 leading-snug outline-none focus:border-purple-500 resize-y min-h-[72px]"
+                  />
+                </div>
+              ) : selected.prompt ? (
                 <div className="pt-1 border-t border-gray-800">
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-gray-500">Prompt</p>
@@ -2482,7 +2548,7 @@ export default function Gallery() {
                   </div>
                   <p className="text-gray-400 leading-snug">{selected.prompt}</p>
                 </div>
-              )}
+              ) : null}
               {selected.source_prompt && (
                 <div className="pt-1 border-t border-gray-800">
                   <div className="flex items-center justify-between mb-1">
