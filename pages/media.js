@@ -24,6 +24,11 @@ export default function MediaLibrary() {
   const [editOverlayName, setEditOverlayName] = useState('')
   const [editOverlayFont, setEditOverlayFont] = useState('impact')
   const [editOverlayPos, setEditOverlayPos] = useState('h-top-left')
+  const [miscSets, setMiscSets] = useState([])
+  const [editSetMode, setEditSetMode] = useState('standalone') // standalone | existing | new
+  const [editSetId, setEditSetId] = useState('')
+  const [editSetName, setEditSetName] = useState('')
+  const [editSetPrefix, setEditSetPrefix] = useState('')
 
   const NAME_FONTS = [
     { id: 'impact', label: 'Impact Bold' },
@@ -59,6 +64,9 @@ export default function MediaLibrary() {
     if (mErr) console.error(mErr)
     const miscList = misc || []
     setMiscItems(miscList)
+
+    const { data: sets } = await supabase.from('misc_sets').select('*').order('name')
+    setMiscSets(sets || [])
 
     // Gallery folder named "Misc Beauties" → show as Off drafts until published into misc_items
     const drafts = []
@@ -119,6 +127,64 @@ export default function MediaLibrary() {
     setEditOverlayName(m.overlay_name || m.character_name || '')
     setEditOverlayFont(m.overlay_font || 'impact')
     setEditOverlayPos(m.overlay_position || 'h-top-left')
+    if (kind === 'misc' || kind === 'draft') {
+      if (m.set_id && m.misc_sets) {
+        setEditSetMode('existing')
+        setEditSetId(m.set_id)
+        setEditSetName('')
+        setEditSetPrefix('')
+      } else {
+        setEditSetMode('standalone')
+        setEditSetId('')
+        setEditSetName('')
+        setEditSetPrefix('')
+      }
+    }
+  }
+
+  const resolveSetForPublish = async () => {
+    if (editSetMode === 'standalone') {
+      return { setId: null, prefix: 'MX', setName: null }
+    }
+    if (editSetMode === 'existing') {
+      if (!editSetId) throw new Error('Pick a set')
+      const s = miscSets.find(x => x.id === editSetId)
+      if (!s) throw new Error('Set not found')
+      return { setId: s.id, prefix: s.code_prefix || 'MX', setName: s.name }
+    }
+    // new set — reuse if same name exists
+    const wantedName = editSetName.trim()
+    if (!wantedName) throw new Error('Set name required')
+    const existing = (miscSets || []).find(
+      s => String(s.name || '').trim().toLowerCase() === wantedName.toLowerCase()
+    )
+    if (existing) {
+      return { setId: existing.id, prefix: existing.code_prefix || 'MX', setName: existing.name }
+    }
+    const { data: dbHits } = await supabase.from('misc_sets').select('*').ilike('name', wantedName)
+    const hit = (dbHits || []).find(
+      s => String(s.name || '').trim().toLowerCase() === wantedName.toLowerCase()
+    )
+    if (hit) {
+      setMiscSets(prev => (prev.some(x => x.id === hit.id) ? prev : [...prev, hit].sort((a, b) => a.name.localeCompare(b.name))))
+      return { setId: hit.id, prefix: hit.code_prefix || 'MX', setName: hit.name }
+    }
+    const prefix = (editSetPrefix || wantedName).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'SET'
+    const { data: created, error } = await supabase.from('misc_sets').insert([{
+      name: wantedName,
+      code_prefix: prefix,
+    }]).select().single()
+    if (error) {
+      if (/unique|duplicate/i.test(error.message || '')) {
+        const { data: again } = await supabase.from('misc_sets').select('*').ilike('name', wantedName)
+        const reuse = (again || [])[0]
+        if (!reuse) throw new Error(error.message)
+        return { setId: reuse.id, prefix: reuse.code_prefix || prefix, setName: reuse.name }
+      }
+      throw new Error(error.message)
+    }
+    setMiscSets(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)))
+    return { setId: created.id, prefix: created.code_prefix || prefix, setName: created.name }
   }
 
   const nextPublicId = async (prefix) => {
@@ -137,27 +203,42 @@ export default function MediaLibrary() {
     return p + String(maxN + 1)
   }
 
-  // Publish a gallery-folder draft into misc_items (standalone, Live)
+  // Publish a gallery-folder draft into misc_items (with optional set)
   const publishDraft = async (draft) => {
     if (!draft?._draft || busy) return
     setBusy(true)
     try {
-      const publicId = await nextPublicId('MX')
+      const { setId, prefix, setName } = await resolveSetForPublish()
+      let sortIndex = 1
+      if (setId) {
+        const { count } = await supabase
+          .from('misc_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('set_id', setId)
+        sortIndex = (count || 0) + 1
+      }
+      const publicId = await nextPublicId(prefix)
+      const overlayName = editOverlayName.trim() || null
       const { data, error } = await supabase.from('misc_items').insert([{
-        set_id: null,
+        set_id: setId,
         type: draft.type === 'video' ? 'video' : 'image',
         url: draft.url,
-        title: draft.title || null,
+        title: (editTitle.trim() || draft.title) || null,
         public_id: publicId,
-        sort_index: 1,
+        sort_index: Math.max(1, parseInt(editSort) || sortIndex),
         published: true,
+        overlay_name: overlayName,
+        overlay_font: overlayName ? editOverlayFont : null,
+        overlay_position: overlayName ? editOverlayPos : null,
       }]).select('*, misc_sets(id, name, code_prefix)').single()
       if (error) throw new Error(error.message)
       setFolderDrafts(prev => prev.filter(x => x.id !== draft.id))
       setMiscItems(prev => [data, ...prev])
       setSelected(data)
       setSelectedKind('misc')
-      alert(`Published as ${publicId}`)
+      setEditSetMode(setId ? 'existing' : 'standalone')
+      setEditSetId(setId || '')
+      alert(setName ? `Published as ${publicId} · ${setName}` : `Published as ${publicId} (standalone)`)
     } catch (err) {
       alert('Publish failed: ' + err.message)
     }
@@ -188,9 +269,11 @@ export default function MediaLibrary() {
     try {
       if (selectedKind === 'misc') {
         const sortN = Math.max(1, parseInt(editSort) || 1)
+        const { setId } = await resolveSetForPublish()
         const payload = {
           title: editTitle.trim() || null,
           sort_index: sortN,
+          set_id: setId,
           overlay_name: overlayName,
           overlay_font: overlayName ? editOverlayFont : null,
           overlay_position: overlayName ? editOverlayPos : null,
@@ -204,6 +287,13 @@ export default function MediaLibrary() {
         if (error) throw new Error(error.message)
         setMiscItems(prev => prev.map(x => x.id === selected.id ? data : x))
         setSelected(data)
+        if (setId) {
+          setEditSetMode('existing')
+          setEditSetId(setId)
+        } else {
+          setEditSetMode('standalone')
+          setEditSetId('')
+        }
       } else {
         const payload = {
           title: editTitle.trim() || null,
@@ -541,7 +631,7 @@ export default function MediaLibrary() {
 
             {selectedKind === 'draft' && (
               <p className="text-xs text-amber-200/90 mb-3">
-                In Gallery folder “Misc Beauties” only — not in the shop until you set it Live.
+                In Gallery folder “Misc Beauties” only — pick a set below, then Set Live.
               </p>
             )}
 
@@ -556,6 +646,53 @@ export default function MediaLibrary() {
               </div>
             )}
 
+            {(selectedKind === 'misc' || selectedKind === 'draft') && (
+              <div className="mb-3">
+                <label className="block text-xs text-gray-500 mb-1">Set</label>
+                <select
+                  value={editSetMode}
+                  onChange={e => {
+                    const v = e.target.value
+                    setEditSetMode(v)
+                    if (v === 'standalone') setEditSetId('')
+                  }}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none"
+                >
+                  <option value="standalone">Standalone (no set)</option>
+                  <option value="existing">Existing set</option>
+                  <option value="new">＋ New set…</option>
+                </select>
+                {editSetMode === 'existing' && (
+                  <select
+                    value={editSetId}
+                    onChange={e => setEditSetId(e.target.value)}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none"
+                  >
+                    <option value="">Select set…</option>
+                    {miscSets.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.code_prefix})</option>
+                    ))}
+                  </select>
+                )}
+                {editSetMode === 'new' && (
+                  <>
+                    <input
+                      value={editSetName}
+                      onChange={e => setEditSetName(e.target.value)}
+                      placeholder="New set name"
+                      className="w-full bg-black border border-pink-800 rounded-lg px-3 py-2 text-sm mb-2 outline-none"
+                    />
+                    <input
+                      value={editSetPrefix}
+                      onChange={e => setEditSetPrefix(e.target.value)}
+                      placeholder="Code prefix (optional, e.g. TD)"
+                      className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none"
+                    />
+                  </>
+                )}
+              </div>
+            )}
+
             {selectedKind === 'character' && (
               <>
                 <label className="block text-xs text-gray-500 mb-1">Character name</label>
@@ -564,7 +701,7 @@ export default function MediaLibrary() {
               </>
             )}
 
-            {selectedKind !== 'draft' && (
+            {(selectedKind === 'misc' || selectedKind === 'draft' || selectedKind === 'character') && (
               <>
                 <label className="block text-xs text-gray-500 mb-1">Name overlay (optional)</label>
                 <input
@@ -591,7 +728,7 @@ export default function MediaLibrary() {
               </>
             )}
 
-            {selectedKind === 'misc' && (
+            {(selectedKind === 'misc' || selectedKind === 'draft') && (
               <>
                 <label className="block text-xs text-gray-500 mb-1">Order in set (1, 2, 3…)</label>
                 <input
@@ -600,7 +737,7 @@ export default function MediaLibrary() {
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-pink-500"
                 />
                 <p className="text-[10px] text-gray-600 mb-3 -mt-2">
-                  Shown as “{editSort || 1} of {setSize(selected) || '?'}” on the tile.
+                  Shown as “{editSort || 1} of …” on the tile when in a set.
                 </p>
               </>
             )}
