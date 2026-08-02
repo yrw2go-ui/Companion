@@ -167,8 +167,53 @@ export default function Gallery() {
   const [uploading, setUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState('')
   const fileInputRef = useRef(null)
+  const [fetchingOrphans, setFetchingOrphans] = useState(false)
+  const [fetchOrphanStatus, setFetchOrphanStatus] = useState('')
 
   useEffect(() => { load() }, [])
+
+  // Same as Settings → Import Orphaned Media (scan + import)
+  const fetchOrphansIntoGallery = async () => {
+    if (fetchingOrphans) return
+    setFetchingOrphans(true)
+    setFetchOrphanStatus('Scanning storage for orphans…')
+    try {
+      const scanRes = await fetch('/api/import-orphans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: true }),
+      })
+      const scan = await scanRes.json()
+      if (scan.error) throw new Error(scan.error)
+      const count = scan.orphanCount || 0
+      if (!count) {
+        setFetchOrphanStatus('No orphaned files found')
+        setTimeout(() => setFetchOrphanStatus(''), 2500)
+        setFetchingOrphans(false)
+        return
+      }
+      if (!confirm(`Found ${count} orphaned file(s) in storage.\n\nImport them into Gallery?`)) {
+        setFetchOrphanStatus('')
+        setFetchingOrphans(false)
+        return
+      }
+      setFetchOrphanStatus(`Importing ${count} file(s)…`)
+      const impRes = await fetch('/api/import-orphans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: false, mode: 'import' }),
+      })
+      const imp = await impRes.json()
+      if (imp.error) throw new Error(imp.error)
+      setFetchOrphanStatus(`Imported ${imp.imported ?? count} file(s)`)
+      await load()
+      setTimeout(() => setFetchOrphanStatus(''), 3000)
+    } catch (err) {
+      setFetchOrphanStatus('Error: ' + err.message)
+      alert('Fetch orphans failed: ' + err.message)
+    }
+    setFetchingOrphans(false)
+  }
 
   // Upload local image/video files straight into Gallery (storage + gallery_media row)
   const uploadFilesToGallery = async (fileList) => {
@@ -1688,6 +1733,15 @@ export default function Gallery() {
           >
             {uploading ? '…' : '⬆ Upload'}
           </button>
+          <button
+            type="button"
+            disabled={fetchingOrphans}
+            onClick={fetchOrphansIntoGallery}
+            className="bg-amber-900 hover:bg-amber-800 disabled:opacity-50 rounded-full px-3 py-2 text-sm font-semibold"
+            title="Find storage files missing from Gallery and import them"
+          >
+            {fetchingOrphans ? '…' : 'Fetch'}
+          </button>
           <input
             ref={fileInputRef}
             type="file"
@@ -1707,6 +1761,11 @@ export default function Gallery() {
       {uploading && uploadStatus && (
         <div className="bg-emerald-950 border border-emerald-900 rounded-xl p-3 mb-4 text-sm text-emerald-200">
           {uploadStatus}
+        </div>
+      )}
+      {fetchOrphanStatus && (
+        <div className="bg-amber-950 border border-amber-900 rounded-xl p-3 mb-4 text-sm text-amber-100">
+          {fetchOrphanStatus}
         </div>
       )}
       {bulkBusy && bulkStatus && (
