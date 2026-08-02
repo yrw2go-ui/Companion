@@ -77,8 +77,16 @@ export default function Gallery() {
   const [folderMap, setFolderMap] = useState({})  // item_key -> folder_id
   const [savingFolder, setSavingFolder] = useState(false)
   // Folder sort: alpha (default A-Z) | recent | size — second click inverts
+  // Recent = last media filed into folder OR last time you opened the folder
   const [folderSort, setFolderSort] = useState('alpha')
   const [folderSortAsc, setFolderSortAsc] = useState(true)
+  const [folderActivity, setFolderActivity] = useState({}) // folder_id -> last media filed timestamp (ms)
+  const [folderAccessed, setFolderAccessed] = useState(() => {
+    try {
+      const raw = localStorage.getItem('ga_folder_accessed')
+      return raw ? JSON.parse(raw) : {}
+    } catch { return {} }
+  }) // folder_id -> last opened (ms)
   const downloadCounter = useRef(0)
   const [gSort, setGSort] = useState('date_desc')
   const [gSearch, setGSearch] = useState('')
@@ -156,9 +164,90 @@ export default function Gallery() {
   const [freebieTokens, setFreebieTokens] = useState('100')
   const [freebieMax, setFreebieMax] = useState('50')
   const [freebieBusy, setFreebieBusy] = useState(false)
-
+  const [uploading, setUploading] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState('')
+  const fileInputRef = useRef(null)
 
   useEffect(() => { load() }, [])
+
+  // Upload local image/video files straight into Gallery (storage + gallery_media row)
+  const uploadFilesToGallery = async (fileList) => {
+    const files = Array.from(fileList || []).filter(f =>
+      (f.type || '').startsWith('image/') || (f.type || '').startsWith('video/')
+    )
+    if (!files.length) {
+      alert('Pick image or video files only')
+      return
+    }
+    setUploading(true)
+    let ok = 0
+    let fail = 0
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      setUploadStatus(`Uploading ${i + 1}/${files.length}: ${file.name}`)
+      try {
+        const isVideo = (file.type || '').startsWith('video/')
+        const ext = (file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg')).toLowerCase().replace(/[^a-z0-9]/g, '')
+        const fileName = `upload_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext || (isVideo ? 'mp4' : 'jpg')}`
+        const { error: upErr } = await supabase.storage
+          .from('character-images')
+          .upload(fileName, file, {
+            contentType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
+            upsert: false,
+          })
+        if (upErr) throw new Error(upErr.message)
+        const { data: pub } = supabase.storage.from('character-images').getPublicUrl(fileName)
+        const url = pub?.publicUrl
+        if (!url) throw new Error('No public URL')
+
+        let poster_url = null
+        if (isVideo) {
+          try {
+            if (typeof makePoster === 'function') {
+              poster_url = await makePoster(url)
+            }
+          } catch (e) {
+            console.warn('poster', e)
+          }
+        }
+
+        const row = {
+          type: isVideo ? 'video' : 'image',
+          url,
+          prompt: file.name,
+          model: 'upload',
+          poster_url: poster_url || undefined,
+        }
+        const saved = await saveWithRetry(row, file.name)
+        if (saved) {
+          ok++
+          // optional: file into active folder if one is selected
+          if (activeFolder && activeFolder !== 'all' && activeFolder !== 'unfiled' && saved.id) {
+            const key = 'gal_' + saved.id
+            await supabase.from('folder_items').upsert(
+              { source: 'gallery_media', item_key: key, folder_id: activeFolder },
+              { onConflict: 'source,item_key' }
+            )
+            setFolderMap(prev => ({ ...prev, [key]: activeFolder }))
+            setFolderActivity(prev => ({ ...prev, [activeFolder]: Date.now() }))
+          }
+        } else {
+          fail++
+        }
+      } catch (err) {
+        console.error(err)
+        fail++
+        alert(`Failed: ${file.name}\n${err.message}`)
+      }
+    }
+    setUploading(false)
+    setUploadStatus('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    await load()
+    if (ok || fail) {
+      alert(`Upload done: ${ok} saved${fail ? `, ${fail} failed` : ''}`)
+    }
+  }
 
   // saves a completed generation to gallery_media with retry.
   // Atlas already uploaded the file; this only writes the DB row so it appears in Gallery.
@@ -253,8 +342,15 @@ export default function Gallery() {
       fiOffset += 1000
     }
     const fmap = {}
-    for (const fi of folderItemRows) fmap[fi.item_key] = fi.folder_id
+    const activity = {} // max created_at per folder (media added / filed)
+    for (const fi of folderItemRows) {
+      fmap[fi.item_key] = fi.folder_id
+      if (!fi.folder_id) continue
+      const ts = new Date(fi.created_at || fi.updated_at || 0).getTime()
+      if (!activity[fi.folder_id] || ts > activity[fi.folder_id]) activity[fi.folder_id] = ts
+    }
     setFolderMap(fmap)
+    setFolderActivity(activity)
 
     const cardRows = await fetchAllRows(
       'cards',
@@ -1135,6 +1231,10 @@ export default function Gallery() {
         .from('folder_items')
         .upsert({ source: item.source, item_key: item.key, folder_id: folderId }, { onConflict: 'source,item_key' })
       if (error) alert('Could not move: ' + error.message)
+      else {
+        // Bump "recent" activity for this folder (media just added)
+        setFolderActivity(prev => ({ ...prev, [folderId]: Date.now() }))
+      }
 
       // Main Banner: always ensure a stored thumbnail for the game strip
       const folderMeta = folders.find(f => f.id === folderId)
@@ -1498,15 +1598,32 @@ export default function Gallery() {
     return counts
   })()
 
+  const folderRecentTs = (folderId) => {
+    const added = folderActivity[folderId] || 0
+    const opened = folderAccessed[folderId] || 0
+    return Math.max(added, opened)
+  }
+
+  const openFolder = (folderId) => {
+    setActiveFolder(folderId)
+    if (folderId === 'all' || folderId === 'unfiled') return
+    const next = { ...folderAccessed, [folderId]: Date.now() }
+    setFolderAccessed(next)
+    try { localStorage.setItem('ga_folder_accessed', JSON.stringify(next)) } catch {}
+  }
+
   const sortedFolders = (() => {
-    const list = (folders || []).map(f => ({ ...f, _count: folderCounts[f.id] || 0 }))
+    const list = (folders || []).map(f => ({
+      ...f,
+      _count: folderCounts[f.id] || 0,
+      _recent: folderRecentTs(f.id),
+    }))
     const startsWithNum = (name) => /^\d/.test(String(name || '').trim())
     const cmpAlpha = (a, b) => {
       const an = String(a.name || '')
       const bn = String(b.name || '')
       const aNum = startsWithNum(an)
       const bNum = startsWithNum(bn)
-      // numbered folders always before pure alpha (when sorting alpha)
       if (folderSort === 'alpha') {
         if (aNum && !bNum) return -1
         if (!aNum && bNum) return 1
@@ -1514,20 +1631,17 @@ export default function Gallery() {
       return an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' })
     }
     if (folderSort === 'recent') {
+      // Recent = last media added to folder OR last time you opened it
       list.sort((a, b) => {
-        const da = new Date(a.created_at || 0).getTime()
-        const db = new Date(b.created_at || 0).getTime()
-        return folderSortAsc ? da - db : db - da
+        const d = (a._recent || 0) - (b._recent || 0)
+        return folderSortAsc ? d : -d
       })
     } else if (folderSort === 'size') {
       list.sort((a, b) => {
         const d = (a._count || 0) - (b._count || 0)
-        // default Largest = desc when folderSortAsc false... we set asc=false for size on first click
-        // first click size sets asc=false → want largest first → db - da style
         return folderSortAsc ? d : -d
       })
     } else {
-      // alpha
       list.sort((a, b) => {
         const c = cmpAlpha(a, b)
         return folderSortAsc ? c : -c
@@ -1565,11 +1679,36 @@ export default function Gallery() {
           <button onClick={() => setShowT2V(true)} className="bg-gray-800 hover:bg-gray-700 rounded-full px-3 py-2 text-sm font-semibold" title="Video from text">
             🎬 Text
           </button>
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+            className="bg-emerald-800 hover:bg-emerald-700 disabled:opacity-50 rounded-full px-3 py-2 text-sm font-semibold"
+            title="Upload images or videos to Gallery"
+          >
+            {uploading ? '…' : '⬆ Upload'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            className="hidden"
+            onChange={e => {
+              const files = e.target.files
+              if (files?.length) uploadFilesToGallery(files)
+            }}
+          />
           <button onClick={openCreate} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">
             + Create
           </button>
         </div>
       </div>
+      {uploading && uploadStatus && (
+        <div className="bg-emerald-950 border border-emerald-900 rounded-xl p-3 mb-4 text-sm text-emerald-200">
+          {uploadStatus}
+        </div>
+      )}
       {bulkBusy && bulkStatus && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-sm text-gray-400">
           {bulkStatus}
@@ -1633,14 +1772,14 @@ export default function Gallery() {
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1 items-center">
             {[['all', 'All'], ['unfiled', 'Unfiled']].map(([val, label]) => (
-              <button key={val} onClick={() => setActiveFolder(val)}
+              <button key={val} onClick={() => openFolder(val)}
                 className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${activeFolder === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
                 {label}
               </button>
             ))}
             {sortedFolders.map(f => (
               <button key={f.id}
-                onClick={() => setActiveFolder(f.id)}
+                onClick={() => openFolder(f.id)}
                 onDoubleClick={() => renameFolder(f)}
                 className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${activeFolder === f.id ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
                 📁 {f.name}{folderSort === 'size' ? ` (${f._count || 0})` : ''}
