@@ -55,33 +55,53 @@ export default function Game() {
   const [volumeMode, setVolumeMode] = useState(() => {
     try { return localStorage.getItem('ga_volume_mode') === 'low' ? 'low' : 'normal' } catch { return 'normal' }
   })
-  // Low = 65% of full (35% quieter). Only elements marked data-ga-sound get volume control
-  // (preview thumbs stay muted so the strip doesn't blast audio).
+  // Keep refs so apply always uses latest values (avoids stale closures)
+  const mutedRef = useRef(muted)
+  const volumeModeRef = useRef(volumeMode)
+  mutedRef.current = muted
+  volumeModeRef.current = volumeMode
+
+  // Low = 65% of full. iOS often ignores volume and only respects muted.
   const mediaVolume = muted ? 0 : (volumeMode === 'low' ? 0.65 : 1)
   const applyMediaVolume = () => {
-    const vol = muted ? 0 : (volumeMode === 'low' ? 0.65 : 1)
-    if (typeof document !== 'undefined') {
-      document.querySelectorAll('[data-ga-sound]').forEach((el) => {
-        try {
-          el.muted = !!muted
-          el.volume = vol
-        } catch {}
-      })
-    }
+    const isMuted = !!mutedRef.current
+    const mode = volumeModeRef.current
+    const vol = isMuted ? 0 : (mode === 'low' ? 0.65 : 1)
+    if (typeof document === 'undefined') return
+    // Sound-capable clips only (not silent grid thumbs)
+    const nodes = document.querySelectorAll('video[data-ga-sound], audio[data-ga-sound]')
+    nodes.forEach((el) => {
+      try {
+        el.defaultMuted = isMuted
+        el.muted = isMuted
+        // volume is ignored on many iOS browsers but works on Android/desktop
+        el.volume = Math.max(0, Math.min(1, vol))
+      } catch {}
+    })
   }
   const toggleMuted = () => {
     setMuted(prev => {
       const next = !prev
+      mutedRef.current = next
       try { localStorage.setItem('ga_muted', next ? '1' : '0') } catch {}
+      // apply immediately with new value
+      setTimeout(applyMediaVolume, 0)
       return next
     })
   }
   const setVolumeModePersist = (mode) => {
+    volumeModeRef.current = mode
     setVolumeMode(mode)
     try { localStorage.setItem('ga_volume_mode', mode) } catch {}
+    setTimeout(applyMediaVolume, 0)
   }
   useEffect(() => {
     applyMediaVolume()
+    // Re-apply when new videos mount (reveal / shop intro)
+    if (typeof MutationObserver === 'undefined') return
+    const obs = new MutationObserver(() => applyMediaVolume())
+    obs.observe(document.body, { childList: true, subtree: true })
+    return () => obs.disconnect()
   }, [muted, volumeMode])
   const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
   const revealVideoRef = useRef(null)
@@ -2232,7 +2252,21 @@ export default function Game() {
               <div className="w-full max-w-sm">
                 <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-black">
                   {m.type === 'video' ? (
-                    <video src={m.url} controls autoPlay playsInline className="w-full max-h-[70vh]" />
+                    <video
+                      data-ga-sound
+                      src={m.url}
+                      controls
+                      autoPlay
+                      playsInline
+                      muted={muted}
+                      className="w-full max-h-[70vh]"
+                      onLoadedData={(e) => {
+                        try {
+                          e.target.muted = !!muted
+                          e.target.volume = mediaVolume
+                        } catch {}
+                      }}
+                    />
                   ) : (
                     <img src={m.url} alt="" className="w-full max-h-[70vh] object-contain" />
                   )}
@@ -2269,7 +2303,19 @@ export default function Game() {
             <div className="w-full max-w-sm">
               <div className={`rounded-2xl overflow-hidden ${reveal.trim?.className || ''}`}>
                 {reveal.media?.type === 'video' ? (
-                  <video src={reveal.media.url} controls className="w-full" />
+                  <video
+                    data-ga-sound
+                    src={reveal.media.url}
+                    controls
+                    muted={muted}
+                    className="w-full"
+                    onLoadedData={(e) => {
+                      try {
+                        e.target.muted = !!muted
+                        e.target.volume = mediaVolume
+                      } catch {}
+                    }}
+                  />
                 ) : (
                   <img src={reveal.media?.url} alt="" className="w-full" />
                 )}
@@ -2430,7 +2476,7 @@ export default function Game() {
                       {c.back_image_url ? (
                         <img src={c.back_image_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
                       ) : <div className="absolute inset-0 bg-gray-900" />}
-                      <div className="absolute inset-x-0 bottom-0 h-[70%] bg-gradient-to-t from-black from-40% via-black/85 to-transparent" />
+                      <div className="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-t from-black from-30% via-black/80 to-transparent" />
                       {c.series_name && (
                         <div className="absolute top-3 inset-x-0 text-center z-[2]">
                           <span className="text-[10px] text-black font-semibold tracking-[0.15em] uppercase" style={{ fontFamily: 'Georgia, serif', textShadow: '0 0 1px rgba(255,255,255,0.4)' }}>{c.series_name}</span>
@@ -2465,12 +2511,20 @@ export default function Game() {
                     <>
                       {playOwnedVideo && o.video_unlocked && c.video_url ? (
                         <video
+                          key={`own-vid-${o.id}-${muted}-${volumeMode}`}
+                          data-ga-sound
                           src={c.video_url}
                           className="absolute inset-0 w-full h-full object-cover object-top"
                           autoPlay
                           loop
-                          muted
+                          muted={muted}
                           playsInline
+                          onLoadedData={(e) => {
+                            try {
+                              e.target.muted = !!muted
+                              e.target.volume = mediaVolume
+                            } catch {}
+                          }}
                         />
                       ) : c.image_url ? (
                         <img src={c.image_url} alt={c.name || ''} className="absolute inset-0 w-full h-full object-cover object-top" />
@@ -2629,7 +2683,8 @@ export default function Game() {
               </button>
             </div>
             <p className="text-[10px] text-gray-600 mb-4 -mt-1 px-1">
-              Mute kills all in-app audio. Low uses ~65% of phone volume on videos.
+              Mute works on all devices. Low (~65%) works on Android/desktop; iPhone often ignores volume and only mute is reliable.
+              Play a shop intro or unlocked card animation to hear the change.
             </p>
 
             <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 mb-3">
