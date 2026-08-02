@@ -1474,15 +1474,57 @@ export default function Gallery() {
         setName = s.name
       } else if (miscMode === 'new') {
         if (!miscSetName.trim()) throw new Error('Set name required')
-        prefix = (miscPrefix || miscSetName).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'SET'
-        const { data: created, error } = await supabase.from('misc_sets').insert([{
-          name: miscSetName.trim(),
-          code_prefix: prefix,
-        }]).select().single()
-        if (error) throw new Error(error.message)
-        setId = created.id
-        setName = created.name
-        setMiscSets(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)))
+        const wantedName = miscSetName.trim()
+        // Reuse existing set if same name (case-insensitive) — no duplicate sets
+        const existing = (miscSets || []).find(
+          s => String(s.name || '').trim().toLowerCase() === wantedName.toLowerCase()
+        )
+        if (existing) {
+          setId = existing.id
+          prefix = existing.code_prefix || prefix
+          setName = existing.name
+        } else {
+          // Double-check DB in case local list is stale
+          const { data: dbHits } = await supabase
+            .from('misc_sets')
+            .select('*')
+            .ilike('name', wantedName)
+          const hit = (dbHits || []).find(
+            s => String(s.name || '').trim().toLowerCase() === wantedName.toLowerCase()
+          )
+          if (hit) {
+            setId = hit.id
+            prefix = hit.code_prefix || prefix
+            setName = hit.name
+            setMiscSets(prev => {
+              if (prev.some(x => x.id === hit.id)) return prev
+              return [...prev, hit].sort((a, b) => a.name.localeCompare(b.name))
+            })
+          } else {
+            prefix = (miscPrefix || miscSetName).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'SET'
+            const { data: created, error } = await supabase.from('misc_sets').insert([{
+              name: wantedName,
+              code_prefix: prefix,
+            }]).select().single()
+            if (error) {
+              // unique constraint race → fetch and reuse
+              if (/unique|duplicate/i.test(error.message || '')) {
+                const { data: again } = await supabase.from('misc_sets').select('*').ilike('name', wantedName)
+                const reuse = (again || [])[0]
+                if (!reuse) throw new Error(error.message)
+                setId = reuse.id
+                prefix = reuse.code_prefix || prefix
+                setName = reuse.name
+              } else {
+                throw new Error(error.message)
+              }
+            } else {
+              setId = created.id
+              setName = created.name
+              setMiscSets(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)))
+            }
+          }
+        }
       }
 
       // sort index within set
