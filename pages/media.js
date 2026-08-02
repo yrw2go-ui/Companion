@@ -8,27 +8,29 @@ export default function MediaLibrary() {
   const [library, setLibrary] = useState('character') // character | misc
   const [items, setItems] = useState([])
   const [miscItems, setMiscItems] = useState([])
+  const [folderDrafts, setFolderDrafts] = useState([]) // gallery folder "Misc Beauties" not yet in misc_items
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all') // all | image | video | live | off
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(null)
-  const [selectedKind, setSelectedKind] = useState('character') // character | misc
+  const [selectedKind, setSelectedKind] = useState('character') // character | misc | draft
   const [busy, setBusy] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editUnlock, setEditUnlock] = useState('shop')
   const [editCost, setEditCost] = useState('0')
   const [editEdition, setEditEdition] = useState('100')
   const [editChar, setEditChar] = useState('')
+  const [editSort, setEditSort] = useState('1')
   const [editOverlayName, setEditOverlayName] = useState('')
   const [editOverlayFont, setEditOverlayFont] = useState('impact')
   const [editOverlayPos, setEditOverlayPos] = useState('h-top-left')
 
   const NAME_FONTS = [
-    { id: 'impact', label: 'Impact Bold', family: 'Impact, Haettenschweiler, sans-serif', weight: 900 },
-    { id: 'arialblack', label: 'Arial Black', family: '"Arial Black", "Helvetica Neue", sans-serif', weight: 900 },
-    { id: 'georgia', label: 'Georgia Bold', family: 'Georgia, serif', weight: 700 },
-    { id: 'system', label: 'System ExtraBold', family: 'system-ui, sans-serif', weight: 800 },
-    { id: 'mono', label: 'Mono Bold', family: 'ui-monospace, monospace', weight: 700 },
+    { id: 'impact', label: 'Impact Bold' },
+    { id: 'arialblack', label: 'Arial Black' },
+    { id: 'georgia', label: 'Georgia Bold' },
+    { id: 'system', label: 'System ExtraBold' },
+    { id: 'mono', label: 'Mono Bold' },
   ]
   const NAME_POSITIONS = [
     { id: 'h-top-left', label: 'Horizontal · top left' },
@@ -50,13 +52,58 @@ export default function MediaLibrary() {
     if (error) console.error(error)
     setItems(data || [])
 
-    // Misc Beauties from published/unlisted shop table (sets grouped)
     const { data: misc, error: mErr } = await supabase
       .from('misc_items')
       .select('*, misc_sets(id, name, code_prefix)')
       .order('created_at', { ascending: false })
     if (mErr) console.error(mErr)
-    setMiscItems(misc || [])
+    const miscList = misc || []
+    setMiscItems(miscList)
+
+    // Gallery folder named "Misc Beauties" → show as Off drafts until published into misc_items
+    const drafts = []
+    try {
+      const { data: folders } = await supabase.from('gallery_folders').select('id, name')
+      const folder = (folders || []).find(f => String(f.name || '').trim().toLowerCase() === 'misc beauties')
+      if (folder) {
+        const { data: fis } = await supabase
+          .from('folder_items')
+          .select('item_key, source')
+          .eq('folder_id', folder.id)
+        const galIds = []
+        for (const fi of fis || []) {
+          const k = String(fi.item_key || '')
+          if (k.startsWith('gal_')) galIds.push(k.slice(4))
+          else if (/^[0-9a-f-]{36}$/i.test(k)) galIds.push(k)
+        }
+        const uniq = [...new Set(galIds)]
+        const publishedUrls = new Set(miscList.map(m => m.url).filter(Boolean))
+        for (let i = 0; i < uniq.length; i += 100) {
+          const chunk = uniq.slice(i, i + 100)
+          const { data: gals } = await supabase
+            .from('gallery_media')
+            .select('id, url, type, prompt, created_at, poster_url, thumbnail_url')
+            .in('id', chunk)
+          for (const g of gals || []) {
+            if (!g.url || publishedUrls.has(g.url)) continue
+            drafts.push({
+              id: 'draft_' + g.id,
+              gallery_id: g.id,
+              url: g.url,
+              type: g.type === 'video' ? 'video' : 'image',
+              title: g.prompt ? String(g.prompt).slice(0, 80) : null,
+              published: false,
+              _draft: true,
+              created_at: g.created_at,
+              poster_url: g.poster_url || g.thumbnail_url,
+            })
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('misc folder drafts', e)
+    }
+    setFolderDrafts(drafts)
     setLoading(false)
   }
 
@@ -68,12 +115,60 @@ export default function MediaLibrary() {
     setEditCost(String(m.token_cost ?? 0))
     setEditEdition(String(m.edition_size ?? 100))
     setEditChar(m.character_name || '')
+    setEditSort(String(m.sort_index ?? 1))
     setEditOverlayName(m.overlay_name || m.character_name || '')
     setEditOverlayFont(m.overlay_font || 'impact')
     setEditOverlayPos(m.overlay_position || 'h-top-left')
   }
 
+  const nextPublicId = async (prefix) => {
+    const p = (prefix || 'MX').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'MX'
+    const { data } = await supabase
+      .from('misc_items')
+      .select('public_id')
+      .ilike('public_id', p + '%')
+      .order('public_id', { ascending: false })
+      .limit(50)
+    let maxN = 102000
+    for (const row of data || []) {
+      const m = String(row.public_id || '').match(/(\d+)$/)
+      if (m) maxN = Math.max(maxN, parseInt(m[1], 10))
+    }
+    return p + String(maxN + 1)
+  }
+
+  // Publish a gallery-folder draft into misc_items (standalone, Live)
+  const publishDraft = async (draft) => {
+    if (!draft?._draft || busy) return
+    setBusy(true)
+    try {
+      const publicId = await nextPublicId('MX')
+      const { data, error } = await supabase.from('misc_items').insert([{
+        set_id: null,
+        type: draft.type === 'video' ? 'video' : 'image',
+        url: draft.url,
+        title: draft.title || null,
+        public_id: publicId,
+        sort_index: 1,
+        published: true,
+      }]).select('*, misc_sets(id, name, code_prefix)').single()
+      if (error) throw new Error(error.message)
+      setFolderDrafts(prev => prev.filter(x => x.id !== draft.id))
+      setMiscItems(prev => [data, ...prev])
+      setSelected(data)
+      setSelectedKind('misc')
+      alert(`Published as ${publicId}`)
+    } catch (err) {
+      alert('Publish failed: ' + err.message)
+    }
+    setBusy(false)
+  }
+
   const togglePublish = async (m, kind = selectedKind) => {
+    if (kind === 'draft' || m._draft) {
+      await publishDraft(m)
+      return
+    }
     const next = !m.published
     const table = kind === 'misc' ? 'misc_items' : 'character_media'
     const { error } = await supabase.from(table).update({ published: next }).eq('id', m.id)
@@ -87,13 +182,15 @@ export default function MediaLibrary() {
   }
 
   const saveEdit = async () => {
-    if (!selected || busy) return
+    if (!selected || busy || selected._draft) return
     setBusy(true)
     const overlayName = editOverlayName.trim() || null
     try {
       if (selectedKind === 'misc') {
+        const sortN = Math.max(1, parseInt(editSort) || 1)
         const payload = {
           title: editTitle.trim() || null,
+          sort_index: sortN,
           overlay_name: overlayName,
           overlay_font: overlayName ? editOverlayFont : null,
           overlay_position: overlayName ? editOverlayPos : null,
@@ -136,6 +233,10 @@ export default function MediaLibrary() {
   }
 
   const deleteItem = async (m, kind = selectedKind) => {
+    if (m._draft || kind === 'draft') {
+      alert('This is only in the Gallery “Misc Beauties” folder. Remove it from that folder in Gallery if you don’t want it here.')
+      return
+    }
     const label = kind === 'misc' ? 'misc beauty listing' : 'character media'
     if (!confirm(`Delete this ${label}?`)) return
     const table = kind === 'misc' ? 'misc_items' : 'character_media'
@@ -146,24 +247,31 @@ export default function MediaLibrary() {
     if (selected?.id === m.id) setSelected(null)
   }
 
-  const filterList = (list, kind) => list.filter(m => {
+  const matchesSearch = (m, kind) => {
+    if (!search.trim()) return true
+    const q = search.toLowerCase()
+    const setName = m.misc_sets?.name || ''
+    const hay = kind === 'misc' || kind === 'draft'
+      ? `${m.public_id || ''} ${m.title || ''} ${setName} ${m.overlay_name || ''}`.toLowerCase()
+      : `${m.character_name || ''} ${m.title || ''} ${m.unlock_method || ''}`.toLowerCase()
+    return hay.includes(q)
+  }
+
+  const filterRow = (m, kind) => {
     if (filter === 'image' && m.type !== 'image') return false
     if (filter === 'video' && m.type !== 'video') return false
     if (filter === 'live' && !m.published) return false
     if (filter === 'off' && m.published) return false
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      const setName = m.misc_sets?.name || ''
-      const hay = kind === 'misc'
-        ? `${m.public_id || ''} ${m.title || ''} ${setName} ${m.overlay_name || ''}`.toLowerCase()
-        : `${m.character_name || ''} ${m.title || ''} ${m.unlock_method || ''}`.toLowerCase()
-      if (!hay.includes(q)) return false
-    }
+    if (!matchesSearch(m, kind)) return false
     return true
-  })
+  }
 
-  const visibleChar = filterList(items, 'character')
-  const visibleMisc = filterList(miscItems, 'misc')
+  const visibleChar = items.filter(m => filterRow(m, 'character'))
+  const visibleMisc = miscItems.filter(m => filterRow(m, 'misc'))
+  const visibleDrafts = folderDrafts.filter(m => filterRow(m, 'draft'))
+
+  // Off tab for misc = unpublished misc_items + gallery folder drafts
+  const showDraftsInMisc = library === 'misc' && (filter === 'all' || filter === 'off' || filter === 'image' || filter === 'video')
 
   const byChar = {}
   for (const m of visibleChar) {
@@ -173,7 +281,6 @@ export default function MediaLibrary() {
   }
   const charNames = Object.keys(byChar).sort((a, b) => a.localeCompare(b))
 
-  // Group misc by set (collections together); standalones last
   const bySet = {}
   for (const m of visibleMisc) {
     const set = m.misc_sets
@@ -193,15 +300,20 @@ export default function MediaLibrary() {
     if (b.key === 'standalone') return -1
     return a.name.localeCompare(b.name)
   })
-  // keep sort_index order within sets
   for (const g of setGroups) {
     g.items.sort((a, b) => (a.sort_index || 0) - (b.sort_index || 0) || String(a.public_id || '').localeCompare(String(b.public_id || '')))
   }
 
-  const totalCount = library === 'misc' ? miscItems.length : items.length
-  const liveCount = library === 'misc'
-    ? miscItems.filter(x => x.published).length
-    : items.filter(x => x.published).length
+  const miscTotal = miscItems.length + folderDrafts.length
+  const miscLive = miscItems.filter(x => x.published).length
+  const charLive = items.filter(x => x.published).length
+  const totalCount = library === 'misc' ? miscTotal : items.length
+  const liveCount = library === 'misc' ? miscLive : charLive
+
+  const setSize = (item) => {
+    if (!item?.set_id) return null
+    return miscItems.filter(x => x.set_id === item.set_id).length
+  }
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -219,11 +331,10 @@ export default function MediaLibrary() {
           </div>
         </div>
 
-        {/* Library toggle */}
         <div className="flex gap-2 mb-4">
           <button
             type="button"
-            onClick={() => { setLibrary('character'); setSelected(null) }}
+            onClick={() => { setLibrary('character'); setSelected(null); setFilter('all') }}
             className={`flex-1 rounded-xl py-2.5 text-sm font-semibold border ${
               library === 'character' ? 'bg-pink-700 border-pink-500 text-white' : 'bg-gray-900 border-gray-800 text-gray-400'
             }`}
@@ -232,7 +343,7 @@ export default function MediaLibrary() {
           </button>
           <button
             type="button"
-            onClick={() => { setLibrary('misc'); setSelected(null) }}
+            onClick={() => { setLibrary('misc'); setSelected(null); setFilter('all') }}
             className={`flex-1 rounded-xl py-2.5 text-sm font-semibold border ${
               library === 'misc' ? 'bg-pink-700 border-pink-500 text-white' : 'bg-gray-900 border-gray-800 text-gray-400'
             }`}
@@ -243,8 +354,8 @@ export default function MediaLibrary() {
 
         <p className="text-xs text-gray-500 mb-4">
           {library === 'character'
-            ? 'Extra media linked from cards. Live items appear in game media draws.'
-            : 'Misc Beauties from Gallery publish. Sets stay grouped. Live = in shop draws.'}
+            ? 'Extra media linked from cards. Live items appear in game media draws. Edit edition size (e.g. 1 of 200).'
+            : 'Gallery folder “Misc Beauties” shows under Off until published. Sets stay grouped. Edit order in set.'}
         </p>
 
         <div className="flex flex-wrap gap-2 mb-3">
@@ -272,7 +383,6 @@ export default function MediaLibrary() {
           visibleChar.length === 0 ? (
             <div className="text-center py-16 text-gray-500 text-sm">
               <p>No character media yet.</p>
-              <p className="mt-2 text-xs">Open a card → Create +media.</p>
               <button onClick={() => router.push('/cards')} className="mt-4 text-pink-400 hover:text-pink-300 text-sm font-semibold">
                 Go to Cards →
               </button>
@@ -298,17 +408,16 @@ export default function MediaLibrary() {
                           ) : (
                             <img src={m.url} alt="" className="w-full h-full object-cover" />
                           )}
-                          <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-12 w-12 object-contain drop-shadow-lg pointer-events-none z-[5]" />
                           <span className={`absolute top-2 left-2 text-[9px] font-bold px-1.5 py-0.5 rounded z-[6] ${m.published ? 'bg-emerald-500 text-black' : 'bg-gray-700 text-gray-300'}`}>
                             {m.published ? 'Live' : 'Off'}
                           </span>
-                          <span className="absolute bottom-2 left-2 text-[9px] bg-black/70 px-1.5 py-0.5 rounded uppercase tracking-wide">
-                            {m.type}
+                          <span className="absolute bottom-2 left-2 text-[9px] bg-black/70 px-1.5 py-0.5 rounded">
+                            ed. {m.edition_size || '—'}
                           </span>
                         </div>
                         <div className="p-2">
                           <p className="text-xs font-semibold truncate">{m.title || m.type}</p>
-                          <p className="text-[10px] text-gray-500">{m.unlock_method} · ed. {m.edition_size || '—'}</p>
+                          <p className="text-[10px] text-gray-500">{m.unlock_method} · {m.type}</p>
                         </div>
                       </button>
                     ))}
@@ -318,32 +427,29 @@ export default function MediaLibrary() {
             </div>
           )
         ) : (
-          visibleMisc.length === 0 ? (
+          visibleMisc.length === 0 && !(showDraftsInMisc && visibleDrafts.length) ? (
             <div className="text-center py-16 text-gray-500 text-sm">
               <p>No Misc Beauties yet.</p>
-              <p className="mt-2 text-xs">In Gallery, open an image → Add to Misc Beauties.</p>
+              <p className="mt-2 text-xs">Put files in Gallery folder “Misc Beauties”, or Add to Misc Beauties from a file.</p>
               <button onClick={() => router.push('/gallery')} className="mt-4 text-pink-400 hover:text-pink-300 text-sm font-semibold">
                 Go to Gallery →
               </button>
             </div>
           ) : (
             <div className="space-y-6">
-              {setGroups.map(g => (
-                <div key={g.key}>
-                  <h2 className="text-sm font-semibold text-pink-300 mb-2 sticky top-0 bg-black/90 py-1 z-10 flex items-center gap-2 flex-wrap">
-                    <span>{g.name}</span>
-                    {g.code && <span className="text-[10px] font-mono text-gray-500">{g.code}</span>}
-                    <span className="text-gray-600 font-normal">{g.items.length} item{g.items.length === 1 ? '' : 's'}</span>
-                    <span className="text-[10px] text-emerald-400 font-normal">
-                      {g.items.filter(x => x.published).length} live
-                    </span>
+              {showDraftsInMisc && visibleDrafts.length > 0 && (filter === 'all' || filter === 'off') && (
+                <div>
+                  <h2 className="text-sm font-semibold text-amber-300 mb-2 sticky top-0 bg-black/90 py-1 z-10">
+                    Gallery folder · Misc Beauties
+                    <span className="text-gray-600 font-normal ml-2">{visibleDrafts.length} off</span>
                   </h2>
+                  <p className="text-[10px] text-gray-500 mb-2">Not published to shop yet. Open → Set Live to add.</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                    {g.items.map(m => (
+                    {visibleDrafts.map(m => (
                       <button
                         key={m.id}
-                        onClick={() => openItem(m, 'misc')}
-                        className="text-left bg-gray-900 border border-gray-800 rounded-xl overflow-hidden hover:border-pink-700 transition"
+                        onClick={() => openItem(m, 'draft')}
+                        className="text-left bg-gray-900 border border-amber-900/40 rounded-xl overflow-hidden hover:border-amber-600 transition"
                       >
                         <div className="relative aspect-[3/4] bg-gray-800">
                           {m.type === 'video' ? (
@@ -351,32 +457,67 @@ export default function MediaLibrary() {
                           ) : (
                             <img src={m.url} alt="" className="w-full h-full object-cover" />
                           )}
-                          <img src="/ga-mark.png" alt="" className="absolute top-2 right-2 h-12 w-12 object-contain drop-shadow-lg pointer-events-none z-[5]" />
-                          <span className={`absolute top-2 left-2 text-[9px] font-bold px-1.5 py-0.5 rounded z-[6] ${m.published ? 'bg-emerald-500 text-black' : 'bg-gray-700 text-gray-300'}`}>
-                            {m.published ? 'Live' : 'Off'}
-                          </span>
-                          <span className="absolute bottom-2 left-2 text-[9px] bg-black/70 px-1.5 py-0.5 rounded font-mono">
-                            {m.public_id || m.type}
+                          <span className="absolute top-2 left-2 text-[9px] font-bold px-1.5 py-0.5 rounded z-[6] bg-gray-700 text-gray-300">
+                            Off
                           </span>
                         </div>
                         <div className="p-2">
-                          <p className="text-xs font-semibold truncate">{m.title || m.public_id || 'Misc'}</p>
-                          <p className="text-[10px] text-gray-500">
-                            {m.sort_index != null ? `#${m.sort_index}` : m.type}
-                            {m.overlay_name ? ` · ${m.overlay_name}` : ''}
-                          </p>
+                          <p className="text-xs font-semibold truncate">{m.title || 'Folder item'}</p>
+                          <p className="text-[10px] text-amber-500/80">From gallery folder</p>
                         </div>
                       </button>
                     ))}
                   </div>
                 </div>
-              ))}
+              )}
+
+              {setGroups.map(g => {
+                const setTotal = g.items.length
+                return (
+                  <div key={g.key}>
+                    <h2 className="text-sm font-semibold text-pink-300 mb-2 sticky top-0 bg-black/90 py-1 z-10 flex items-center gap-2 flex-wrap">
+                      <span>{g.name}</span>
+                      {g.code && <span className="text-[10px] font-mono text-gray-500">{g.code}</span>}
+                      <span className="text-gray-600 font-normal">{setTotal} item{setTotal === 1 ? '' : 's'}</span>
+                      <span className="text-[10px] text-emerald-400 font-normal">
+                        {g.items.filter(x => x.published).length} live
+                      </span>
+                    </h2>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {g.items.map(m => (
+                        <button
+                          key={m.id}
+                          onClick={() => openItem(m, 'misc')}
+                          className="text-left bg-gray-900 border border-gray-800 rounded-xl overflow-hidden hover:border-pink-700 transition"
+                        >
+                          <div className="relative aspect-[3/4] bg-gray-800">
+                            {m.type === 'video' ? (
+                              <video src={m.url} className="w-full h-full object-cover" muted playsInline />
+                            ) : (
+                              <img src={m.url} alt="" className="w-full h-full object-cover" />
+                            )}
+                            <span className={`absolute top-2 left-2 text-[9px] font-bold px-1.5 py-0.5 rounded z-[6] ${m.published ? 'bg-emerald-500 text-black' : 'bg-gray-700 text-gray-300'}`}>
+                              {m.published ? 'Live' : 'Off'}
+                            </span>
+                            <span className="absolute bottom-2 left-2 text-[9px] bg-black/70 px-1.5 py-0.5 rounded font-mono">
+                              {m.sort_index != null ? `${m.sort_index} of ${setTotal}` : (m.public_id || m.type)}
+                            </span>
+                          </div>
+                          <div className="p-2">
+                            <p className="text-xs font-semibold truncate">{m.title || m.public_id || 'Misc'}</p>
+                            <p className="text-[10px] text-gray-500 truncate">{m.public_id}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )
         )}
       </div>
 
-      {/* Detail drawer */}
       {selected && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center p-0 sm:p-5" onClick={() => setSelected(null)}>
           <div
@@ -384,7 +525,9 @@ export default function MediaLibrary() {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex justify-between items-start mb-3">
-              <h3 className="font-bold">{selectedKind === 'misc' ? 'Misc Beauty' : 'Media detail'}</h3>
+              <h3 className="font-bold">
+                {selectedKind === 'draft' ? 'Gallery folder item' : selectedKind === 'misc' ? 'Misc Beauty' : 'Media detail'}
+              </h3>
               <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-white text-lg px-1">✕</button>
             </div>
 
@@ -394,14 +537,22 @@ export default function MediaLibrary() {
               ) : (
                 <img src={selected.url} alt="" className="w-full max-h-[50vh] object-contain" />
               )}
-              <img src="/ga-mark.png" alt="" className="absolute top-3 right-3 h-16 w-16 object-contain drop-shadow-lg pointer-events-none z-[5]" />
             </div>
+
+            {selectedKind === 'draft' && (
+              <p className="text-xs text-amber-200/90 mb-3">
+                In Gallery folder “Misc Beauties” only — not in the shop until you set it Live.
+              </p>
+            )}
 
             {selectedKind === 'misc' && (
               <div className="mb-3 text-xs text-gray-400 space-y-1">
                 <p><span className="text-gray-500">Public ID:</span> <span className="font-mono text-pink-300">{selected.public_id || '—'}</span></p>
-                <p><span className="text-gray-500">Set:</span> {selected.misc_sets?.name || 'Standalone'}{selected.misc_sets?.code_prefix ? ` (${selected.misc_sets.code_prefix})` : ''}</p>
-                {selected.sort_index != null && <p><span className="text-gray-500">Order in set:</span> {selected.sort_index}</p>}
+                <p><span className="text-gray-500">Set:</span> {selected.misc_sets?.name || 'Standalone'}</p>
+                <p>
+                  <span className="text-gray-500">Position in set:</span>{' '}
+                  {selected.sort_index != null ? `${selected.sort_index} of ${setSize(selected) || '—'}` : '—'}
+                </p>
               </div>
             )}
 
@@ -413,31 +564,46 @@ export default function MediaLibrary() {
               </>
             )}
 
-            <label className="block text-xs text-gray-500 mb-1">Name overlay on media (optional)</label>
-            <input
-              value={editOverlayName}
-              onChange={e => setEditOverlayName(e.target.value)}
-              placeholder="Shown on the image in-game"
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-pink-500"
-            />
-            {editOverlayName.trim() && (
+            {selectedKind !== 'draft' && (
               <>
-                <label className="block text-xs text-gray-500 mb-1">Overlay font</label>
-                <select value={editOverlayFont} onChange={e => setEditOverlayFont(e.target.value)}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none">
-                  {NAME_FONTS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-                </select>
-                <label className="block text-xs text-gray-500 mb-1">Overlay position</label>
-                <select value={editOverlayPos} onChange={e => setEditOverlayPos(e.target.value)}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
-                  {NAME_POSITIONS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                </select>
+                <label className="block text-xs text-gray-500 mb-1">Name overlay (optional)</label>
+                <input
+                  value={editOverlayName}
+                  onChange={e => setEditOverlayName(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-pink-500"
+                />
+                {editOverlayName.trim() && (
+                  <>
+                    <select value={editOverlayFont} onChange={e => setEditOverlayFont(e.target.value)}
+                      className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none">
+                      {NAME_FONTS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                    </select>
+                    <select value={editOverlayPos} onChange={e => setEditOverlayPos(e.target.value)}
+                      className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+                      {NAME_POSITIONS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>
+                  </>
+                )}
+
+                <label className="block text-xs text-gray-500 mb-1">Title</label>
+                <input value={editTitle} onChange={e => setEditTitle(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-pink-500" />
               </>
             )}
 
-            <label className="block text-xs text-gray-500 mb-1">Title</label>
-            <input value={editTitle} onChange={e => setEditTitle(e.target.value)}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-pink-500" />
+            {selectedKind === 'misc' && (
+              <>
+                <label className="block text-xs text-gray-500 mb-1">Order in set (1, 2, 3…)</label>
+                <input
+                  value={editSort}
+                  onChange={e => setEditSort(e.target.value.replace(/[^\d]/g, ''))}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-pink-500"
+                />
+                <p className="text-[10px] text-gray-600 mb-3 -mt-2">
+                  Shown as “{editSort || 1} of {setSize(selected) || '?'}” on the tile.
+                </p>
+              </>
+            )}
 
             {selectedKind === 'character' && (
               <div className="grid grid-cols-3 gap-2 mb-3">
@@ -458,34 +624,42 @@ export default function MediaLibrary() {
                     className="w-full bg-black border border-gray-700 rounded-lg px-2 py-2 text-xs outline-none" />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Edition</label>
+                  <label className="block text-xs text-gray-500 mb-1">Available (edition)</label>
                   <input value={editEdition} onChange={e => setEditEdition(e.target.value)}
                     className="w-full bg-black border border-gray-700 rounded-lg px-2 py-2 text-xs outline-none" />
                 </div>
               </div>
             )}
 
-            <p className="text-[10px] text-gray-600 mb-3 break-all">URL: {selected.url}</p>
-            {selectedKind === 'character' && selected.card_id && (
-              <p className="text-[10px] text-gray-600 mb-3">Source card: {selected.card_id}</p>
+            {selectedKind === 'character' && (
+              <p className="text-[10px] text-gray-500 mb-3">
+                Players get numbered copies like “3 of {editEdition || 100}”.
+              </p>
             )}
 
             <div className="flex gap-2 mb-2">
               <button
                 onClick={() => togglePublish(selected, selectedKind)}
-                className={`flex-1 rounded-lg py-3 text-sm font-semibold ${selected.published ? 'bg-emerald-700 hover:bg-emerald-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+                disabled={busy}
+                className={`flex-1 rounded-lg py-3 text-sm font-semibold disabled:opacity-50 ${
+                  selected.published ? 'bg-emerald-700 hover:bg-emerald-600' : 'bg-gray-700 hover:bg-gray-600'
+                }`}
               >
-                {selected.published ? 'Live ✓' : 'Set Live'}
+                {selected._draft ? (busy ? 'Publishing…' : 'Set Live') : (selected.published ? 'Live ✓ (tap = Off)' : 'Set Live')}
               </button>
-              <button onClick={saveEdit} disabled={busy}
-                className="flex-1 bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded-lg py-3 text-sm font-semibold">
-                {busy ? 'Saving...' : 'Save'}
-              </button>
+              {selectedKind !== 'draft' && (
+                <button onClick={saveEdit} disabled={busy}
+                  className="flex-1 bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded-lg py-3 text-sm font-semibold">
+                  {busy ? 'Saving...' : 'Save'}
+                </button>
+              )}
             </div>
-            <button onClick={() => deleteItem(selected, selectedKind)}
-              className="w-full bg-red-900/80 hover:bg-red-800 rounded-lg py-3 text-sm font-semibold">
-              Delete
-            </button>
+            {selectedKind !== 'draft' && (
+              <button onClick={() => deleteItem(selected, selectedKind)}
+                className="w-full bg-red-900/80 hover:bg-red-800 rounded-lg py-3 text-sm font-semibold">
+                Delete
+              </button>
+            )}
           </div>
         </div>
       )}
