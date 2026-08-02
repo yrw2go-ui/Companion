@@ -16,6 +16,25 @@ export default function MediaLibrary() {
   const [editCost, setEditCost] = useState('0')
   const [editEdition, setEditEdition] = useState('100')
   const [editChar, setEditChar] = useState('')
+  const [editOverlayName, setEditOverlayName] = useState('')
+  const [editOverlayFont, setEditOverlayFont] = useState('impact')
+  const [editOverlayPos, setEditOverlayPos] = useState('h-top-left')
+
+  const NAME_FONTS = [
+    { id: 'impact', label: 'Impact Bold', family: 'Impact, Haettenschweiler, sans-serif', weight: 900 },
+    { id: 'arialblack', label: 'Arial Black', family: '"Arial Black", "Helvetica Neue", sans-serif', weight: 900 },
+    { id: 'georgia', label: 'Georgia Bold', family: 'Georgia, serif', weight: 700 },
+    { id: 'system', label: 'System ExtraBold', family: 'system-ui, sans-serif', weight: 800 },
+    { id: 'mono', label: 'Mono Bold', family: 'ui-monospace, monospace', weight: 700 },
+  ]
+  const NAME_POSITIONS = [
+    { id: 'h-top-left', label: 'Horizontal · top left' },
+    { id: 'h-top-right', label: 'Horizontal · top right' },
+    { id: 'v-upper-left', label: 'Vertical · upper left side' },
+    { id: 'v-upper-right', label: 'Vertical · upper right side' },
+    { id: 'h-bottom-left', label: 'Horizontal · bottom left' },
+    { id: 'h-bottom-right', label: 'Horizontal · bottom right' },
+  ]
 
   useEffect(() => { load() }, [])
 
@@ -37,6 +56,9 @@ export default function MediaLibrary() {
     setEditCost(String(m.token_cost ?? 0))
     setEditEdition(String(m.edition_size ?? 100))
     setEditChar(m.character_name || '')
+    setEditOverlayName(m.overlay_name || m.character_name || '')
+    setEditOverlayFont(m.overlay_font || 'impact')
+    setEditOverlayPos(m.overlay_position || 'h-top-left')
   }
 
   const togglePublish = async (m) => {
@@ -50,12 +72,16 @@ export default function MediaLibrary() {
   const saveEdit = async () => {
     if (!selected || busy) return
     setBusy(true)
+    const overlayName = editOverlayName.trim() || null
     const payload = {
       title: editTitle.trim() || null,
       unlock_method: editUnlock,
       token_cost: parseInt(editCost) || 0,
       edition_size: parseInt(editEdition) || 100,
       character_name: editChar.trim() || selected.character_name,
+      overlay_name: overlayName,
+      overlay_font: overlayName ? editOverlayFont : null,
+      overlay_position: overlayName ? editOverlayPos : null,
     }
     const { data, error } = await supabase
       .from('character_media')
@@ -215,6 +241,28 @@ export default function MediaLibrary() {
             <label className="block text-xs text-gray-500 mb-1">Character name</label>
             <input value={editChar} onChange={e => setEditChar(e.target.value)}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-pink-500" />
+
+            <label className="block text-xs text-gray-500 mb-1">Name overlay on media (optional)</label>
+            <input
+              value={editOverlayName}
+              onChange={e => setEditOverlayName(e.target.value)}
+              placeholder="Shown on the image in-game"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-pink-500"
+            />
+            {editOverlayName.trim() && (
+              <>
+                <label className="block text-xs text-gray-500 mb-1">Overlay font</label>
+                <select value={editOverlayFont} onChange={e => setEditOverlayFont(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none">
+                  {NAME_FONTS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                </select>
+                <label className="block text-xs text-gray-500 mb-1">Overlay position</label>
+                <select value={editOverlayPos} onChange={e => setEditOverlayPos(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+                  {NAME_POSITIONS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
+              </>
+            )}
 
             <label className="block text-xs text-gray-500 mb-1">Title</label>
             <input value={editTitle} onChange={e => setEditTitle(e.target.value)}

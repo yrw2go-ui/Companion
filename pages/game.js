@@ -106,6 +106,43 @@ export default function Game() {
   const MISC_MULTI_PRICE = 500 // 3 qty bundle
   const MISC_SET_PRICE = 700
   const VIDEO_UNLOCK_PRICE = 100
+
+  const NAME_FONTS = {
+    impact: { family: 'Impact, Haettenschweiler, sans-serif', weight: 900 },
+    arialblack: { family: '"Arial Black", "Helvetica Neue", sans-serif', weight: 900 },
+    georgia: { family: 'Georgia, serif', weight: 700 },
+    system: { family: 'system-ui, sans-serif', weight: 800 },
+    mono: { family: 'ui-monospace, monospace', weight: 700 },
+  }
+  const nameOverlayStyle = (fontId, pos) => {
+    const f = NAME_FONTS[fontId] || NAME_FONTS.impact
+    const base = {
+      fontFamily: f.family,
+      fontWeight: f.weight,
+      color: '#fff',
+      textShadow: '0 1px 3px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.5)',
+      letterSpacing: '0.04em',
+      pointerEvents: 'none',
+      zIndex: 6,
+      position: 'absolute',
+      fontSize: '0.85rem',
+      lineHeight: 1.1,
+      maxWidth: '70%',
+      padding: '0 6px',
+    }
+    if (pos === 'h-top-left') return { ...base, top: 8, left: 8 }
+    if (pos === 'h-top-right') return { ...base, top: 8, right: 8, textAlign: 'right' }
+    if (pos === 'h-bottom-left') return { ...base, bottom: 8, left: 8 }
+    if (pos === 'h-bottom-right') return { ...base, bottom: 8, right: 8, textAlign: 'right' }
+    if (pos === 'v-upper-left') return { ...base, top: 12, left: 4, writingMode: 'vertical-rl', transform: 'rotate(180deg)', maxWidth: 'none' }
+    if (pos === 'v-upper-right') return { ...base, top: 12, right: 4, writingMode: 'vertical-rl', maxWidth: 'none' }
+    return { ...base, top: 8, left: 8 }
+  }
+  const NameOverlay = ({ name, font, position }) => {
+    if (!name) return null
+    return <span style={nameOverlayStyle(font, position)}>{name}</span>
+  }
+
   // Sell back to system (fixed)
   const SYSTEM_BUYBACK_CARD = {
     common: 25,
@@ -350,14 +387,14 @@ export default function Game() {
 
     const { data: ownedM } = await supabase
       .from('player_media')
-      .select('id, instance_id, media_id, purchase_price, edition_number, edition_total, sale_count, current_sale_price, acquired_via, created_at, character_media(id, character_name, type, url, title, edition_size)')
+      .select('id, instance_id, media_id, purchase_price, edition_number, edition_total, sale_count, current_sale_price, acquired_via, created_at, character_media(id, character_name, type, url, title, edition_size, overlay_name, overlay_font, overlay_position)')
       .eq('owner_id', 1)
       .order('created_at', { ascending: false })
     setOwnedMedia(ownedM || [])
 
     const { data: ownedX } = await supabase
       .from('player_misc')
-      .select('id, instance_id, misc_item_id, purchase_price, acquired_via, created_at, misc_items(id, type, url, title, public_id, sort_index, set_id, misc_sets(id, name, code_prefix))')
+      .select('id, instance_id, misc_item_id, purchase_price, acquired_via, created_at, misc_items(id, type, url, title, public_id, sort_index, set_id, overlay_name, overlay_font, overlay_position, misc_sets(id, name, code_prefix))')
       .eq('owner_id', 1)
       .order('created_at', { ascending: false })
     setOwnedMisc(ownedX || [])
@@ -2523,6 +2560,7 @@ export default function Game() {
                 ) : (
                   <img src={mediaUrl} alt="" className="w-full max-h-[55vh] object-contain" />
                 )}
+                <NameOverlay name={m.overlay_name} font={m.overlay_font} position={m.overlay_position} />
                 {viewOwned.kind === 'misc' && (
                   <div className="absolute top-2 left-2 bg-black/80 rounded-lg px-2 py-1.5 max-w-[70%] z-[5]">
                     <p className="text-[10px] font-mono text-pink-300">{m.public_id}</p>

@@ -158,7 +158,26 @@ export default function Gallery() {
   const [miscSetName, setMiscSetName] = useState('')
   const [miscPrefix, setMiscPrefix] = useState('')
   const [miscBusy, setMiscBusy] = useState(false)
+  const [miscOverlayName, setMiscOverlayName] = useState('')
+  const [miscOverlayFont, setMiscOverlayFont] = useState('impact')
+  const [miscOverlayPos, setMiscOverlayPos] = useState('h-top-left')
   const [showFreebieModal, setShowFreebieModal] = useState(false)
+
+  const NAME_FONTS = [
+    { id: 'impact', label: 'Impact Bold', family: 'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif', weight: 900 },
+    { id: 'arialblack', label: 'Arial Black', family: '"Arial Black", "Helvetica Neue", sans-serif', weight: 900 },
+    { id: 'georgia', label: 'Georgia Bold', family: 'Georgia, "Times New Roman", serif', weight: 700 },
+    { id: 'system', label: 'System ExtraBold', family: 'system-ui, -apple-system, sans-serif', weight: 800 },
+    { id: 'mono', label: 'Mono Bold', family: 'ui-monospace, "Courier New", monospace', weight: 700 },
+  ]
+  const NAME_POSITIONS = [
+    { id: 'h-top-left', label: 'Horizontal · top left' },
+    { id: 'h-top-right', label: 'Horizontal · top right' },
+    { id: 'v-upper-left', label: 'Vertical · upper left side' },
+    { id: 'v-upper-right', label: 'Vertical · upper right side' },
+    { id: 'h-bottom-left', label: 'Horizontal · bottom left' },
+    { id: 'h-bottom-right', label: 'Horizontal · bottom right' },
+  ]
   const [freebieTitle, setFreebieTitle] = useState('')
   const [freebieType, setFreebieType] = useState('media') // media | tokens
   const [freebieTokens, setFreebieTokens] = useState('100')
@@ -1383,6 +1402,9 @@ export default function Gallery() {
     setMiscSetId('')
     setMiscSetName('')
     setMiscPrefix('')
+    setMiscOverlayName('')
+    setMiscOverlayFont('impact')
+    setMiscOverlayPos('h-top-left')
     setShowMiscModal(true)
   }
 
@@ -1474,6 +1496,7 @@ export default function Gallery() {
       }
 
       const publicId = await nextPublicId(prefix)
+      const overlayName = (miscOverlayName || '').trim() || null
       const { data: item, error: iErr } = await supabase.from('misc_items').insert([{
         set_id: setId,
         type: selected.type === 'video' ? 'video' : 'image',
@@ -1482,6 +1505,9 @@ export default function Gallery() {
         public_id: publicId,
         sort_index: sortIndex,
         published: true,
+        overlay_name: overlayName,
+        overlay_font: overlayName ? miscOverlayFont : null,
+        overlay_position: overlayName ? miscOverlayPos : null,
       }]).select().single()
       if (iErr) throw new Error(iErr.message)
 
@@ -2569,6 +2595,46 @@ export default function Gallery() {
               <option value="existing">Add to existing set</option>
               <option value="new">Create new set</option>
             </select>
+
+            <label className="block text-xs text-gray-400 mb-1">Character name overlay (optional)</label>
+            <input
+              value={miscOverlayName}
+              onChange={e => setMiscOverlayName(e.target.value)}
+              placeholder="e.g. Tasha"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none"
+            />
+            {miscOverlayName.trim() && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Font</label>
+                <select value={miscOverlayFont} onChange={e => setMiscOverlayFont(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none">
+                  {NAME_FONTS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                </select>
+                <label className="block text-xs text-gray-400 mb-1">Position</label>
+                <select value={miscOverlayPos} onChange={e => setMiscOverlayPos(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+                  {NAME_POSITIONS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
+                <div className="relative h-28 rounded-xl overflow-hidden bg-gray-800 mb-3 border border-gray-700">
+                  <div className="absolute inset-0 opacity-40 bg-gradient-to-br from-pink-900 to-black" />
+                  <span
+                    className="absolute text-white text-sm drop-shadow-lg px-2"
+                    style={{
+                      fontFamily: (NAME_FONTS.find(f => f.id === miscOverlayFont) || NAME_FONTS[0]).family,
+                      fontWeight: (NAME_FONTS.find(f => f.id === miscOverlayFont) || NAME_FONTS[0]).weight,
+                      ...(miscOverlayPos === 'h-top-left' ? { top: 8, left: 8 } : {}),
+                      ...(miscOverlayPos === 'h-top-right' ? { top: 8, right: 8, textAlign: 'right' } : {}),
+                      ...(miscOverlayPos === 'h-bottom-left' ? { bottom: 8, left: 8 } : {}),
+                      ...(miscOverlayPos === 'h-bottom-right' ? { bottom: 8, right: 8, textAlign: 'right' } : {}),
+                      ...(miscOverlayPos === 'v-upper-left' ? { top: 12, left: 6, writingMode: 'vertical-rl', transform: 'rotate(180deg)' } : {}),
+                      ...(miscOverlayPos === 'v-upper-right' ? { top: 12, right: 6, writingMode: 'vertical-rl' } : {}),
+                    }}
+                  >
+                    {miscOverlayName.trim()}
+                  </span>
+                </div>
+              </>
+            )}
 
             {miscMode === 'existing' && (
               <select value={miscSetId} onChange={e => setMiscSetId(e.target.value)}
