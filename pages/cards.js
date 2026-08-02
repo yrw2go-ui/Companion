@@ -1071,7 +1071,7 @@ export default function Cards() {
             ) : (
               <div className="absolute inset-0 bg-gray-900 flex items-center justify-center text-gray-700 text-[10px]">no back art</div>
             )}
-            <div className="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-t from-black from-35% via-black/85 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black from-35% via-black/85 to-transparent" />
             <span className={`badge ${t.badge}`}>{card.rarity}</span>
 
             {card.series_name && (

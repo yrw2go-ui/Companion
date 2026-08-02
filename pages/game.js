@@ -2476,7 +2476,7 @@ export default function Game() {
                       {c.back_image_url ? (
                         <img src={c.back_image_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
                       ) : <div className="absolute inset-0 bg-gray-900" />}
-                      <div className="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-t from-black from-30% via-black/80 to-transparent" />
+                      <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black from-30% via-black/80 to-transparent" />
                       {c.series_name && (
                         <div className="absolute top-3 inset-x-0 text-center z-[2]">
                           <span className="text-[10px] text-black font-semibold tracking-[0.15em] uppercase" style={{ fontFamily: 'Georgia, serif', textShadow: '0 0 1px rgba(255,255,255,0.4)' }}>{c.series_name}</span>
