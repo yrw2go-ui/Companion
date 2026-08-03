@@ -41,11 +41,14 @@ const IMAGE_MODELS = [
 const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
 
 // image-to-image (transform) models
+// maxRefs = total images including the main source (1 = single only, 4 = main + 3 extras)
 const I2I_MODELS = [
-  { id: 'alibaba/wan-2.7-pro/image-edit', label: 'Wan 2.7 Pro (edit)', price: null },
-  { id: 'bytedance/seedream-v5.0-pro/edit', label: 'Seedream 5 Pro (edit)', price: null },
-  { id: 'xai/grok-imagine-image-quality/edit', label: 'Grok Imagine (edit)', price: 0.01 },
+  { id: 'alibaba/wan-2.7-pro/image-edit', label: 'Wan 2.7 Pro (edit)', price: null, maxRefs: 4 },
+  { id: 'bytedance/seedream-v5.0-pro/edit', label: 'Seedream 5 Pro (edit)', price: null, maxRefs: 4 },
+  { id: 'xai/grok-imagine-image-quality/edit', label: 'Grok Imagine (edit)', price: 0.01, maxRefs: 1 },
 ]
+const i2iMaxRefs = (modelId) =>
+  (I2I_MODELS.find(m => m.id === modelId) || I2I_MODELS[0]).maxRefs || 1
 
 // small helper to render a price, or an honest "not listed" note
 const priceLabel = (model, resolution) => {
@@ -116,11 +119,12 @@ export default function Gallery() {
 
   const [showTransform, setShowTransform] = useState(false)
   const [transformSource, setTransformSource] = useState(null)
-  const [transformSource2, setTransformSource2] = useState(null) // optional 2nd reference image
+  // Extra refs beyond the main image (slots 2–4). Length capped by model maxRefs − 1.
+  const [transformRefs, setTransformRefs] = useState([]) // array of gallery items or { url }
   const [transformPrompt, setTransformPrompt] = useState('')
   const [transformModel, setTransformModel] = useState('bytedance/seedream-v5.0-pro/edit')
   const [transforming, setTransforming] = useState(false)
-  const [pickSecondImage, setPickSecondImage] = useState(false)
+  const [pickRefSlot, setPickRefSlot] = useState(null) // index into transformRefs to fill, or 'next'
 
 
   const [showT2V, setShowT2V] = useState(false)
@@ -1272,8 +1276,8 @@ export default function Gallery() {
 
   const openTransform = (item) => {
     setTransformSource(item)
-    setTransformSource2(null)
-    setPickSecondImage(false)
+    setTransformRefs([])
+    setPickRefSlot(null)
     setTransformPrompt('')
     setTransformModel('bytedance/seedream-v5.0-pro/edit')
     setSelected(null)
@@ -1284,18 +1288,26 @@ export default function Gallery() {
     if (transforming) return
     if (!transformPrompt.trim()) { alert('Describe the change you want'); return }
     setShowTransform(false)
-    setPickSecondImage(false)
+    setPickRefSlot(null)
     setTransforming(true)
     try {
-      // Primary image + optional second reference (for multi-image edits)
+      const max = i2iMaxRefs(transformModel)
+      const extraUrls = transformRefs
+        .map(r => r?.url)
+        .filter(Boolean)
+        .slice(0, Math.max(0, max - 1))
+      const allUrls = [transformSource.url, ...extraUrls].filter(Boolean)
+
       const payload = {
         prompt: transformPrompt,
         referenceImageUrl: transformSource.url,
         model: transformModel,
       }
-      if (transformSource2?.url) {
-        payload.referenceImageUrl2 = transformSource2.url
-        payload.referenceImageUrls = [transformSource.url, transformSource2.url]
+      if (allUrls.length > 1) {
+        payload.referenceImageUrls = allUrls
+        if (extraUrls[0]) payload.referenceImageUrl2 = extraUrls[0]
+        if (extraUrls[1]) payload.referenceImageUrl3 = extraUrls[1]
+        if (extraUrls[2]) payload.referenceImageUrl4 = extraUrls[2]
       }
       const res = await fetch('/api/generate-image', {
         method: 'POST',
@@ -1315,7 +1327,7 @@ export default function Gallery() {
         source_prompt: transformSource.prompt || null,
         model: transformModel,
       }, 'Your transformed image')
-      setTransformSource2(null)
+      setTransformRefs([])
       load()
     } catch (err) {
       alert('Error: ' + err.message)
@@ -1838,38 +1850,23 @@ export default function Gallery() {
     }
     const fileName = buildDownloadName(item)
 
-    // 1) Prefer blob download (works when CORS allows reading the file)
+    // 1) Blob + <a download> — real file save, no share sheet
     try {
       const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'no-store' })
       if (!res.ok) throw new Error('HTTP ' + res.status)
       const blob = await res.blob()
       if (!blob || blob.size === 0) throw new Error('Empty file')
-      // On mobile, Web Share can save when <a download> is blocked
-      const canShareFile = typeof navigator !== 'undefined' && navigator.share && navigator.canShare
-      if (canShareFile) {
-        try {
-          const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' })
-          if (navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: fileName })
-            return
-          }
-        } catch (shareErr) {
-          // user cancelled share → still try classic download
-          if (shareErr && shareErr.name === 'AbortError') return
-        }
-      }
       triggerBlobDownload(blob, fileName)
       return
     } catch (err) {
       console.warn('blob download failed', err)
     }
 
-    // 2) Direct link (some browsers still honor download= cross-origin)
+    // 2) Same-origin style anchor (no share API)
     try {
       const a = document.createElement('a')
       a.href = item.url
       a.download = fileName
-      a.target = '_blank'
       a.rel = 'noopener noreferrer'
       a.style.display = 'none'
       document.body.appendChild(a)
@@ -1880,9 +1877,9 @@ export default function Gallery() {
       console.warn('anchor download failed', err)
     }
 
-    // 3) Last resort: open file — user can long-press / share to save
+    // 3) Open only if download is impossible (CORS) — not a share sheet
     window.open(item.url, '_blank', 'noopener,noreferrer')
-    alert('Opened the file in a new tab.\n\nOn phone: long-press the image/video → Save / Download.')
+    alert('Could not force a download (storage CORS).\n\nFile opened in a new tab — long-press → Save image/video.')
   }
 
   const copyUrl = (val) => {
@@ -2415,7 +2412,11 @@ export default function Gallery() {
       )}
 
       {/* TRANSFORM (image-to-image) */}
-      {showTransform && transformSource && (
+      {showTransform && transformSource && (() => {
+        const maxRefs = i2iMaxRefs(transformModel)
+        const maxExtra = Math.max(0, maxRefs - 1)
+        const extras = transformRefs.slice(0, maxExtra)
+        return (
         <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-[60] overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
             <h2 className="font-bold text-lg mb-2">Transform Image</h2>
@@ -2424,45 +2425,60 @@ export default function Gallery() {
               subject and composition. Good for tweaks and for keeping a face consistent. Saves as a new image.
             </p>
 
-            <div className="flex gap-3 mb-3 items-start">
+            <div className="flex gap-2 mb-3 items-start flex-wrap">
               <div>
-                <p className="text-[10px] text-gray-500 mb-1">Main image</p>
-                <img src={transformSource.url} alt="" className="w-28 rounded-lg border border-gray-700" />
+                <p className="text-[10px] text-gray-500 mb-1">Main</p>
+                <img src={transformSource.url} alt="" className="w-24 rounded-lg border border-gray-700" />
               </div>
-              {transformSource2?.url ? (
-                <div>
-                  <p className="text-[10px] text-gray-500 mb-1">2nd reference</p>
+              {extras.map((ref, idx) => (
+                <div key={idx}>
+                  <p className="text-[10px] text-gray-500 mb-1">Ref {idx + 2}</p>
                   <div className="relative inline-block">
-                    <img src={transformSource2.url} alt="" className="w-28 rounded-lg border border-pink-700" />
+                    <img src={ref.url} alt="" className="w-24 rounded-lg border border-pink-700" />
                     <button
                       type="button"
-                      onClick={() => setTransformSource2(null)}
+                      onClick={() => setTransformRefs(prev => prev.filter((_, i) => i !== idx))}
                       className="absolute -top-2 -right-2 bg-red-800 text-white text-xs w-6 h-6 rounded-full"
                     >
                       ✕
                     </button>
                   </div>
                 </div>
-              ) : (
+              ))}
+              {maxExtra > 0 && extras.length < maxExtra && (
                 <div className="flex flex-col justify-end">
                   <button
                     type="button"
-                    onClick={() => setPickSecondImage(true)}
-                    className="w-28 h-28 rounded-lg border border-dashed border-gray-600 text-[11px] text-gray-400 hover:border-pink-500 hover:text-pink-300"
+                    onClick={() => setPickRefSlot('next')}
+                    className="w-24 h-24 rounded-lg border border-dashed border-gray-600 text-[11px] text-gray-400 hover:border-pink-500 hover:text-pink-300"
                   >
-                    + 2nd image
+                    + Ref {extras.length + 2}
                   </button>
                 </div>
               )}
             </div>
             <p className="text-[10px] text-gray-600 mb-3">
-              Optional second image (outfit, pose, style, face ref). Supported best by Seedream / Wan multi-ref edits.
+              {maxRefs <= 1
+                ? 'This model uses the main image only (no extra refs).'
+                : `Up to ${maxRefs} images total (main + ${maxExtra} refs). Outfit, pose, face, style.`}
             </p>
 
             <label className="block text-xs text-gray-400 mb-1">Edit Model</label>
-            <select value={transformModel} onChange={e => setTransformModel(e.target.value)}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
-              {I2I_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            <select
+              value={transformModel}
+              onChange={e => {
+                const next = e.target.value
+                setTransformModel(next)
+                const allow = Math.max(0, i2iMaxRefs(next) - 1)
+                setTransformRefs(prev => prev.slice(0, allow))
+              }}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
+            >
+              {I2I_MODELS.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.label}{m.maxRefs > 1 ? ` · up to ${m.maxRefs} refs` : ''}
+                </option>
+              ))}
             </select>
             <p className="text-[10px] text-gray-600 mb-3">
               {priceLabel(I2I_MODELS.find(m => m.id === transformModel))}
@@ -2474,35 +2490,60 @@ export default function Gallery() {
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500" />
 
             <div className="flex gap-2">
-              <button onClick={() => { setShowTransform(false); setTransformSource2(null); setPickSecondImage(false) }} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
-              <button onClick={runTransform} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Transform</button>
+              <button
+                onClick={() => { setShowTransform(false); setTransformRefs([]); setPickRefSlot(null) }}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold"
+              >
+                Cancel
+              </button>
+              <button onClick={runTransform} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">
+                Transform
+              </button>
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
-      {/* Pick 2nd reference image from gallery images */}
-      {pickSecondImage && (
+      {/* Pick extra reference image from gallery */}
+      {pickRefSlot != null && (
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-4 z-[70] overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-lg my-6">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold">Pick 2nd reference image</h3>
-              <button type="button" onClick={() => setPickSecondImage(false)} className="text-gray-400 text-lg px-2">✕</button>
+              <h3 className="font-bold">Pick reference image</h3>
+              <button type="button" onClick={() => setPickRefSlot(null)} className="text-gray-400 text-lg px-2">✕</button>
             </div>
             <div className="grid grid-cols-3 gap-2 max-h-[60vh] overflow-y-auto">
-              {media.filter(m => m.type === 'image' && m.url && m.url !== transformSource?.url).slice(0, 60).map(m => (
-                <button
-                  key={m.key || m.id}
-                  type="button"
-                  onClick={() => {
-                    setTransformSource2(m)
-                    setPickSecondImage(false)
-                  }}
-                  className="rounded-lg overflow-hidden border border-gray-800 hover:border-pink-500 aspect-[3/4] bg-gray-800"
-                >
-                  <img src={m.thumbnail_url || m.url} alt="" className="w-full h-full object-cover object-top" />
-                </button>
-              ))}
+              {media
+                .filter(m => {
+                  if (m.type !== 'image' || !m.url) return false
+                  if (m.url === transformSource?.url) return false
+                  if (transformRefs.some(r => r?.url === m.url)) return false
+                  return true
+                })
+                .slice(0, 60)
+                .map(m => (
+                  <button
+                    key={m.key || m.id}
+                    type="button"
+                    onClick={() => {
+                      const maxExtra = Math.max(0, i2iMaxRefs(transformModel) - 1)
+                      setTransformRefs(prev => {
+                        const next = [...prev]
+                        if (typeof pickRefSlot === 'number' && pickRefSlot >= 0) {
+                          next[pickRefSlot] = m
+                        } else {
+                          next.push(m)
+                        }
+                        return next.slice(0, maxExtra)
+                      })
+                      setPickRefSlot(null)
+                    }}
+                    className="rounded-lg overflow-hidden border border-gray-800 hover:border-pink-500 aspect-[3/4] bg-gray-800"
+                  >
+                    <img src={m.thumbnail_url || m.url} alt="" className="w-full h-full object-cover object-top" />
+                  </button>
+                ))}
             </div>
             {media.filter(m => m.type === 'image').length === 0 && (
               <p className="text-sm text-gray-500 text-center py-8">No other images in gallery</p>
