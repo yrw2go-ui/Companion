@@ -61,46 +61,56 @@ export default function Game() {
   mutedRef.current = muted
   volumeModeRef.current = volumeMode
 
-  // Low = 65% of full. iOS often ignores volume and only respects muted.
+  // Low = 65% of full. iOS often ignores .volume and only respects .muted.
   const mediaVolume = muted ? 0 : (volumeMode === 'low' ? 0.65 : 1)
   const applyMediaVolume = () => {
     const isMuted = !!mutedRef.current
     const mode = volumeModeRef.current
     const vol = isMuted ? 0 : (mode === 'low' ? 0.65 : 1)
     if (typeof document === 'undefined') return
-    // Sound-capable clips only (not silent grid thumbs)
-    const nodes = document.querySelectorAll('video[data-ga-sound], audio[data-ga-sound]')
-    nodes.forEach((el) => {
+
+    const applyOne = (el) => {
+      if (!el) return
       try {
         el.defaultMuted = isMuted
         el.muted = isMuted
-        // volume is ignored on many iOS browsers but works on Android/desktop
+        // Android / desktop honor volume; iOS mostly ignores it
         el.volume = Math.max(0, Math.min(1, vol))
+        // Keep playing if it was mid-clip (unmute needs a play() kick on some browsers)
+        if (!el.paused) {
+          const p = el.play()
+          if (p && typeof p.catch === 'function') p.catch(() => {})
+        }
       } catch {}
-    })
+    }
+
+    // Explicitly tagged sound clips
+    document.querySelectorAll('video[data-ga-sound], audio[data-ga-sound]').forEach(applyOne)
+    // Named refs (in case attribute missing after re-render)
+    applyOne(revealVideoRef.current)
+    applyOne(shopVideoRef.current)
   }
   const toggleMuted = () => {
-    setMuted(prev => {
-      const next = !prev
-      mutedRef.current = next
-      try { localStorage.setItem('ga_muted', next ? '1' : '0') } catch {}
-      // apply immediately with new value
-      setTimeout(applyMediaVolume, 0)
-      return next
-    })
+    const next = !mutedRef.current
+    mutedRef.current = next
+    try { localStorage.setItem('ga_muted', next ? '1' : '0') } catch {}
+    applyMediaVolume() // sync before React re-render
+    setMuted(next)
   }
   const setVolumeModePersist = (mode) => {
     volumeModeRef.current = mode
-    setVolumeMode(mode)
     try { localStorage.setItem('ga_volume_mode', mode) } catch {}
-    setTimeout(applyMediaVolume, 0)
+    applyMediaVolume()
+    setVolumeMode(mode)
   }
   useEffect(() => {
     applyMediaVolume()
-    // Re-apply when new videos mount (reveal / shop intro)
+    // Re-apply when new videos mount (reveal / shop intro / banners)
     if (typeof MutationObserver === 'undefined') return
-    const obs = new MutationObserver(() => applyMediaVolume())
-    obs.observe(document.body, { childList: true, subtree: true })
+    const obs = new MutationObserver(() => {
+      applyMediaVolume()
+    })
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] })
     return () => obs.disconnect()
   }, [muted, volumeMode])
   const [reveal, setReveal] = useState(null) // { card, instanceId, price, phase: 'anim'|'show' }
@@ -1612,14 +1622,22 @@ export default function Game() {
         <div className="relative w-full aspect-[21/9] rounded-xl overflow-hidden border border-white/10 bg-black">
           {showVideo ? (
             <video
-              key={tabKey + '-vid'}
+              key={`${tabKey}-vid-${muted}-${volumeMode}`}
+              data-ga-sound
               src={video}
               autoPlay
               playsInline
-              muted={false}
+              muted={muted}
               className="w-full h-full object-cover object-top"
               onEnded={() => setBannerVideoDone(prev => ({ ...prev, [tabKey]: true }))}
               onError={() => setBannerVideoDone(prev => ({ ...prev, [tabKey]: true }))}
+              onLoadedData={(e) => {
+                try {
+                  e.target.muted = !!mutedRef.current
+                  e.target.volume = mutedRef.current ? 0 : (volumeModeRef.current === 'low' ? 0.65 : 1)
+                  if (!mutedRef.current) e.target.play().catch(() => {})
+                } catch {}
+              }}
             />
           ) : (
             <img src={image} alt="" className="w-full h-full object-cover object-top" />
@@ -2258,6 +2276,7 @@ export default function Game() {
             <>
               <video
                 ref={revealVideoRef}
+                key={`reveal-${muted}-${volumeMode}-${reveal.video || 'default'}`}
                 data-ga-sound
                 src={reveal.video || '/mystery-card-1.mp4'}
                 autoPlay
@@ -2268,8 +2287,9 @@ export default function Game() {
                 onError={finishReveal}
                 onLoadedData={(e) => {
                   try {
-                    e.target.muted = !!muted
-                    e.target.volume = mediaVolume
+                    e.target.muted = !!mutedRef.current
+                    e.target.volume = mutedRef.current ? 0 : (volumeModeRef.current === 'low' ? 0.65 : 1)
+                    if (!mutedRef.current) e.target.play().catch(() => {})
                   } catch {}
                 }}
               />
@@ -2588,8 +2608,9 @@ export default function Game() {
                           playsInline
                           onLoadedData={(e) => {
                             try {
-                              e.target.muted = !!muted
-                              e.target.volume = mediaVolume
+                              e.target.muted = !!mutedRef.current
+                              e.target.volume = mutedRef.current ? 0 : (volumeModeRef.current === 'low' ? 0.65 : 1)
+                              if (!mutedRef.current) e.target.play().catch(() => {})
                             } catch {}
                           }}
                         />
@@ -2752,8 +2773,9 @@ export default function Game() {
               </button>
             </div>
             <p className="text-[10px] text-gray-600 mb-4 -mt-1 px-1">
-              Mute works on all devices. Low (~65%) works on Android/desktop; iPhone often ignores volume and only mute is reliable.
-              Play a shop intro or unlocked card animation to hear the change.
+              Applies to shop intro, pack reveals, tab banners, and unlocked card videos.
+              Mute works everywhere. Low (~65%) works on Android/desktop; iPhone often ignores volume level.
+              Toggle while a clip is playing to hear it change right away.
             </p>
 
             <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 mb-3">
@@ -2826,6 +2848,7 @@ export default function Game() {
           </button>
           <video
             ref={shopVideoRef}
+            key={`shop-intro-${muted}-${volumeMode}`}
             data-ga-sound
             src={shopIntroUrl}
             autoPlay
@@ -2836,8 +2859,9 @@ export default function Game() {
             onError={closeShopIntro}
             onLoadedData={(e) => {
               try {
-                e.target.muted = !!muted
-                e.target.volume = mediaVolume
+                e.target.muted = !!mutedRef.current
+                e.target.volume = mutedRef.current ? 0 : (volumeModeRef.current === 'low' ? 0.65 : 1)
+                if (!mutedRef.current) e.target.play().catch(() => {})
               } catch {}
             }}
           />
