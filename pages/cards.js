@@ -43,6 +43,12 @@ const VIDEO_MODELS = [
 
 const ART_STYLES = [
   { value: '', label: 'None (use prompt as-is)' },
+  // Non-realistic / game styles
+  { value: 'Fortnite style 3D character render, Epic Games Fortnite aesthetic, stylized cartoony proportions, clean cel-shaded look, bold outlines, vibrant saturated colors, simplified facial features, game character art, not photorealistic, not realistic skin, Unreal Engine game render style', label: 'Fortnite Style (non-realistic)' },
+  { value: 'stylized 3D game character, anime-influenced proportions, smooth plastic skin shader, bright saturated palette, clean game-ready render, not photorealistic', label: 'Stylized 3D Game Character' },
+  { value: 'anime illustration, clean line art, cel shading, vibrant colors, detailed eyes, not photorealistic, 2D anime style', label: 'Anime Illustration' },
+  { value: 'comic book illustration, bold ink outlines, flat color fills, dynamic pose, graphic novel style, not photorealistic', label: 'Comic Book' },
+  // Realistic photo styles
   { value: 'editorial fashion photography, professional studio lighting, sharp focus, natural skin texture, high end magazine quality', label: 'Editorial Fashion' },
   { value: 'natural light portrait photography, soft window light, shallow depth of field, candid feel, realistic skin', label: 'Natural Light Portrait' },
   { value: 'sports photography, fast shutter, dynamic action, stadium or track setting, crisp detail, athletic', label: 'Sports Action' },
@@ -55,7 +61,7 @@ const ART_STYLES = [
   { value: 'high fashion runway photography, backstage energy, motion, professional lighting', label: 'Runway' },
 ]
 
-const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'ultra elite', 'after hours']
+const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'ultra elite', 'after hours', 'mint']
 
 // stat value ranges per rarity, used when creating a variant
 const RARITY_STAT_RANGE = {
@@ -65,11 +71,13 @@ const RARITY_STAT_RANGE = {
   epic:      [76, 90],
   legendary: [86, 96],
   'ultra elite': [94, 100],
+  mint:      [98, 100],
 }
 
 // rarities that carry no ratings at all
 const STATLESS = ['after hours']
 const isStatless = (r) => STATLESS.includes(String(r || '').toLowerCase())
+const isMint = (r) => String(r || '').toLowerCase() === 'mint'
 
 const rollStats = (labels, rarity) => {
   if (isStatless(rarity)) return []
@@ -88,6 +96,7 @@ const TREAT = {
   legendary: { edge: 'edge-legendary', glow: 'glow-legendary', badge: 'badge-legendary', foil: 'foil-strong', holo: true,  code: 'LEG' },
   'ultra elite': { edge: 'edge-ultra', glow: 'glow-ultra', badge: 'badge-ultra', foil: 'foil-ultra', holo: true, code: 'ULT' },
   'after hours': { edge: 'edge-afterhours', glow: 'glow-afterhours', badge: 'badge-afterhours', foil: 'foil-pearl', holo: false, code: 'AFT' },
+  mint: { edge: 'edge-mint', glow: 'glow-mint', badge: 'badge-mint', foil: 'foil-ultra', holo: true, code: 'MINT' },
 }
 
 const treatOf = (r) => TREAT[r] || TREAT.common
@@ -97,7 +106,7 @@ const rarityLabel = (r) =>
 
 const STANDARD_LABELS = ['Star Power', 'Physique', 'Allure', 'Charisma']
 
-const EDITION_QTY_OPTIONS = [5, 10, 25, 50, 100, 150, 200, 250, 300, 350, 500, 700, 1000, 2000]
+const EDITION_QTY_OPTIONS = [1, 5, 10, 25, 50, 100, 150, 200, 250, 300, 350, 500, 700, 1000, 2000]
 
 const emptyDraft = () => ({
   name: '', title: '', description: '', flavor_text: '', rarity: 'common',
@@ -539,9 +548,18 @@ export default function Cards() {
   const BACK_FRAMING = 'subject in the upper two-thirds of the frame, head near the top, open empty space in the bottom third for text, do not place important details in the lower third'
   const withBackFraming = (base) => `${base}, ${BACK_FRAMING}`
 
+  // When using stylized / game styles, push the model away from photorealism
+  const STYLIZED_NEG =
+    'photorealistic, photo, real human, realistic skin pores, DSLR photo, 8k photo, hyperrealistic, uncanny valley'
+  const isStylizedArt = (style) =>
+    /fortnite|stylized|anime|comic book|not photorealistic|cel-?shad/i.test(String(style || ''))
+
   const genImage = async (imgPrompt, seedVal, neg, sz, style, modelId) => {
     const useModel = modelId || imageModel
     const fam = familyOf(useModel)
+    const useNeg = isStylizedArt(style)
+      ? [neg || DEFAULT_NEGATIVE, STYLIZED_NEG].filter(Boolean).join(', ')
+      : (neg || DEFAULT_NEGATIVE)
 
     const payload = {
       model: useModel,
@@ -557,12 +575,12 @@ export default function Cards() {
     } else if (fam === 'schnell') {
       payload.size = sz || '768*1024'
       payload.seed = seedVal || undefined
-      payload.negativePrompt = neg
+      payload.negativePrompt = useNeg
     } else {
       // flux / z-image
       payload.size = sz || '768*1024'
       payload.seed = seedVal || undefined
-      payload.negativePrompt = neg
+      payload.negativePrompt = useNeg
       payload.guidance = guidance
       payload.steps = steps
     }
@@ -1015,6 +1033,7 @@ export default function Cards() {
 
   const cardFront = (card, big = false, animated = false) => {
     const t = treatOf(card.rarity)
+    const mint = isMint(card.rarity)
     const showVideo = animated && card.video_url
     return (
       <div className={`card-shell ${t.edge} ${t.glow}`}>
@@ -1035,19 +1054,22 @@ export default function Cards() {
             ) : (
               <div className="absolute inset-0 bg-gray-900" />
             )}
-            {card.series_name && (
+            {/* Mint: only logo + holo shimmer — no badge, nameplate, crown */}
+            {!mint && card.series_name && (
               <span
                 className={`absolute top-2 left-2 z-[6] ${big ? 'text-lg' : 'text-sm'} drop-shadow`}
                 title={card.series_name}
               >👑</span>
             )}
-            <span className={`badge ${t.badge}`}>{card.rarity}</span>
-            <div className="nameplate" style={{ zIndex: 8 }}>
-              <div className={`font-bold leading-tight truncate tracking-wide ${big ? 'text-2xl pr-28' : 'text-[15px] pr-20'}`}>{card.name}</div>
-              {card.title && (
-                <div className={`text-gray-300 truncate uppercase tracking-[0.12em] mt-0.5 ${big ? 'text-xs pr-28' : 'text-[10px] pr-20'}`}>{card.title}</div>
-              )}
-            </div>
+            {!mint && <span className={`badge ${t.badge}`}>{card.rarity}</span>}
+            {!mint && (
+              <div className="nameplate" style={{ zIndex: 8 }}>
+                <div className={`font-bold leading-tight truncate tracking-wide ${big ? 'text-2xl pr-28' : 'text-[15px] pr-20'}`}>{card.name}</div>
+                {card.title && (
+                  <div className={`text-gray-300 truncate uppercase tracking-[0.12em] mt-0.5 ${big ? 'text-xs pr-28' : 'text-[10px] pr-20'}`}>{card.title}</div>
+                )}
+              </div>
+            )}
             <img
               src="/ga-mark.png"
               alt=""
@@ -1061,6 +1083,7 @@ export default function Cards() {
 
   const cardBack = (card, big = false) => {
     const t = treatOf(card.rarity)
+    const mint = isMint(card.rarity)
     const stats = normalizeStats(card)
     return (
       <div className={`card-shell ${t.edge} ${t.glow}`}>
@@ -1071,10 +1094,12 @@ export default function Cards() {
             ) : (
               <div className="absolute inset-0 bg-gray-900 flex items-center justify-center text-gray-700 text-[10px]">no back art</div>
             )}
-            <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black from-35% via-black/85 to-transparent" />
-            <span className={`badge ${t.badge}`}>{card.rarity}</span>
+            {!mint && (
+              <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black from-35% via-black/85 to-transparent" />
+            )}
+            {!mint && <span className={`badge ${t.badge}`}>{card.rarity}</span>}
 
-            {card.series_name && (
+            {!mint && card.series_name && (
               <div className={`absolute top-3 inset-x-0 z-[5] text-center px-2`}>
                 <span
                   className={`text-black font-bold tracking-[0.18em] uppercase ${big ? 'text-xs' : 'text-[9px]'}`}
@@ -1088,6 +1113,7 @@ export default function Cards() {
               </div>
             )}
 
+            {!mint && (
             <div className={`absolute inset-0 z-[4] flex flex-col justify-end ${big ? 'p-4' : 'p-2.5'}`}>
               {(card.description || card.flavor_text) && (
                 <div
@@ -1126,6 +1152,15 @@ export default function Cards() {
                 <span className={`text-gray-500 tracking-widest uppercase ${big ? 'text-[11px]' : 'text-[9px]'}`}>COMP-GA</span>
               </div>
             </div>
+            )}
+            {/* Mint back: logo only + shimmer */}
+            {mint && (
+              <img
+                src="/ga-mark.png"
+                alt=""
+                className={`absolute bottom-2 right-1.5 z-[20] object-contain drop-shadow-lg pointer-events-none ${big ? 'h-24 w-24' : 'h-16 w-16'}`}
+              />
+            )}
           </div>
         </div>
       </div>

@@ -107,17 +107,19 @@ export default function Game() {
   const revealVideoRef = useRef(null)
 
   // --- tweakable mystery draw weights (must sum conceptually; normalized at roll) ---
+  // Mint is handled separately at ~1 in 5,000,000 (not in these relative weights)
   const TIER_WEIGHTS = {
     low: { // 200 tok
-      common: 70, uncommon: 20, rare: 8, epic: 1.5, legendary: 0.4, 'ultra elite': 0.1, 'after hours': 0.5,
+      common: 70, uncommon: 20, rare: 8, epic: 1.5, legendary: 0.4, 'ultra elite': 0.1, 'after hours': 0.5, mint: 0,
     },
     mid: { // 500 tok
-      common: 40, uncommon: 30, rare: 20, epic: 7, legendary: 2.5, 'ultra elite': 0.5, 'after hours': 1,
+      common: 40, uncommon: 30, rare: 20, epic: 7, legendary: 2.5, 'ultra elite': 0.5, 'after hours': 1, mint: 0,
     },
     high: { // 800 tok
-      common: 15, uncommon: 25, rare: 30, epic: 18, legendary: 8, 'ultra elite': 2.5, 'after hours': 1.5,
+      common: 15, uncommon: 25, rare: 30, epic: 18, legendary: 8, 'ultra elite': 2.5, 'after hours': 1.5, mint: 0,
     },
   }
+  const MINT_ODDS = 1 / 5_000_000 // absolute chance per mystery draw if any Mint is in stock
   const TIER_PRICE = { low: 200, mid: 500, high: 800 }
   const MEDIA_SINGLE_PRICE = 400
   const MEDIA_MULTI_PRICE = 1100
@@ -163,7 +165,7 @@ export default function Game() {
     return <span style={nameOverlayStyle(font, position)}>{name}</span>
   }
 
-  // Sell back to system (fixed)
+  // Sell back to system (fixed). Mint cannot be sold to system.
   const SYSTEM_BUYBACK_CARD = {
     common: 25,
     uncommon: 50,
@@ -174,12 +176,35 @@ export default function Game() {
     ultra: 250,
     'after hours': 500,
     afterhours: 500,
+    mint: null, // blocked
   }
   const SYSTEM_BUYBACK_MEDIA = 100 // character media
   const SYSTEM_BUYBACK_MISC = 50
+  const isMintRarity = (r) => String(r || '').toLowerCase() === 'mint'
   const systemBuybackCard = (rarity) => {
     const key = String(rarity || 'common').toLowerCase()
+    if (key === 'mint') return null
     return SYSTEM_BUYBACK_CARD[key] ?? SYSTEM_BUYBACK_CARD.common
+  }
+  // Player-to-player sale bounds (base starting list price, max, step per sale)
+  const cardSaleBounds = (rarity, isSeries) => {
+    const r = String(rarity || 'common').toLowerCase()
+    if (r === 'mint') {
+      return { base: 500000, max: null, step: 5000 } // no hard max — +5k each sale after
+    }
+    const table = {
+      common: isSeries ? { base: 150, max: 250 } : { base: 100, max: 200 },
+      uncommon: isSeries ? { base: 250, max: 300 } : { base: 200, max: 250 },
+      rare: isSeries ? { base: 350, max: 450 } : { base: 300, max: 400 },
+      epic: isSeries ? { base: 500, max: 700 } : { base: 400, max: 600 },
+      legendary: isSeries ? { base: 800, max: 1200 } : { base: 600, max: 1000 },
+      'ultra elite': isSeries ? { base: 1500, max: 2500 } : { base: 1200, max: 2000 },
+      ultra: isSeries ? { base: 1500, max: 2500 } : { base: 1200, max: 2000 },
+      'after hours': isSeries ? { base: 2000, max: 3000 } : { base: 1000, max: 2000 },
+      afterhours: isSeries ? { base: 2000, max: 3000 } : { base: 1000, max: 2000 },
+    }
+    const row = table[r] || table.common
+    return { base: row.base, max: row.max, step: 25 }
   }
   const MEDIA_VIDEO_CHANCE = 0.18
   const BUCKS = 'BabeBucks'
@@ -949,8 +974,16 @@ export default function Game() {
     let label = 'item'
     if (viewOwned.kind === 'card') {
       const c = o.cards || {}
+      if (isMintRarity(c.rarity)) {
+        alert('MINT cards cannot be sold back to the system. Trade or sell to other players only.')
+        return
+      }
       price = systemBuybackCard(c.rarity)
       label = c.name || 'card'
+      if (price == null) {
+        alert('This card cannot be sold back to the system.')
+        return
+      }
     } else if (viewOwned.kind === 'media') {
       price = SYSTEM_BUYBACK_MEDIA
       const m = o.character_media || {}
@@ -1088,9 +1121,16 @@ export default function Game() {
 
   // Weight each individual card by its rarity odds for this tier (not pick rarity then only one card)
   const pickCardWeighted = (stock, tier) => {
+    // Absolute 1-in-5M shot at any Mint still in stock
+    const mintPool = stock.filter(c => isMintRarity(c.rarity))
+    if (mintPool.length && Math.random() < MINT_ODDS) {
+      return mintPool[Math.floor(Math.random() * mintPool.length)]
+    }
+
     const tierW = TIER_WEIGHTS[tier] || TIER_WEIGHTS.low
     const entries = stock.map(c => {
       const r = String(c.rarity || 'common').toLowerCase()
+      if (r === 'mint') return { card: c, weight: 0 } // only via absolute odds above
       let w = Number(tierW[r])
       if (!w || w <= 0) w = 0.5 // still allow unknown rarities a tiny chance
       // slight boost when more print run remains so sold-out-ish cards are less likely
@@ -2476,63 +2516,71 @@ export default function Game() {
                       {c.back_image_url ? (
                         <img src={c.back_image_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
                       ) : <div className="absolute inset-0 bg-gray-900" />}
-                      <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black from-30% via-black/80 to-transparent" />
-                      {c.series_name && (
-                        <div className="absolute top-3 inset-x-0 text-center z-[2] px-2">
-                          <span
-                            className="text-[10px] text-black font-bold tracking-[0.18em] uppercase"
-                            style={{
-                              fontFamily: 'Georgia, serif',
-                              textShadow: '0 0 4px rgba(255,255,255,0.95), 0 0 10px rgba(255,255,255,0.75), 0 0 18px rgba(255,255,255,0.45)',
-                            }}
-                          >
-                            {String(c.series_name).toUpperCase()}
-                          </span>
-                        </div>
-                      )}
-                      <div className="absolute inset-x-0 bottom-0 z-[3] p-3 flex flex-col justify-end">
-                        {(c.description || c.flavor_text) && (
-                          <div
-                            className="mb-2 p-2.5"
-                            style={{
-                              background: 'rgba(0,0,0,0.72)',
-                              borderRadius: 10,
-                              boxShadow: '0 0 18px 10px rgba(0,0,0,0.55)',
-                            }}
-                          >
-                            {c.description && (
-                              <p className="text-[11px] text-white leading-snug mb-1.5 last:mb-0" style={{ textAlign: 'justify', textAlignLast: 'center' }}>
-                                {c.description}
-                              </p>
-                            )}
-                            {c.flavor_text && (
-                              <p className="text-[10px] italic text-white/80 leading-snug" style={{ textAlign: 'justify', textAlignLast: 'center' }}>
-                                &quot;{c.flavor_text}&quot;
-                              </p>
-                            )}
-                          </div>
-                        )}
-                        {stats.length > 0 && (
-                          <div className="space-y-1.5 mb-2">
-                            {stats.map((s, i) => (
-                              <div key={i} className="flex items-center gap-2 text-[9px]">
-                                <span className="w-16 text-gray-200 truncate uppercase tracking-wide">{s.label}</span>
-                                <div className="flex-1 bg-white/25 rounded-full h-1">
-                                  <div className="bg-white h-1 rounded-full" style={{ width: `${Math.min(100, Number(s.value) || 0)}%` }} />
-                                </div>
-                                <span className="w-6 text-right text-gray-100">{s.value}</span>
+                      {/* Mint: logo + shimmer only */}
+                      {!isMintRarity(c.rarity) && (
+                        <>
+                          <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black from-30% via-black/80 to-transparent" />
+                          {c.series_name && (
+                            <div className="absolute top-3 inset-x-0 text-center z-[2] px-2">
+                              <span
+                                className="text-[10px] text-black font-bold tracking-[0.18em] uppercase"
+                                style={{
+                                  fontFamily: 'Georgia, serif',
+                                  textShadow: '0 0 4px rgba(255,255,255,0.95), 0 0 10px rgba(255,255,255,0.75), 0 0 18px rgba(255,255,255,0.45)',
+                                }}
+                              >
+                                {String(c.series_name).toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+                          <div className="absolute inset-x-0 bottom-0 z-[3] p-3 flex flex-col justify-end">
+                            {(c.description || c.flavor_text) && (
+                              <div
+                                className="mb-2 p-2.5"
+                                style={{
+                                  background: 'rgba(0,0,0,0.72)',
+                                  borderRadius: 10,
+                                  boxShadow: '0 0 18px 10px rgba(0,0,0,0.55)',
+                                }}
+                              >
+                                {c.description && (
+                                  <p className="text-[11px] text-white leading-snug mb-1.5 last:mb-0" style={{ textAlign: 'justify', textAlignLast: 'center' }}>
+                                    {c.description}
+                                  </p>
+                                )}
+                                {c.flavor_text && (
+                                  <p className="text-[10px] italic text-white/80 leading-snug" style={{ textAlign: 'justify', textAlignLast: 'center' }}>
+                                    &quot;{c.flavor_text}&quot;
+                                  </p>
+                                )}
                               </div>
-                            ))}
+                            )}
+                            {stats.length > 0 && (
+                              <div className="space-y-1.5 mb-2">
+                                {stats.map((s, i) => (
+                                  <div key={i} className="flex items-center gap-2 text-[9px]">
+                                    <span className="w-16 text-gray-200 truncate uppercase tracking-wide">{s.label}</span>
+                                    <div className="flex-1 bg-white/25 rounded-full h-1">
+                                      <div className="bg-white h-1 rounded-full" style={{ width: `${Math.min(100, Number(s.value) || 0)}%` }} />
+                                    </div>
+                                    <span className="w-6 text-right text-gray-100">{s.value}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between pt-2 border-t border-white/15 gap-2">
+                              <span className="font-mono text-[9px] text-gray-400 tracking-widest">{c.card_number || '—'}</span>
+                              {(o.edition_number && o.edition_total) ? (
+                                <span className="text-[10px] text-amber-300 font-semibold tracking-wide shrink-0">{o.edition_number}/{o.edition_total}</span>
+                              ) : null}
+                              <span className="text-[9px] text-gray-300 tracking-widest font-semibold shrink-0">COMP-GA</span>
+                            </div>
                           </div>
-                        )}
-                        <div className="flex items-center justify-between pt-2 border-t border-white/15 gap-2">
-                          <span className="font-mono text-[9px] text-gray-400 tracking-widest">{c.card_number || '—'}</span>
-                          {(o.edition_number && o.edition_total) ? (
-                            <span className="text-[10px] text-amber-300 font-semibold tracking-wide shrink-0">{o.edition_number}/{o.edition_total}</span>
-                          ) : null}
-                          <span className="text-[9px] text-gray-300 tracking-widest font-semibold shrink-0">COMP-GA</span>
-                        </div>
-                      </div>
+                        </>
+                      )}
+                      {isMintRarity(c.rarity) && (
+                        <img src="/ga-mark.png" alt="" className="absolute bottom-0.5 right-1 z-[20] h-28 w-28 object-contain drop-shadow-lg pointer-events-none" />
+                      )}
                     </>
                   ) : (
                     <>
@@ -2556,11 +2604,13 @@ export default function Game() {
                       ) : c.image_url ? (
                         <img src={c.image_url} alt={c.name || ''} className="absolute inset-0 w-full h-full object-cover object-top" />
                       ) : <div className="absolute inset-0 bg-gray-800" />}
-                      {c.series_name && <span className="absolute top-3 left-3 text-lg drop-shadow z-[2]">👑</span>}
-                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10 z-[5]">
-                        <p className="font-bold text-[15px] leading-tight truncate pr-24">{c.name}</p>
-                        {c.title && <p className="text-[10px] text-gray-300 uppercase tracking-[0.12em] mt-0.5 truncate pr-24">{c.title}</p>}
-                      </div>
+                      {!isMintRarity(c.rarity) && c.series_name && <span className="absolute top-3 left-3 text-lg drop-shadow z-[2]">👑</span>}
+                      {!isMintRarity(c.rarity) && (
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10 z-[5]">
+                          <p className="font-bold text-[15px] leading-tight truncate pr-24">{c.name}</p>
+                          {c.title && <p className="text-[10px] text-gray-300 uppercase tracking-[0.12em] mt-0.5 truncate pr-24">{c.title}</p>}
+                        </div>
+                      )}
                       <img src="/ga-mark.png" alt="" className="absolute bottom-0.5 right-1 z-[20] h-28 w-28 object-contain drop-shadow-lg pointer-events-none" />
                     </>
                   )}
