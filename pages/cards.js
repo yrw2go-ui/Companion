@@ -646,6 +646,38 @@ export default function Cards() {
     return folder.id
   }
 
+  // When a card front/back/video is replaced: keep the old file, put it in Gallery,
+  // and leave it unlinked from the card (card already points at the new URL).
+  const releaseCardMediaToGallery = async (url, { type = 'image', prompt = null, model = 'card-retired' } = {}) => {
+    if (!url) return null
+    try {
+      const { data: existing } = await supabase
+        .from('gallery_media')
+        .select('id, url')
+        .eq('url', url)
+        .limit(1)
+        .maybeSingle()
+      if (existing?.id) return existing
+
+      const row = {
+        type: type === 'video' ? 'video' : 'image',
+        url,
+        prompt: prompt || 'Retired from card',
+        model: model || 'card-retired',
+      }
+      try {
+        return await insertWithRetry('gallery_media', row, 10)
+      } catch (e) {
+        enqueuePending({ table: 'gallery_media', row })
+        console.warn('releaseCardMediaToGallery queued', e)
+        return null
+      }
+    } catch (err) {
+      console.warn('releaseCardMediaToGallery', err)
+      return null
+    }
+  }
+
   const claimGalleryMediaByUrl = async (url, mode = 'card') => {
     if (!url) return
     try {
@@ -796,6 +828,8 @@ export default function Cards() {
     if (!selected?.id || !videoUrl) return
     setAttachBusy(true)
     try {
+      const oldVideo = selected.video_url
+      const oldPoster = selected.poster_url
       let poster = posterUrl || null
       if (!poster) {
         try {
@@ -810,13 +844,28 @@ export default function Cards() {
       }
       const { error } = await supabase.from('cards').update(patch).eq('id', selected.id)
       if (error) throw new Error(error.message)
-      // Leave gallery — card owns this video URL now
+      // Old animation → Gallery (not deleted, no longer on card)
+      if (oldVideo && oldVideo !== videoUrl) {
+        await releaseCardMediaToGallery(oldVideo, {
+          type: 'video',
+          prompt: selected.video_prompt || `${selected.name || 'Card'} retired animation`,
+          model: 'card-retired',
+        })
+      }
+      if (oldPoster && poster && oldPoster !== poster) {
+        await releaseCardMediaToGallery(oldPoster, {
+          type: 'image',
+          prompt: `${selected.name || 'Card'} retired poster`,
+          model: 'card-retired',
+        })
+      }
+      // New clip leaves gallery — card owns it
       await claimGalleryMediaByUrl(videoUrl, 'card')
       if (poster) await claimGalleryMediaByUrl(poster, 'card')
       setSelected(prev => prev ? { ...prev, ...patch } : prev)
       setCards(prev => prev.map(c => c.id === selected.id ? { ...c, ...patch } : c))
       setView('animated')
-      alert('Front animation attached (removed from Gallery → lives on card)')
+      alert('Front animation attached. Previous clip moved to Gallery.')
     } catch (err) {
       alert('Attach failed: ' + err.message)
     }
@@ -875,16 +924,25 @@ export default function Cards() {
     if (target === 'edit-front' || target === 'edit-back') {
       if (!editing) return
       const which = target === 'edit-front' ? 'front' : 'back'
+      const oldUrl = which === 'front' ? editing.image_url : editing.back_image_url
       const patch = which === 'front'
         ? { image_url: url }
         : { back_image_url: url }
       const { error } = await supabase.from('cards').update(patch).eq('id', editing.id)
       if (error) { alert('Save error: ' + error.message); return }
-      // Remove from gallery — card section owns it now (storage file stays via card URL)
+      // Old art → Gallery (unlinked from card, not deleted)
+      if (oldUrl && oldUrl !== url) {
+        await releaseCardMediaToGallery(oldUrl, {
+          type: 'image',
+          prompt: (which === 'front' ? editing.image_prompt : editing.back_image_prompt)
+            || `${editing.name || 'Card'} retired ${which}`,
+          model: 'card-retired',
+        })
+      }
+      // New pick leaves gallery — card owns it
       await claimGalleryMediaByUrl(url, 'card')
       setEditing({ ...editing, ...patch })
       if (selected?.id === editing.id) setSelected(prev => prev ? { ...prev, ...patch } : prev)
-      // drop from local gallery picker pool
       setGalleryPool(prev => (prev || []).filter(g => g.url !== url))
       loadCards()
     }
@@ -921,9 +979,13 @@ export default function Cards() {
       const { error } = await supabase.from('cards').update(patch).eq('id', editing.id)
       if (error) { alert('Save error: ' + error.message); setRegenProgress(''); return }
 
+      // Old front/back → Gallery (not deleted, no longer linked to card)
       if (oldUrl && oldUrl !== result.imageUrl) {
-        const f = oldUrl.split('/character-images/')[1]
-        // keep gallery originals; only remove if not also used as a gallery URL — skip safe
+        await releaseCardMediaToGallery(oldUrl, {
+          type: 'image',
+          prompt: promptText || `${editing.name || 'Card'} retired ${which}`,
+          model: 'card-retired',
+        })
       }
 
       setEditing({ ...editing, ...patch })
@@ -1090,9 +1152,13 @@ export default function Cards() {
     const { error } = await supabase.from('cards').update(patch).eq('id', editing.id)
     if (error) { alert('Save error: ' + error.message); setRegenProgress(''); return }
 
-    if (oldUrl) {
-      const f = oldUrl.split('/character-images/')[1]
-      if (f) await supabase.storage.from('character-images').remove([f])
+    // Old art → Gallery instead of deleting storage
+    if (oldUrl && oldUrl !== result.imageUrl) {
+      await releaseCardMediaToGallery(oldUrl, {
+        type: 'image',
+        prompt: promptText || `${editing.name || 'Card'} retired ${which}`,
+        model: 'card-retired',
+      })
     }
 
     setEditing({ ...editing, ...patch })
@@ -1161,10 +1227,20 @@ export default function Cards() {
         return
       }
 
-      // remove the replaced clip from storage
-      if (oldVideo) {
-        const f = oldVideo.split('/character-images/')[1]
-        if (f) await supabase.storage.from('character-images').remove([f])
+      // Old animation → Gallery (not deleted, unlinked from card)
+      if (oldVideo && oldVideo !== data.videoUrl) {
+        await releaseCardMediaToGallery(oldVideo, {
+          type: 'video',
+          prompt: selected.video_prompt || `${selected.name || 'Card'} retired animation`,
+          model: 'card-retired',
+        })
+      }
+      if (selected.poster_url && poster && selected.poster_url !== poster) {
+        await releaseCardMediaToGallery(selected.poster_url, {
+          type: 'image',
+          prompt: `${selected.name || 'Card'} retired poster`,
+          model: 'card-retired',
+        })
       }
 
       setSelected({ ...selected, video_url: data.videoUrl, video_prompt: animPrompt, poster_url: poster })
