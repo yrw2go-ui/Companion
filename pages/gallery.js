@@ -334,37 +334,118 @@ export default function Gallery() {
 
   // saves a completed generation to gallery_media with retry.
   // Atlas already uploaded the file; this only writes the DB row so it appears in Gallery.
+  // Orphans happen when storage succeeds but this insert fails — so we try hard + fall back.
   const saveWithRetry = async (row, label) => {
+    if (!row?.url) {
+      alert(`${label || 'File'} has no URL — nothing to save`)
+      return null
+    }
+
+    // If this URL is already in gallery_media, don't insert a duplicate (return existing)
+    try {
+      const { data: existing } = await supabase
+        .from('gallery_media')
+        .select('*')
+        .eq('url', row.url)
+        .limit(1)
+        .maybeSingle()
+      if (existing?.id) {
+        const entry = {
+          ...existing,
+          key: 'gal_' + existing.id,
+          source: 'gallery_media',
+          created_at: existing.created_at || new Date().toISOString(),
+        }
+        setMedia(prev => {
+          const rest = (prev || []).filter(x => x.url !== existing.url && x.id !== existing.id)
+          return [entry, ...rest]
+        })
+        return existing
+      }
+    } catch (e) {
+      console.warn('dedupe check failed', e)
+    }
+
     // drop undefined/null optional fields that can trip strict schemas
     const clean = {}
     for (const [k, v] of Object.entries(row || {})) {
       if (v !== undefined && v !== null && v !== '') clean[k] = v
     }
-    if (row?.url) clean.url = row.url
-    if (row?.type) clean.type = row.type
+    clean.url = row.url
+    clean.type = row.type || 'image'
+
+    // Progressive payloads: full → core → bare minimum (survives schema/RLS quirks)
+    const payloads = [
+      clean,
+      {
+        type: clean.type,
+        url: clean.url,
+        prompt: clean.prompt || null,
+        model: clean.model || null,
+        poster_url: clean.poster_url || null,
+        seed: clean.seed ?? null,
+        size: clean.size || null,
+        negative_prompt: clean.negative_prompt || null,
+        source_prompt: clean.source_prompt || null,
+      },
+      { type: clean.type, url: clean.url, prompt: clean.prompt || label || null },
+      { type: clean.type, url: clean.url },
+    ]
 
     let lastErr = null
-    for (let i = 0; i < 3; i++) {
-      const { data, error } = await supabase
-        .from('gallery_media')
-        .insert([clean])
-        .select()
-        .single()
-      if (!error && data) {
-        // optimistically prepend so UI updates even before full reload
-        setMedia(prev => {
+    for (const payload of payloads) {
+      const body = {}
+      for (const [k, v] of Object.entries(payload)) {
+        if (v !== undefined && v !== null && v !== '') body[k] = v
+      }
+      body.url = clean.url
+      body.type = clean.type
+
+      for (let i = 0; i < 2; i++) {
+        const { data, error } = await supabase
+          .from('gallery_media')
+          .insert([body])
+          .select()
+          .single()
+        if (!error && data) {
           const entry = {
             ...data,
+            key: 'gal_' + data.id,
             source: 'gallery_media',
             created_at: data.created_at || new Date().toISOString(),
           }
-          return [entry, ...(prev || []).filter(x => x.url !== data.url)]
-        })
-        return data
+          setMedia(prev => {
+            const rest = (prev || []).filter(x => x.url !== data.url && x.id !== data.id)
+            return [entry, ...rest]
+          })
+          return data
+        }
+        lastErr = error
+        console.error('gallery_media insert failed', body, error)
+        // unique violation → already saved
+        if (error && /duplicate|unique/i.test(error.message || '')) {
+          const { data: again } = await supabase.from('gallery_media').select('*').eq('url', clean.url).limit(1).maybeSingle()
+          if (again) return again
+        }
+        await new Promise(r => setTimeout(r, 600 * (i + 1)))
       }
-      lastErr = error
-      console.error('gallery_media insert attempt', i + 1, error)
-      await new Promise(r => setTimeout(r, 800 * (i + 1)))
+    }
+
+    // Last resort: ask server import-orphans to pick up this URL
+    try {
+      const impRes = await fetch('/api/import-orphans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: false, mode: 'import', forceUrls: [clean.url] }),
+      })
+      const imp = await impRes.json().catch(() => ({}))
+      if (imp?.imported > 0 || imp?.ok) {
+        await load()
+        const { data: rescued } = await supabase.from('gallery_media').select('*').eq('url', clean.url).limit(1).maybeSingle()
+        if (rescued) return rescued
+      }
+    } catch (e) {
+      console.warn('orphan rescue failed', e)
     }
 
     const detail = lastErr?.message || lastErr?.code || 'unknown error'
@@ -372,7 +453,8 @@ export default function Gallery() {
       `${label} was created in storage, but the gallery row failed to save.\n\n` +
       `Error: ${detail}\n\n` +
       `Direct link (not lost):\n${row.url}\n\n` +
-      `Use Settings → Import Orphaned Media, or fix RLS on gallery_media.`
+      `Tap Fetch in Gallery (or Settings → Import Orphaned Media) to reconnect it.\n` +
+      `If this keeps happening, check RLS INSERT on gallery_media.`
     )
     return null
   }
