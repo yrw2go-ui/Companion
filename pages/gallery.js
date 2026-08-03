@@ -1798,29 +1798,91 @@ export default function Gallery() {
 
   const [copiedUrl, setCopiedUrl] = useState(false)
   const copy = (val) => navigator.clipboard?.writeText(String(val))
-  const downloadItem = async (item) => {
-    try {
-      const res = await fetch(item.url)
-      const blob = await res.blob()
-      const objUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      // build a friendly filename
-      const isVideo = item.type === 'video'
-      const isModel = item.type === 'model'
-      const stamp = new Date(item.created_at || Date.now()).toISOString().slice(0, 10)
-      const base = (item.prompt ? item.prompt.slice(0, 30).replace(/[^a-z0-9]+/gi, '_') : item.type) || 'media'
-      const ext = isModel ? 'glb' : isVideo ? 'mp4' : (item.url.toLowerCase().includes('.png') ? 'png' : 'jpeg')
-      downloadCounter.current += 1
-      const seq = String(downloadCounter.current).padStart(3, '0')
-      a.href = objUrl
-      a.download = `${base}_${stamp}_${seq}.${ext}`
-      document.body.appendChild(a)
-      a.click()
+
+  const buildDownloadName = (item) => {
+    const isVideo = item.type === 'video'
+    const isModel = item.type === 'model'
+    const stamp = new Date(item.created_at || Date.now()).toISOString().slice(0, 10)
+    const base = (item.prompt ? String(item.prompt).slice(0, 30).replace(/[^a-z0-9]+/gi, '_') : item.type) || 'media'
+    const urlLow = String(item.url || '').toLowerCase()
+    let ext = isModel ? 'glb' : isVideo ? 'mp4' : 'jpg'
+    if (urlLow.includes('.png')) ext = 'png'
+    else if (urlLow.includes('.webp')) ext = 'webp'
+    else if (urlLow.includes('.gif')) ext = 'gif'
+    else if (urlLow.includes('.webm')) ext = 'webm'
+    else if (urlLow.includes('.mp4')) ext = 'mp4'
+    else if (urlLow.includes('.jpeg') || urlLow.includes('.jpg')) ext = 'jpg'
+    downloadCounter.current += 1
+    const seq = String(downloadCounter.current).padStart(3, '0')
+    return `${base}_${stamp}_${seq}.${ext}`
+  }
+
+  const triggerBlobDownload = (blob, fileName) => {
+    const objUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objUrl
+    a.download = fileName
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => {
       a.remove()
       URL.revokeObjectURL(objUrl)
-    } catch (err) {
-      alert('Download failed: ' + err.message)
+    }, 1500)
+  }
+
+  const downloadItem = async (item) => {
+    if (!item?.url) {
+      alert('No file URL')
+      return
     }
+    const fileName = buildDownloadName(item)
+
+    // 1) Prefer blob download (works when CORS allows reading the file)
+    try {
+      const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'no-store' })
+      if (!res.ok) throw new Error('HTTP ' + res.status)
+      const blob = await res.blob()
+      if (!blob || blob.size === 0) throw new Error('Empty file')
+      // On mobile, Web Share can save when <a download> is blocked
+      const canShareFile = typeof navigator !== 'undefined' && navigator.share && navigator.canShare
+      if (canShareFile) {
+        try {
+          const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' })
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: fileName })
+            return
+          }
+        } catch (shareErr) {
+          // user cancelled share → still try classic download
+          if (shareErr && shareErr.name === 'AbortError') return
+        }
+      }
+      triggerBlobDownload(blob, fileName)
+      return
+    } catch (err) {
+      console.warn('blob download failed', err)
+    }
+
+    // 2) Direct link (some browsers still honor download= cross-origin)
+    try {
+      const a = document.createElement('a')
+      a.href = item.url
+      a.download = fileName
+      a.target = '_blank'
+      a.rel = 'noopener noreferrer'
+      a.style.display = 'none'
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => a.remove(), 500)
+      return
+    } catch (err) {
+      console.warn('anchor download failed', err)
+    }
+
+    // 3) Last resort: open file — user can long-press / share to save
+    window.open(item.url, '_blank', 'noopener,noreferrer')
+    alert('Opened the file in a new tab.\n\nOn phone: long-press the image/video → Save / Download.')
   }
 
   const copyUrl = (val) => {
