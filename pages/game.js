@@ -186,26 +186,6 @@ export default function Game() {
     if (key === 'mint') return null
     return SYSTEM_BUYBACK_CARD[key] ?? SYSTEM_BUYBACK_CARD.common
   }
-  // Player-to-player sale bounds (base starting list price, max, step per sale)
-  const cardSaleBounds = (rarity, isSeries) => {
-    const r = String(rarity || 'common').toLowerCase()
-    if (r === 'mint') {
-      return { base: 500000, max: null, step: 5000 } // no hard max — +5k each sale after
-    }
-    const table = {
-      common: isSeries ? { base: 150, max: 250 } : { base: 100, max: 200 },
-      uncommon: isSeries ? { base: 250, max: 300 } : { base: 200, max: 250 },
-      rare: isSeries ? { base: 350, max: 450 } : { base: 300, max: 400 },
-      epic: isSeries ? { base: 500, max: 700 } : { base: 400, max: 600 },
-      legendary: isSeries ? { base: 800, max: 1200 } : { base: 600, max: 1000 },
-      'ultra elite': isSeries ? { base: 1500, max: 2500 } : { base: 1200, max: 2000 },
-      ultra: isSeries ? { base: 1500, max: 2500 } : { base: 1200, max: 2000 },
-      'after hours': isSeries ? { base: 2000, max: 3000 } : { base: 1000, max: 2000 },
-      afterhours: isSeries ? { base: 2000, max: 3000 } : { base: 1000, max: 2000 },
-    }
-    const row = table[r] || table.common
-    return { base: row.base, max: row.max, step: 25 }
-  }
   const MEDIA_VIDEO_CHANCE = 0.18
   const BUCKS = 'BabeBucks'
   const TOKEN_ICON = '/icons/babe-bucks.png'
@@ -261,6 +241,7 @@ export default function Game() {
 
   // P2P sale floor / ceiling. Each completed sale +25 until max.
   // [nonSeriesBase, nonSeriesMax, seriesBase, seriesMax]
+  // Mint: 500k base, +5k per sale, no hard max
   const CARD_SALE_TABLE = {
     common:        [100, 200, 150, 250],
     uncommon:      [200, 200, 250, 300],
@@ -269,18 +250,29 @@ export default function Game() {
     legendary:     [750, 1200, 900, 1500],
     'ultra elite': [900, 1600, 1200, 2000],
     'after hours': [1000, 2000, 2000, 3000],
+    mint:          [500000, null, 500000, null],
   }
   const MEDIA_SALE_BASE = 400
   const MEDIA_SALE_MAX = 800
   const MEDIA_SALE_STEP = 50  // only when edition_total < 100
   const CARD_SALE_STEP = 25
+  const MINT_SALE_STEP = 5000
 
   const cardSaleBounds = (rarity, isSeries) => {
-    const row = CARD_SALE_TABLE[String(rarity || 'common').toLowerCase()] || CARD_SALE_TABLE.common
-    return isSeries ? { base: row[2], max: row[3] } : { base: row[0], max: row[1] }
+    const key = String(rarity || 'common').toLowerCase()
+    if (key === 'mint') {
+      return { base: 500000, max: null, step: MINT_SALE_STEP }
+    }
+    const row = CARD_SALE_TABLE[key] || CARD_SALE_TABLE.common
+    return isSeries
+      ? { base: row[2], max: row[3], step: CARD_SALE_STEP }
+      : { base: row[0], max: row[1], step: CARD_SALE_STEP }
   }
-  const currentSalePrice = (base, max, saleCount, step = CARD_SALE_STEP) =>
-    Math.min(max, base + (saleCount || 0) * step)
+  const currentSalePrice = (base, max, saleCount, step = CARD_SALE_STEP) => {
+    const price = base + (saleCount || 0) * step
+    if (max == null) return price
+    return Math.min(max, price)
+  }
 
   // Mystery skins: public/mystery-card-1.jpg + .mp4 … through N
   const MYSTERY_SKIN_COUNT = 5
