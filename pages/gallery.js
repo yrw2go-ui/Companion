@@ -257,7 +257,9 @@ export default function Gallery() {
   const [resetting, setResetting] = useState(false)
   const [resetStatus, setResetStatus] = useState('')
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load().then(() => flushPendingGallerySaves().catch(() => {}))
+  }, [])
 
   // Keep editPrompt in sync when opening a detail item
   useEffect(() => {
@@ -465,12 +467,33 @@ export default function Gallery() {
     }
   }
 
-  // saves a completed generation to gallery_media with retry.
+  // Pending gallery_media saves survive refresh / app close (shared key with cards page)
+  const PENDING_KEY = 'ga_pending_media_saves'
+  const readPending = () => {
+    try { return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]') } catch { return [] }
+  }
+  const writePending = (list) => {
+    try { localStorage.setItem(PENDING_KEY, JSON.stringify(list || [])) } catch {}
+  }
+  const enqueuePendingGallery = (row, label) => {
+    const list = readPending().filter(p => !(p.table === 'gallery_media' && p.row?.url === row?.url))
+    list.push({
+      id: `gal_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      table: 'gallery_media',
+      row,
+      label: label || 'media',
+      attempts: 0,
+    })
+    writePending(list)
+  }
+
+  // saves a completed generation to gallery_media with up to 10 retries.
   // Atlas already uploaded the file; this only writes the DB row so it appears in Gallery.
-  // Orphans happen when storage succeeds but this insert fails — so we try hard + fall back.
-  const saveWithRetry = async (row, label) => {
+  // On total failure, queues to localStorage and retries on next load/refresh.
+  // quiet: true = no alerts (used by background flush)
+  const saveWithRetry = async (row, label, quiet = false) => {
     if (!row?.url) {
-      alert(`${label || 'File'} has no URL — nothing to save`)
+      if (!quiet) alert(`${label || 'File'} has no URL — nothing to save`)
       return null
     }
 
@@ -493,6 +516,8 @@ export default function Gallery() {
           const rest = (prev || []).filter(x => x.url !== existing.url && x.id !== existing.id)
           return [entry, ...rest]
         })
+        // clear any pending for this url
+        writePending(readPending().filter(p => !(p.table === 'gallery_media' && p.row?.url === row.url)))
         return existing
       }
     } catch (e) {
@@ -526,20 +551,24 @@ export default function Gallery() {
     ]
 
     let lastErr = null
-    for (const payload of payloads) {
-      const body = {}
-      for (const [k, v] of Object.entries(payload)) {
-        if (v !== undefined && v !== null && v !== '') body[k] = v
-      }
-      body.url = clean.url
-      body.type = clean.type
+    let attempt = 0
+    const maxAttempts = 10
+    while (attempt < maxAttempts) {
+      for (const payload of payloads) {
+        if (attempt >= maxAttempts) break
+        const body = {}
+        for (const [k, v] of Object.entries(payload)) {
+          if (v !== undefined && v !== null && v !== '') body[k] = v
+        }
+        body.url = clean.url
+        body.type = clean.type
 
-      for (let i = 0; i < 2; i++) {
         const { data, error } = await supabase
           .from('gallery_media')
           .insert([body])
           .select()
           .single()
+        attempt++
         if (!error && data) {
           const entry = {
             ...data,
@@ -551,16 +580,19 @@ export default function Gallery() {
             const rest = (prev || []).filter(x => x.url !== data.url && x.id !== data.id)
             return [entry, ...rest]
           })
+          writePending(readPending().filter(p => !(p.table === 'gallery_media' && p.row?.url === clean.url)))
           return data
         }
         lastErr = error
-        console.error('gallery_media insert failed', body, error)
-        // unique violation → already saved
+        console.error('gallery_media insert attempt', attempt, error)
         if (error && /duplicate|unique/i.test(error.message || '')) {
           const { data: again } = await supabase.from('gallery_media').select('*').eq('url', clean.url).limit(1).maybeSingle()
-          if (again) return again
+          if (again) {
+            writePending(readPending().filter(p => !(p.table === 'gallery_media' && p.row?.url === clean.url)))
+            return again
+          }
         }
-        await new Promise(r => setTimeout(r, 600 * (i + 1)))
+        await new Promise(r => setTimeout(r, Math.min(4000, 300 * attempt)))
       }
     }
 
@@ -575,21 +607,46 @@ export default function Gallery() {
       if (imp?.imported > 0 || imp?.ok) {
         await load()
         const { data: rescued } = await supabase.from('gallery_media').select('*').eq('url', clean.url).limit(1).maybeSingle()
-        if (rescued) return rescued
+        if (rescued) {
+          writePending(readPending().filter(p => !(p.table === 'gallery_media' && p.row?.url === clean.url)))
+          return rescued
+        }
       }
     } catch (e) {
       console.warn('orphan rescue failed', e)
     }
 
-    const detail = lastErr?.message || lastErr?.code || 'unknown error'
-    alert(
-      `${label} was created in storage, but the gallery row failed to save.\n\n` +
-      `Error: ${detail}\n\n` +
-      `Direct link (not lost):\n${row.url}\n\n` +
-      `Tap Fetch in Gallery (or Settings → Import Orphaned Media) to reconnect it.\n` +
-      `If this keeps happening, check RLS INSERT on gallery_media.`
-    )
+    // Queue for retry after refresh / reopen
+    enqueuePendingGallery(clean, label)
+    if (!quiet) {
+      const detail = lastErr?.message || lastErr?.code || 'unknown error'
+      alert(
+        `${label} was created in storage, but the gallery row failed after 10 tries.\n\n` +
+        `Error: ${detail}\n\n` +
+        `Queued to auto-retry when you reopen Gallery.\n` +
+        `Direct link (not lost):\n${row.url}`
+      )
+    }
     return null
+  }
+
+  const flushPendingGallerySaves = async () => {
+    const list = readPending().filter(p => p.table === 'gallery_media')
+    if (!list.length) return
+    let remaining = readPending().filter(p => p.table !== 'gallery_media')
+    let rescued = 0
+    for (const item of list) {
+      if ((item.attempts || 0) >= 10) continue
+      try {
+        const saved = await saveWithRetry(item.row, item.label || 'Queued media', true)
+        if (saved) rescued++
+        else remaining.push({ ...item, attempts: (item.attempts || 0) + 1 })
+      } catch {
+        remaining.push({ ...item, attempts: (item.attempts || 0) + 1 })
+      }
+    }
+    writePending(remaining)
+    if (rescued > 0) await load()
   }
 
   // generic pager for any table read that could exceed Supabase's 1000-row cap

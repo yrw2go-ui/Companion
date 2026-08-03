@@ -293,7 +293,7 @@ export default function Cards() {
     if (!selected || mediaBusy) return
     if (!mediaUrl.trim()) { alert('Paste a media URL'); return }
     setMediaBusy(true)
-    const { data, error } = await supabase.from('character_media').insert([{
+    const row = {
       character_name: selected.name,
       card_id: selected.id,
       type: mediaType,
@@ -301,17 +301,27 @@ export default function Cards() {
       title: mediaTitle.trim() || null,
       unlock_method: mediaUnlock,
       token_cost: 0, // price set in Shop
-
       edition_size: parseInt(mediaEdition) || 300,
       published: false,
-    }]).select().single()
+    }
+    try {
+      const data = await insertWithRetry('character_media', row, 10)
+      // Move source gallery file into +media (or leave if not from gallery)
+      await claimGalleryMediaByUrl(row.url, 'plusMedia')
+      setCharMedia(prev => [data, ...prev])
+      const key = String(selected.name || '').trim().toLowerCase()
+      if (key) setMediaCounts(prev => ({ ...prev, [key]: (prev[key] || 0) + 1 }))
+      setMediaTitle('')
+      setMediaUrl('')
+    } catch (err) {
+      enqueuePending({ table: 'character_media', row, plusMedia: true })
+      alert(
+        'Link save failed after retries — queued to retry on next open.\n\n' +
+        (err?.message || err) +
+        `\n\nFile is safe at:\n${row.url}`
+      )
+    }
     setMediaBusy(false)
-    if (error) { alert('Save failed: ' + error.message); return }
-    setCharMedia(prev => [data, ...prev])
-    const key = String(selected.name || '').trim().toLowerCase()
-    if (key) setMediaCounts(prev => ({ ...prev, [key]: (prev[key] || 0) + 1 }))
-    setMediaTitle('')
-    setMediaUrl('')
   }
 
   const toggleMediaPublish = async (row) => {
@@ -366,28 +376,50 @@ export default function Cards() {
       title: title || null,
       unlock_method: mediaUnlock || 'shop',
       token_cost: 0, // price set in Shop
-
       edition_size: parseInt(mediaEdition) || 300,
       published: false,
     }
-    let lastErr = null
-    for (let i = 0; i < 3; i++) {
-      const { data, error } = await supabase.from('character_media').insert([row]).select().single()
-      if (!error && data) {
-        setCharMedia(prev => [data, ...prev])
-        const key = String(selected.name || '').trim().toLowerCase()
-        if (key) setMediaCounts(prev => ({ ...prev, [key]: (prev[key] || 0) + 1 }))
-        return data
+    try {
+      const data = await insertWithRetry('character_media', row, 10)
+      // Ensure gallery copy (if any) lives under +media — not unfiled / random folders
+      await claimGalleryMediaByUrl(url, 'plusMedia')
+      // Also mirror into gallery_media under +media so creator can find it there
+      try {
+        const { data: existingGal } = await supabase.from('gallery_media').select('id').eq('url', url).limit(1).maybeSingle()
+        if (!existingGal) {
+          const galRow = {
+            type: type || 'image',
+            url,
+            prompt: title || `${selected.name} media`,
+            model: 'card-linked',
+            seed: seed ?? null,
+          }
+          const savedGal = await insertWithRetry('gallery_media', galRow, 10)
+          if (savedGal?.id) {
+            const folderId = await ensurePlusMediaFolderId()
+            await supabase.from('folder_items').upsert(
+              { source: 'gallery_media', item_key: 'gal_' + savedGal.id, folder_id: folderId },
+              { onConflict: 'source,item_key' }
+            )
+          }
+        } else {
+          await claimGalleryMediaByUrl(url, 'plusMedia')
+        }
+      } catch (e) {
+        console.warn('gallery mirror for linked media', e)
+        enqueuePending({ table: 'gallery_media', row: { type: type || 'image', url, prompt: title || null, model: 'card-linked' }, plusMedia: true })
       }
-      lastErr = error
-      console.error('character_media insert', error)
-      await new Promise(r => setTimeout(r, 800 * (i + 1)))
+      setCharMedia(prev => [data, ...prev])
+      const key = String(selected.name || '').trim().toLowerCase()
+      if (key) setMediaCounts(prev => ({ ...prev, [key]: (prev[key] || 0) + 1 }))
+      return data
+    } catch (lastErr) {
+      enqueuePending({ table: 'character_media', row, plusMedia: true })
+      throw new Error(
+        (lastErr?.message || 'save failed') +
+        `\n\nQueued for retry on next open. File is safe:\n${url}`
+      )
     }
-    // Storage has the file — surface URL so it is not lost
-    throw new Error(
-      (lastErr?.message || 'save failed') +
-      `\n\nFile is in storage. Link:\n${url}\nImport via Settings → Orphaned Media or paste URL on the card.`
-    )
   }
 
   const runCreateMedia = async () => {
@@ -596,6 +628,131 @@ export default function Cards() {
   }
 
 
+  // --- claim gallery files when linked to cards / character media ---
+  // mode 'card': remove gallery_media row (URL stays on card → not orphaned)
+  // mode 'plusMedia': keep row, put in +media folder (character extra content)
+  const ensurePlusMediaFolderId = async () => {
+    const { data: folders } = await supabase.from('gallery_folders').select('id, name')
+    let folder = (folders || []).find(f => String(f.name || '').trim().toLowerCase() === '+media')
+    if (!folder) {
+      const { data: created, error } = await supabase
+        .from('gallery_folders')
+        .insert([{ name: '+media' }])
+        .select()
+        .single()
+      if (error) throw new Error('Could not create +media folder: ' + error.message)
+      folder = created
+    }
+    return folder.id
+  }
+
+  const claimGalleryMediaByUrl = async (url, mode = 'card') => {
+    if (!url) return
+    try {
+      const { data: rows } = await supabase
+        .from('gallery_media')
+        .select('id, url, type')
+        .eq('url', url)
+      if (!rows?.length) return
+
+      if (mode === 'plusMedia') {
+        const folderId = await ensurePlusMediaFolderId()
+        for (const r of rows) {
+          const key = 'gal_' + r.id
+          // clear any other folder assignment first
+          await supabase.from('folder_items').delete().eq('item_key', key)
+          await supabase.from('folder_items').delete().eq('item_key', String(r.id))
+          await supabase.from('folder_items').upsert(
+            { source: 'gallery_media', item_key: key, folder_id: folderId },
+            { onConflict: 'source,item_key' }
+          )
+        }
+        return
+      }
+
+      // mode === 'card': leave gallery entirely; card/character URL keeps the file
+      for (const r of rows) {
+        const key = 'gal_' + r.id
+        await supabase.from('folder_items').delete().eq('item_key', key)
+        await supabase.from('folder_items').delete().eq('item_key', String(r.id))
+        await supabase.from('folder_items').delete().eq('source', 'gallery_media').eq('item_key', key)
+        await supabase.from('gallery_media').delete().eq('id', r.id)
+      }
+    } catch (err) {
+      console.warn('claimGalleryMediaByUrl', err)
+    }
+  }
+
+  // Persistent queue so failed DB writes retry after refresh / reopen
+  const PENDING_KEY = 'ga_pending_media_saves'
+  const readPending = () => {
+    try { return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]') } catch { return [] }
+  }
+  const writePending = (list) => {
+    try { localStorage.setItem(PENDING_KEY, JSON.stringify(list || [])) } catch {}
+  }
+  const enqueuePending = (entry) => {
+    const list = readPending()
+    // dedupe by url + table
+    const filtered = list.filter(p => !(p.table === entry.table && p.row?.url === entry.row?.url))
+    filtered.push({ ...entry, id: entry.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, attempts: entry.attempts || 0 })
+    writePending(filtered)
+  }
+  const removePending = (id) => {
+    writePending(readPending().filter(p => p.id !== id))
+  }
+
+  const insertWithRetry = async (table, row, maxAttempts = 10) => {
+    let lastErr = null
+    for (let i = 0; i < maxAttempts; i++) {
+      const { data, error } = await supabase.from(table).insert([row]).select().single()
+      if (!error && data) return data
+      lastErr = error
+      if (error && /duplicate|unique/i.test(error.message || '')) {
+        // already there
+        if (row.url) {
+          const { data: existing } = await supabase.from(table).select('*').eq('url', row.url).limit(1).maybeSingle()
+          if (existing) return existing
+        }
+      }
+      await new Promise(r => setTimeout(r, Math.min(4000, 400 * (i + 1))))
+    }
+    throw lastErr || new Error('insert failed after ' + maxAttempts + ' tries')
+  }
+
+  const flushPendingSaves = async () => {
+    const list = readPending()
+    if (!list.length) return
+    const remaining = []
+    for (const item of list) {
+      try {
+        if ((item.attempts || 0) >= 10) {
+          console.warn('dropping pending after 10 attempts', item)
+          continue
+        }
+        if (item.table === 'character_media') {
+          const data = await insertWithRetry('character_media', item.row, 10)
+          if (data && item.row?.url) await claimGalleryMediaByUrl(item.row.url, 'plusMedia')
+        } else if (item.table === 'gallery_media') {
+          await insertWithRetry('gallery_media', item.row, 10)
+          if (item.plusMedia && item.row?.url) await claimGalleryMediaByUrl(item.row.url, 'plusMedia')
+        } else {
+          remaining.push(item)
+          continue
+        }
+        // success → drop
+      } catch (e) {
+        remaining.push({ ...item, attempts: (item.attempts || 0) + 1, lastError: e?.message })
+      }
+    }
+    writePending(remaining)
+  }
+
+  // Retry queued saves after helpers exist (refresh / reopen)
+  useEffect(() => {
+    flushPendingSaves().catch(() => {})
+  }, [])
+
   const loadGalleryPool = async (typeFilter = 'image') => {
     setGalleryPoolLoading(true)
     try {
@@ -653,10 +810,13 @@ export default function Cards() {
       }
       const { error } = await supabase.from('cards').update(patch).eq('id', selected.id)
       if (error) throw new Error(error.message)
+      // Leave gallery — card owns this video URL now
+      await claimGalleryMediaByUrl(videoUrl, 'card')
+      if (poster) await claimGalleryMediaByUrl(poster, 'card')
       setSelected(prev => prev ? { ...prev, ...patch } : prev)
       setCards(prev => prev.map(c => c.id === selected.id ? { ...c, ...patch } : c))
       setView('animated')
-      alert('Front animation attached')
+      alert('Front animation attached (removed from Gallery → lives on card)')
     } catch (err) {
       alert('Attach failed: ' + err.message)
     }
@@ -709,7 +869,7 @@ export default function Cards() {
       if (item?.type === 'video' || item?.type === 'image') {
         setMediaType(item.type)
       }
-      // leave title for user to fill
+      // claim happens when user taps Add (addCharMedia) so cancel is safe
       return
     }
     if (target === 'edit-front' || target === 'edit-back') {
@@ -720,8 +880,12 @@ export default function Cards() {
         : { back_image_url: url }
       const { error } = await supabase.from('cards').update(patch).eq('id', editing.id)
       if (error) { alert('Save error: ' + error.message); return }
+      // Remove from gallery — card section owns it now (storage file stays via card URL)
+      await claimGalleryMediaByUrl(url, 'card')
       setEditing({ ...editing, ...patch })
       if (selected?.id === editing.id) setSelected(prev => prev ? { ...prev, ...patch } : prev)
+      // drop from local gallery picker pool
+      setGalleryPool(prev => (prev || []).filter(g => g.url !== url))
       loadCards()
     }
   }
@@ -852,6 +1016,12 @@ export default function Cards() {
         series_name: (draft.series_name || '').trim() || null,
       }])
       if (error) { alert('Save error: ' + error.message); setGenerating(false); setProgress(''); return }
+
+      // Gallery → card: leave gallery, card owns the URLs (not orphaned)
+      if (fromGallery) {
+        await claimGalleryMediaByUrl(frontUrl, 'card')
+        if (backUrl) await claimGalleryMediaByUrl(backUrl, 'card')
+      }
 
       setShowCreate(false)
       setDraft(null)
