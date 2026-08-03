@@ -200,6 +200,10 @@ export default function Gallery() {
   const [fetchOrphanStatus, setFetchOrphanStatus] = useState('')
   const [editPrompt, setEditPrompt] = useState('')
   const [savingPrompt, setSavingPrompt] = useState(false)
+  const [showResetModal, setShowResetModal] = useState(false)
+  const [resetConfirmText, setResetConfirmText] = useState('')
+  const [resetting, setResetting] = useState(false)
+  const [resetStatus, setResetStatus] = useState('')
 
   useEffect(() => { load() }, [])
 
@@ -211,6 +215,83 @@ export default function Gallery() {
       setEditPrompt('')
     }
   }, [selected?.key, selected?.id, selected?.prompt])
+
+  // Same combined Reset All as Settings (keeps essential folders empty)
+  const ESSENTIAL_FOLDER_NAMES = ['main banner', '+media', 'misc beauties']
+  const isEssentialFolder = (name) =>
+    ESSENTIAL_FOLDER_NAMES.includes(String(name || '').trim().toLowerCase())
+
+  const ensureEssentialFolders = async () => {
+    const wanted = [{ name: 'Main Banner' }, { name: '+media' }, { name: 'Misc Beauties' }]
+    const { data: existing } = await supabase.from('gallery_folders').select('id, name')
+    const have = new Set((existing || []).map(f => String(f.name || '').trim().toLowerCase()))
+    for (const w of wanted) {
+      if (!have.has(w.name.toLowerCase())) {
+        await supabase.from('gallery_folders').insert([{ name: w.name }])
+      }
+    }
+  }
+
+  const runResetAll = async () => {
+    if (resetting) return
+    if (resetConfirmText.trim().toUpperCase() !== 'RESET') {
+      alert('Type RESET to confirm')
+      return
+    }
+    setResetting(true)
+    setResetStatus('Clearing folder contents...')
+    try {
+      await supabase.from('folder_items').delete().neq('item_key', '__never__')
+
+      setResetStatus('Deleting gallery media...')
+      await supabase.from('gallery_media').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+
+      setResetStatus('Deleting chat images/videos...')
+      await supabase.from('messages').delete().in('role', ['image', 'video'])
+
+      setResetStatus('Deleting game media & ownership...')
+      try { await supabase.from('player_cards').delete().neq('id', '00000000-0000-0000-0000-000000000000') } catch {}
+      try { await supabase.from('player_media').delete().neq('id', '00000000-0000-0000-0000-000000000000') } catch {}
+      try { await supabase.from('player_misc').delete().neq('id', '00000000-0000-0000-0000-000000000000') } catch {}
+      try { await supabase.from('character_media').delete().neq('id', '00000000-0000-0000-0000-000000000000') } catch {}
+      try { await supabase.from('misc_items').delete().neq('id', '00000000-0000-0000-0000-000000000000') } catch {}
+      try { await supabase.from('freebies').delete().neq('id', '00000000-0000-0000-0000-000000000000') } catch {}
+
+      setResetStatus('Deleting cards...')
+      await supabase.from('cards').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+
+      setResetStatus('Deleting characters...')
+      await supabase.from('characters').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+
+      setResetStatus('Pruning non-essential folders...')
+      const { data: allFolders } = await supabase.from('gallery_folders').select('id, name')
+      for (const f of allFolders || []) {
+        if (!isEssentialFolder(f.name)) {
+          await supabase.from('gallery_folders').delete().eq('id', f.id)
+        }
+      }
+      await ensureEssentialFolders()
+
+      setResetStatus('Wiping storage files...')
+      const storageRes = await fetch('/api/empty-storage', { method: 'POST' })
+      const storageData = await storageRes.json()
+      if (storageData.error) throw new Error('Storage wipe failed: ' + storageData.error)
+
+      setShowResetModal(false)
+      setResetConfirmText('')
+      setResetStatus('')
+      alert(
+        `Reset complete. Removed ${storageData.deleted ?? '?'} storage file(s).\n` +
+        'Kept empty folders: Main Banner, +media, Misc Beauties.'
+      )
+      setSelected(null)
+      await load()
+    } catch (err) {
+      alert('Reset failed: ' + err.message)
+      setResetStatus('')
+    }
+    setResetting(false)
+  }
 
   // Same as Settings → Import Orphaned Media (scan + import)
   const fetchOrphansIntoGallery = async () => {
@@ -2132,7 +2213,13 @@ export default function Gallery() {
           <button onClick={downloadAll} disabled={bulkBusy} className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 py-2 text-sm font-semibold" title="Download all media">
             ⬇ All
           </button>
-          <button onClick={() => router.push('/settings')} className="bg-red-950 hover:bg-red-900 rounded-full px-3 py-2 text-sm font-semibold text-red-300" title="Reset all data in Settings">
+          <button
+            type="button"
+            onClick={() => { setShowResetModal(true); setResetConfirmText(''); setResetStatus('') }}
+            disabled={resetting}
+            className="bg-red-950 hover:bg-red-900 disabled:opacity-50 rounded-full px-3 py-2 text-sm font-semibold text-red-300"
+            title="Reset all data + storage (keeps Main Banner, +media, Misc Beauties folders)"
+          >
             🗑 Reset
           </button>
           <button onClick={() => setShowT2V(true)} className="bg-gray-800 hover:bg-gray-700 rounded-full px-3 py-2 text-sm font-semibold" title="Video from text">
@@ -2581,6 +2668,52 @@ export default function Gallery() {
             <div className="flex gap-2">
               <button onClick={() => setShowVideo(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
               <button onClick={animate} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Animate</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RESET ALL (same as Settings) */}
+      {showResetModal && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-5 z-[100]">
+          <div className="bg-gray-900 border border-red-900 rounded-2xl p-5 w-full max-w-sm">
+            <h2 className="font-bold text-lg text-red-400 mb-2">Confirm Reset All</h2>
+            <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+              Permanently deletes gallery, chat media, cards, characters, ownership, misc/+media content, and all storage files.
+              <br /><br />
+              Keeps empty folders:{' '}
+              <span className="text-pink-300">Main Banner</span>,{' '}
+              <span className="text-pink-300">+media</span>,{' '}
+              <span className="text-pink-300">Misc Beauties</span>
+              <br /><br />
+              Type <span className="font-mono text-red-300">RESET</span> to confirm.
+            </p>
+            <input
+              autoFocus
+              value={resetConfirmText}
+              onChange={e => setResetConfirmText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') runResetAll() }}
+              placeholder="Type RESET"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-red-500 font-mono"
+            />
+            {resetStatus && <p className="text-xs text-gray-500 mb-3">{resetStatus}</p>}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setShowResetModal(false); setResetConfirmText('') }}
+                disabled={resetting}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={runResetAll}
+                disabled={resetting || resetConfirmText.trim().toUpperCase() !== 'RESET'}
+                className="flex-1 bg-red-900 hover:bg-red-800 disabled:bg-gray-800 disabled:text-gray-600 rounded-lg py-3 font-semibold"
+              >
+                {resetting ? 'Resetting…' : 'Reset All'}
+              </button>
             </div>
           </div>
         </div>

@@ -472,6 +472,27 @@ export default function Settings() {
     setPosterizing(false)
   }
 
+  // Folder names that always survive a full reset (content is cleared; folder rows stay)
+  const ESSENTIAL_FOLDER_NAMES = ['main banner', '+media', 'misc beauties']
+  const isEssentialFolder = (name) =>
+    ESSENTIAL_FOLDER_NAMES.includes(String(name || '').trim().toLowerCase())
+
+  const ensureEssentialFolders = async () => {
+    const wanted = [
+      { name: 'Main Banner' },
+      { name: '+media' },
+      { name: 'Misc Beauties' },
+    ]
+    const { data: existing } = await supabase.from('gallery_folders').select('id, name')
+    const have = new Set((existing || []).map(f => String(f.name || '').trim().toLowerCase()))
+    for (const w of wanted) {
+      if (!have.has(w.name.toLowerCase())) {
+        await supabase.from('gallery_folders').insert([{ name: w.name }])
+      }
+    }
+  }
+
+  // Combined Reset All: wipe content + storage, keep essential empty folders
   const runResetAll = async () => {
     if (resetting) return
     if (resetConfirmText.trim().toUpperCase() !== 'RESET') {
@@ -479,17 +500,28 @@ export default function Settings() {
       return
     }
     setResetting(true)
-    setResetStatus('Deleting folders...')
     setResetResult(null)
     try {
-      await supabase.from('folder_items').delete().neq('item_key', '')
-      await supabase.from('gallery_folders').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      // 1) Clear folder memberships (folders themselves stay)
+      setResetStatus('Clearing folder contents...')
+      await supabase.from('folder_items').delete().neq('item_key', '__never__')
 
+      // 2) Gallery media rows
       setResetStatus('Deleting gallery media...')
       await supabase.from('gallery_media').delete().neq('id', '00000000-0000-0000-0000-000000000000')
 
+      // 3) Chat media
       setResetStatus('Deleting chat images/videos...')
       await supabase.from('messages').delete().in('role', ['image', 'video'])
+
+      // 4) Game / card ecosystem content
+      setResetStatus('Deleting game media & ownership...')
+      try { await supabase.from('player_cards').delete().neq('id', '00000000-0000-0000-0000-000000000000') } catch {}
+      try { await supabase.from('player_media').delete().neq('id', '00000000-0000-0000-0000-000000000000') } catch {}
+      try { await supabase.from('player_misc').delete().neq('id', '00000000-0000-0000-0000-000000000000') } catch {}
+      try { await supabase.from('character_media').delete().neq('id', '00000000-0000-0000-0000-000000000000') } catch {}
+      try { await supabase.from('misc_items').delete().neq('id', '00000000-0000-0000-0000-000000000000') } catch {}
+      try { await supabase.from('freebies').delete().neq('id', '00000000-0000-0000-0000-000000000000') } catch {}
 
       setResetStatus('Deleting cards...')
       await supabase.from('cards').delete().neq('id', '00000000-0000-0000-0000-000000000000')
@@ -497,6 +529,18 @@ export default function Settings() {
       setResetStatus('Deleting characters...')
       await supabase.from('characters').delete().neq('id', '00000000-0000-0000-0000-000000000000')
 
+      // 5) Remove non-essential folders only
+      setResetStatus('Pruning non-essential folders...')
+      const { data: allFolders } = await supabase.from('gallery_folders').select('id, name')
+      for (const f of allFolders || []) {
+        if (!isEssentialFolder(f.name)) {
+          await supabase.from('gallery_folders').delete().eq('id', f.id)
+        }
+      }
+      // Ensure the three keepers exist even if they were missing
+      await ensureEssentialFolders()
+
+      // 6) Wipe storage bucket (all files)
       setResetStatus('Wiping storage files...')
       const storageRes = await fetch('/api/empty-storage', { method: 'POST' })
       const storageData = await storageRes.json()
@@ -506,28 +550,15 @@ export default function Settings() {
       setResetting(false)
       setShowResetModal(false)
       setResetConfirmText('')
-      setResetResult('All data wiped: gallery, chat media, cards, characters, folders, and storage files.')
+      setResetResult(
+        `Reset complete. Removed ${storageData.deleted ?? '?'} storage file(s). ` +
+        'Essential folders kept (empty): Main Banner, +media, Misc Beauties.'
+      )
     } catch (err) {
       setResetting(false)
       setResetStatus('')
       setResetResult('Error: ' + err.message)
     }
-  }
-
-  const emptyStorageBucket = async () => {
-    if (emptyingStorage) return
-    if (!confirm('Delete EVERY file in the character-images storage bucket (including folders)? This cannot be undone.')) return
-    setEmptyingStorage(true)
-    setEmptyStorageResult('Working (server-side)...')
-    try {
-      const res = await fetch('/api/empty-storage', { method: 'POST' })
-      const data = await res.json()
-      if (data.error) setEmptyStorageResult('Error: ' + data.error)
-      else setEmptyStorageResult(`Done. Removed ${data.deleted} file(s) (scanned ${data.scanned}).`)
-    } catch (err) {
-      setEmptyStorageResult('Error: ' + err.message)
-    }
-    setEmptyingStorage(false)
   }
 
   const clearAudio = async () => {
@@ -937,28 +968,17 @@ export default function Settings() {
         )}
       </div>
 
-      <div className="mt-10 border-t border-gray-800 pt-6">
-        <h2 className="font-semibold mb-1">Empty Storage Bucket</h2>
-        <p className="text-xs text-gray-600 mb-3">
-          Force-deletes every file in the character-images bucket, even if the app still
-          thinks they are in use. Use this when orphan scan shows files but the gallery is empty.
-        </p>
-        <button
-          onClick={emptyStorageBucket}
-          disabled={emptyingStorage}
-          className="w-full bg-red-900 hover:bg-red-800 disabled:opacity-50 rounded-lg py-3 font-semibold"
-        >
-          {emptyingStorage ? 'Emptying...' : 'Empty storage bucket'}
-        </button>
-        {emptyStorageResult && <p className="text-xs text-gray-400 mt-3">{emptyStorageResult}</p>}
-      </div>
-
       <div className="mt-10 border-t border-gray-800 pt-6 mb-10">
-        <h2 className="font-semibold mb-1 text-red-400">Reset All Data</h2>
+        <h2 className="font-semibold mb-1 text-red-400">Reset All</h2>
         <p className="text-xs text-gray-600 mb-3">
-          Permanently deletes <strong>everything</strong>: gallery media, chat images/videos,
-          all cards, all characters, all folders, and all files in storage.
-          This cannot be undone.
+          One button for a full wipe: gallery media, chat media, cards, characters, game ownership,
+          misc/+media content, and <strong>all storage files</strong>.
+          <br /><br />
+          <span className="text-gray-400">Keeps these folders (empty):</span>{' '}
+          <span className="text-pink-300">Main Banner</span>,{' '}
+          <span className="text-pink-300">+media</span>,{' '}
+          <span className="text-pink-300">Misc Beauties</span>.
+          Other folders are removed. Content inside every folder is deleted.
         </p>
 
         <button
@@ -966,7 +986,7 @@ export default function Settings() {
           disabled={resetting}
           className="w-full bg-red-950 hover:bg-red-900 disabled:opacity-50 border border-red-800 rounded-lg py-3 font-semibold text-red-300"
         >
-          Wipe everything...
+          Reset all data + storage…
         </button>
 
         {resetResult && <p className="text-xs text-gray-400 mt-3">{resetResult}</p>}
@@ -975,15 +995,18 @@ export default function Settings() {
       {showResetModal && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-5 z-50">
           <div className="bg-gray-900 border border-red-900 rounded-2xl p-5 w-full max-w-sm">
-            <h2 className="font-bold text-lg text-red-400 mb-2">Confirm Full Reset</h2>
+            <h2 className="font-bold text-lg text-red-400 mb-2">Confirm Reset All</h2>
             <p className="text-xs text-gray-400 mb-4 leading-relaxed">
-              This will permanently delete:
-              <br />• All gallery images, videos, 3D models
+              Permanently deletes:
+              <br />• All gallery images / videos
               <br />• All chat images &amp; videos
-              <br />• All cards
-              <br />• All characters
-              <br />• All folders
-              <br />• All storage files
+              <br />• All cards, characters, ownership
+              <br />• Misc Beauties &amp; +media content
+              <br />• All files in storage
+              <br /><br />
+              Keeps empty folders: <span className="text-pink-300">Main Banner</span>,{' '}
+              <span className="text-pink-300">+media</span>,{' '}
+              <span className="text-pink-300">Misc Beauties</span>
               <br /><br />
               Type <span className="font-mono text-red-300">RESET</span> to confirm.
             </p>
@@ -1009,7 +1032,7 @@ export default function Settings() {
                 disabled={resetting || resetConfirmText.trim().toUpperCase() !== 'RESET'}
                 className="flex-1 bg-red-900 hover:bg-red-800 disabled:bg-gray-800 disabled:text-gray-600 rounded-lg py-3 font-semibold"
               >
-                {resetting ? 'Wiping...' : 'Wipe All'}
+                {resetting ? 'Resetting…' : 'Reset All'}
               </button>
             </div>
           </div>
