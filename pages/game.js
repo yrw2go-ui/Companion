@@ -2478,13 +2478,40 @@ export default function Game() {
                       ) : <div className="absolute inset-0 bg-gray-900" />}
                       <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black from-30% via-black/80 to-transparent" />
                       {c.series_name && (
-                        <div className="absolute top-3 inset-x-0 text-center z-[2]">
-                          <span className="text-[10px] text-black font-semibold tracking-[0.15em] uppercase" style={{ fontFamily: 'Georgia, serif', textShadow: '0 0 1px rgba(255,255,255,0.4)' }}>{c.series_name}</span>
+                        <div className="absolute top-3 inset-x-0 text-center z-[2] px-2">
+                          <span
+                            className="text-[10px] text-black font-bold tracking-[0.18em] uppercase"
+                            style={{
+                              fontFamily: 'Georgia, serif',
+                              textShadow: '0 0 4px rgba(255,255,255,0.95), 0 0 10px rgba(255,255,255,0.75), 0 0 18px rgba(255,255,255,0.45)',
+                            }}
+                          >
+                            {String(c.series_name).toUpperCase()}
+                          </span>
                         </div>
                       )}
-                      <div className="absolute inset-x-0 bottom-0 z-[3] p-4 flex flex-col justify-end">
-                        {c.description && <p className="text-[11px] text-gray-200 leading-snug mb-2">{c.description}</p>}
-                        {c.flavor_text && <p className="text-[10px] italic text-gray-400 mb-3 leading-snug">&quot;{c.flavor_text}&quot;</p>}
+                      <div className="absolute inset-x-0 bottom-0 z-[3] p-3 flex flex-col justify-end">
+                        {(c.description || c.flavor_text) && (
+                          <div
+                            className="mb-2 p-2.5"
+                            style={{
+                              background: 'rgba(0,0,0,0.72)',
+                              borderRadius: 10,
+                              boxShadow: '0 0 18px 10px rgba(0,0,0,0.55)',
+                            }}
+                          >
+                            {c.description && (
+                              <p className="text-[11px] text-white leading-snug mb-1.5 last:mb-0" style={{ textAlign: 'justify', textAlignLast: 'center' }}>
+                                {c.description}
+                              </p>
+                            )}
+                            {c.flavor_text && (
+                              <p className="text-[10px] italic text-white/80 leading-snug" style={{ textAlign: 'justify', textAlignLast: 'center' }}>
+                                &quot;{c.flavor_text}&quot;
+                              </p>
+                            )}
+                          </div>
+                        )}
                         {stats.length > 0 && (
                           <div className="space-y-1.5 mb-2">
                             {stats.map((s, i) => (

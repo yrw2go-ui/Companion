@@ -280,9 +280,7 @@ export default function Gallery() {
         let poster_url = null
         if (isVideo) {
           try {
-            if (typeof makePoster === 'function') {
-              poster_url = await makePoster(url)
-            }
+            poster_url = await ensurePosterUrl(url)
           } catch (e) {
             console.warn('poster', e)
           }
@@ -876,6 +874,173 @@ export default function Gallery() {
       alert('Could not read the last frame: ' + err.message)
     }
     setGrabbingFrame(false)
+  }
+
+  // Capture a mid-frame (more reliable than end) and upload as poster JPEG
+  const captureMidFrame = (url) => new Promise((resolve, reject) => {
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.preload = 'auto'
+    video.muted = true
+    video.playsInline = true
+    let settled = false
+    const fail = (msg) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new Error(msg || 'Could not read video frame'))
+    }
+    const cleanup = () => {
+      video.onseeked = null
+      video.onerror = null
+      video.onloadeddata = null
+    }
+    video.onerror = () => fail('Could not load video (CORS or bad URL)')
+    video.onloadeddata = () => {
+      if (!video.duration || !isFinite(video.duration) || video.duration <= 0) {
+        // still try frame 0
+        video.currentTime = 0
+        return
+      }
+      const t = Math.min(Math.max(0.35, video.duration * 0.2), Math.max(0, video.duration - 0.05))
+      video.currentTime = t
+    }
+    video.onseeked = () => {
+      if (settled) return
+      setTimeout(() => {
+        if (settled) return
+        try {
+          const canvas = document.createElement('canvas')
+          const w = video.videoWidth || 720
+          const h = video.videoHeight || 1280
+          canvas.width = w
+          canvas.height = h
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(video, 0, 0, w, h)
+          settled = true
+          cleanup()
+          resolve(canvas.toDataURL('image/jpeg', 0.88))
+        } catch (e) {
+          fail(e.message || 'Canvas blocked (CORS)')
+        }
+      }, 80)
+    }
+    video.src = url
+    video.load()
+  })
+
+  const dataUrlToBlob = (dataUrl) => {
+    const [header, b64] = String(dataUrl).split(',')
+    const mime = (header.match(/data:(.*?);/) || [])[1] || 'image/jpeg'
+    const bin = atob(b64 || '')
+    const arr = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+    return new Blob([arr], { type: mime })
+  }
+
+  const uploadPosterBlob = async (blob) => {
+    const fileName = `poster_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`
+    const { error } = await supabase.storage
+      .from('character-images')
+      .upload(fileName, blob, { contentType: 'image/jpeg', upsert: false })
+    if (error) throw new Error(error.message)
+    const { data: pub } = supabase.storage.from('character-images').getPublicUrl(fileName)
+    if (!pub?.publicUrl) throw new Error('No public URL for poster')
+    return pub.publicUrl
+  }
+
+  // Best-effort poster: lib makePoster → mid-frame capture → last-frame capture
+  const ensurePosterUrl = async (videoUrl) => {
+    if (!videoUrl) return null
+    // 1) shared lib if available
+    try {
+      if (typeof makePoster === 'function') {
+        const p = await makePoster(videoUrl)
+        if (p) return p
+      }
+    } catch (e) {
+      console.warn('makePoster failed', e)
+    }
+    // 2) mid-frame client capture + upload
+    try {
+      const dataUrl = await captureMidFrame(videoUrl)
+      const blob = dataUrlToBlob(dataUrl)
+      return await uploadPosterBlob(blob)
+    } catch (e) {
+      console.warn('mid-frame poster failed', e)
+    }
+    // 3) last-frame helper already in this file
+    try {
+      const dataUrl = await captureLastFrame(videoUrl)
+      const blob = dataUrlToBlob(dataUrl)
+      return await uploadPosterBlob(blob)
+    } catch (e) {
+      console.warn('last-frame poster failed', e)
+    }
+    return null
+  }
+
+  const generatePosterForItem = async (item) => {
+    if (!item || item.type !== 'video' || item.source !== 'gallery_media' || !item.id) {
+      alert('Posters can only be generated for gallery videos')
+      return
+    }
+    setBulkBusy(true)
+    setBulkStatus('Generating poster…')
+    try {
+      const poster = await ensurePosterUrl(item.url)
+      if (!poster) {
+        alert(
+          'Could not capture a frame from this video.\n\n' +
+          'Usually CORS blocks canvas reads. Make sure the storage bucket allows cross-origin reads, or re-upload the video.'
+        )
+        return
+      }
+      const { error } = await supabase.from('gallery_media').update({ poster_url: poster }).eq('id', item.id)
+      if (error) throw new Error(error.message)
+      setMedia(prev => prev.map(m => (m.key === item.key || m.id === item.id ? { ...m, poster_url: poster } : m)))
+      setSelected(prev => (prev && (prev.key === item.key || prev.id === item.id) ? { ...prev, poster_url: poster } : prev))
+      alert('Poster saved')
+    } catch (err) {
+      alert('Poster failed: ' + err.message)
+    }
+    setBulkBusy(false)
+    setBulkStatus('')
+  }
+
+  const backfillMissingPosters = async () => {
+    const list = media.filter(m =>
+      m.source === 'gallery_media' &&
+      m.type === 'video' &&
+      m.id &&
+      m.url &&
+      !m.poster_url
+    )
+    if (!list.length) {
+      alert('All gallery videos already have posters (or none found)')
+      return
+    }
+    if (!confirm(`Generate posters for ${list.length} video(s) missing thumbnails?`)) return
+    setBulkBusy(true)
+    let ok = 0
+    let fail = 0
+    for (let i = 0; i < list.length; i++) {
+      const item = list[i]
+      setBulkStatus(`Poster ${i + 1}/${list.length}…`)
+      try {
+        const poster = await ensurePosterUrl(item.url)
+        if (!poster) { fail++; continue }
+        const { error } = await supabase.from('gallery_media').update({ poster_url: poster }).eq('id', item.id)
+        if (error) { fail++; continue }
+        setMedia(prev => prev.map(m => (m.id === item.id ? { ...m, poster_url: poster } : m)))
+        ok++
+      } catch {
+        fail++
+      }
+    }
+    setBulkBusy(false)
+    setBulkStatus('')
+    alert(`Posters: ${ok} created, ${fail} failed`)
   }
 
   const openVideoEdit = (item) => {
@@ -1941,6 +2106,10 @@ export default function Gallery() {
               className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-900 text-emerald-400 border border-emerald-900">
               🖼 Banner thumbs
             </button>
+            <button type="button" onClick={backfillMissingPosters} disabled={bulkBusy}
+              className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-900 text-amber-300 border border-amber-900 disabled:opacity-40">
+              ▶ Fix video posters
+            </button>
             {activeFolder !== 'all' && activeFolder !== 'unfiled' && (
               <button onClick={() => { const f = folders.find(x => x.id === activeFolder); if (f) deleteFolder(f) }}
                 className="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 text-red-300">
@@ -1985,9 +2154,13 @@ export default function Gallery() {
                   {item.poster_url ? (
                     <img src={item.poster_url} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
-                      <span className="text-3xl text-gray-600">▶</span>
-                    </div>
+                    <video
+                      src={item.url}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="w-full h-full object-cover"
+                    />
                   )}
                   <span className="absolute bottom-1.5 right-1.5 bg-black/70 rounded-full px-2 py-0.5 text-[10px]">▶ video</span>
                 </>
@@ -2669,6 +2842,16 @@ export default function Gallery() {
               <>
 
               </>
+            )}
+
+            {selected.type === 'video' && selected.source === 'gallery_media' && (
+              <button
+                onClick={() => generatePosterForItem(selected)}
+                disabled={bulkBusy}
+                className="w-full bg-amber-900/80 hover:bg-amber-800 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2"
+              >
+                {selected.poster_url ? '↻ Regenerate poster' : '🖼 Generate poster'}
+              </button>
             )}
 
             {selected.type === 'video' && (

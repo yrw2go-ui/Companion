@@ -1077,20 +1077,44 @@ export default function Cards() {
             {card.series_name && (
               <div className={`absolute top-3 inset-x-0 z-[5] text-center px-2`}>
                 <span
-                  className={`text-black font-semibold tracking-[0.15em] uppercase ${big ? 'text-xs' : 'text-[9px]'}`}
-                  style={{ fontFamily: 'Georgia, "Times New Roman", serif', textShadow: '0 0 1px rgba(255,255,255,0.4)' }}
+                  className={`text-black font-bold tracking-[0.18em] uppercase ${big ? 'text-xs' : 'text-[9px]'}`}
+                  style={{
+                    fontFamily: 'Georgia, "Times New Roman", serif',
+                    textShadow: '0 0 4px rgba(255,255,255,0.95), 0 0 10px rgba(255,255,255,0.75), 0 0 18px rgba(255,255,255,0.45)',
+                  }}
                 >
-                  {card.series_name}
+                  {String(card.series_name).toUpperCase()}
                 </span>
               </div>
             )}
 
-            <div className={`absolute inset-0 z-[4] flex flex-col justify-end ${big ? 'p-5' : 'p-3'}`}>
-              {card.description && (
-                <p className={`text-gray-200 leading-snug mb-2 ${big ? 'text-sm' : 'text-[10px]'}`}>{card.description}</p>
-              )}
-              {card.flavor_text && (
-                <p className={`italic text-gray-400 mb-3 leading-snug ${big ? 'text-xs' : 'text-[9px]'}`}>"{card.flavor_text}"</p>
+            <div className={`absolute inset-0 z-[4] flex flex-col justify-end ${big ? 'p-4' : 'p-2.5'}`}>
+              {(card.description || card.flavor_text) && (
+                <div
+                  className={`mb-2 ${big ? 'p-3' : 'p-2'}`}
+                  style={{
+                    background: 'rgba(0,0,0,0.72)',
+                    borderRadius: 10,
+                    boxShadow: '0 0 18px 10px rgba(0,0,0,0.55)',
+                  }}
+                >
+                  {card.description && (
+                    <p
+                      className={`text-white leading-snug mb-1.5 last:mb-0 ${big ? 'text-sm' : 'text-[10px]'}`}
+                      style={{ textAlign: 'justify', textAlignLast: 'center' }}
+                    >
+                      {card.description}
+                    </p>
+                  )}
+                  {card.flavor_text && (
+                    <p
+                      className={`italic text-white/80 leading-snug ${big ? 'text-xs' : 'text-[9px]'}`}
+                      style={{ textAlign: 'justify', textAlignLast: 'center' }}
+                    >
+                      "{card.flavor_text}"
+                    </p>
+                  )}
+                </div>
               )}
               {stats.length > 0 && (
                 <div className={`${big ? 'space-y-2' : 'space-y-1'} mb-2`}>
@@ -1175,6 +1199,49 @@ export default function Cards() {
     if (editing?.id === card.id) {
       setEditing(prev => prev ? { ...prev, series_name: value || '', _seriesNew: false } : prev)
     }
+  }
+
+  // Rename a series across all member cards — does NOT delete media
+  const renameSeriesName = async (oldName) => {
+    const from = (oldName || '').trim()
+    if (!from) return
+    const input = prompt(`Rename series “${from}” to:`, from)
+    if (input == null) return
+    const to = input.trim()
+    if (!to) { alert('Name cannot be empty'); return }
+    if (to === from) return
+    // case-insensitive clash with another series
+    const clash = cards.some(c => {
+      const n = (c.series_name || '').trim()
+      return n && n.toLowerCase() === to.toLowerCase() && n !== from
+    })
+    if (clash && !confirm(`A series named “${to}” already exists. Merge into it?`)) return
+    const members = cards.filter(c => (c.series_name || '').trim() === from)
+    const ids = members.map(c => c.id)
+    for (let i = 0; i < ids.length; i += 50) {
+      const chunk = ids.slice(i, i + 50)
+      const { error } = await supabase.from('cards').update({ series_name: to }).in('id', chunk)
+      if (error) {
+        alert('Could not rename series: ' + error.message)
+        return
+      }
+    }
+    setCards(prev => prev.map(c =>
+      (c.series_name || '').trim() === from ? { ...c, series_name: to } : c
+    ))
+    setSelected(prev =>
+      prev && (prev.series_name || '').trim() === from
+        ? { ...prev, series_name: to }
+        : prev
+    )
+    setEditing(prev =>
+      prev && (prev.series_name || '').trim() === from
+        ? { ...prev, series_name: to }
+        : prev
+    )
+    if (selectedSeries === from) setSelectedSeries(to)
+    if (seriesFilter === from) setSeriesFilter(to)
+    alert(`Renamed “${from}” → “${to}” on ${members.length} card${members.length === 1 ? '' : 's'}.`)
   }
 
   // Remove series label from all cards with this name — does NOT delete cards or media
@@ -1309,8 +1376,18 @@ export default function Cards() {
                   className={`w-full text-left rounded-xl border p-4 transition ${selectedSeries === s.name ? 'border-pink-600 bg-pink-950/30' : 'border-gray-800 bg-gray-900'}`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-bold text-sm">👑 {s.name}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-sm truncate">👑 {s.name}</p>
+                        <button
+                          type="button"
+                          title="Rename series"
+                          onClick={(e) => { e.stopPropagation(); renameSeriesName(s.name) }}
+                          className="shrink-0 text-gray-400 hover:text-pink-300 text-sm px-1"
+                        >
+                          ✎
+                        </button>
+                      </div>
                       <p className="text-[11px] text-gray-400 mt-1">
                         {s.unique} unique card{s.unique === 1 ? '' : 's'}
                         {' · '}{s.published} published
@@ -1321,6 +1398,13 @@ export default function Cards() {
                   </div>
                   {selectedSeries === s.name && (
                     <div className="mt-3 pt-3 border-t border-gray-800 space-y-3" onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => renameSeriesName(s.name)}
+                        className="w-full text-xs text-pink-300 hover:text-pink-200 py-2 border border-pink-900/40 rounded-lg"
+                      >
+                        ✎ Rename series
+                      </button>
                       <p className="text-[10px] tracking-wide uppercase text-gray-500">By rarity</p>
                       <div className="space-y-1">
                         {Object.entries(s.byRarity).map(([r, info]) => (
