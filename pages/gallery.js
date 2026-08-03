@@ -44,13 +44,64 @@ const createMaxRefs = (modelId) =>
 
 // image-to-image (transform) models
 // maxRefs = total images including the main source (1 = single only, 4 = main + 3 extras)
-const I2I_MODELS = [
-  { id: 'alibaba/wan-2.7-pro/image-edit', label: 'Wan 2.7 Pro (edit)', price: null, maxRefs: 4 },
-  { id: 'bytedance/seedream-v5.0-pro/edit', label: 'Seedream 5 Pro (edit)', price: null, maxRefs: 4 },
-  { id: 'xai/grok-imagine-image-quality/edit', label: 'Grok Imagine (edit)', price: 0.01, maxRefs: 1 },
+// sizeMode: 'pixel' → send size "W*H" | 'aspect' → send aspectRatio + resolution
+const I2I_SIZES_PIXEL = [
+  { value: '768*1024', label: 'Portrait 3:4 (768×1024)' },
+  { value: '1024*768', label: 'Landscape 4:3 (1024×768)' },
+  { value: '1024*1024', label: 'Square 1:1' },
+  { value: '576*1024', label: 'Tall 9:16' },
+  { value: '1024*576', label: 'Wide 16:9' },
 ]
-const i2iMaxRefs = (modelId) =>
-  (I2I_MODELS.find(m => m.id === modelId) || I2I_MODELS[0]).maxRefs || 1
+const I2I_SIZES_SEEDREAM = [
+  { value: '1328*1776', label: 'Portrait ~3:4 hi-res (1328×1776)' },
+  { value: '1776*1328', label: 'Landscape ~4:3 hi-res' },
+  { value: '1024*1024', label: 'Square 1:1' },
+  { value: '1440*2560', label: 'Tall 9:16 hi-res' },
+  { value: '2560*1440', label: 'Wide 16:9 hi-res' },
+  { value: '768*1024', label: 'Portrait 3:4' },
+]
+const I2I_SIZES_GROK = [
+  { value: '2:3|2k', label: 'Portrait 2:3 · 2K' },
+  { value: '3:2|2k', label: 'Landscape 3:2 · 2K' },
+  { value: '1:1|2k', label: 'Square 1:1 · 2K' },
+  { value: '9:16|2k', label: 'Tall 9:16 · 2K' },
+  { value: '16:9|2k', label: 'Wide 16:9 · 2K' },
+  { value: '2:3|1k', label: 'Portrait 2:3 · 1K' },
+  { value: '1:1|1k', label: 'Square 1:1 · 1K' },
+]
+const I2I_MODELS = [
+  {
+    id: 'alibaba/wan-2.7-pro/image-edit',
+    label: 'Wan 2.7 Pro (edit)',
+    price: null,
+    maxRefs: 4,
+    sizeMode: 'pixel',
+    sizes: I2I_SIZES_PIXEL,
+    defaultSize: '768*1024',
+  },
+  {
+    id: 'bytedance/seedream-v5.0-pro/edit',
+    label: 'Seedream 5 Pro (edit)',
+    price: null,
+    maxRefs: 4,
+    sizeMode: 'pixel',
+    sizes: I2I_SIZES_SEEDREAM,
+    defaultSize: '1328*1776',
+  },
+  {
+    id: 'xai/grok-imagine-image-quality/edit',
+    label: 'Grok Imagine (edit)',
+    price: 0.01,
+    maxRefs: 1,
+    sizeMode: 'aspect',
+    sizes: I2I_SIZES_GROK,
+    defaultSize: '2:3|2k',
+  },
+]
+const i2iModelOf = (modelId) => I2I_MODELS.find(m => m.id === modelId) || I2I_MODELS[0]
+const i2iMaxRefs = (modelId) => i2iModelOf(modelId).maxRefs || 1
+const i2iSizesOf = (modelId) => i2iModelOf(modelId).sizes || I2I_SIZES_PIXEL
+const i2iDefaultSize = (modelId) => i2iModelOf(modelId).defaultSize || i2iSizesOf(modelId)[0]?.value
 
 // small helper to render a price, or an honest "not listed" note
 const priceLabel = (model, resolution) => {
@@ -127,6 +178,7 @@ export default function Gallery() {
   const [transformRefs, setTransformRefs] = useState([]) // array of gallery items or { url }
   const [transformPrompt, setTransformPrompt] = useState('')
   const [transformModel, setTransformModel] = useState('bytedance/seedream-v5.0-pro/edit')
+  const [transformSize, setTransformSize] = useState(() => i2iDefaultSize('bytedance/seedream-v5.0-pro/edit'))
   const [transforming, setTransforming] = useState(false)
   const [pickRefSlot, setPickRefSlot] = useState(null) // index into transformRefs to fill, or 'next'
 
@@ -1457,11 +1509,13 @@ export default function Gallery() {
   // (kept simple: reset on close/open via the button timeout is enough)
 
   const openTransform = (item) => {
+    const model = 'bytedance/seedream-v5.0-pro/edit'
     setTransformSource(item)
     setTransformRefs([])
     setPickRefSlot(null)
     setTransformPrompt('')
-    setTransformModel('bytedance/seedream-v5.0-pro/edit')
+    setTransformModel(model)
+    setTransformSize(i2iDefaultSize(model))
     setSelected(null)
     setShowTransform(true)
   }
@@ -1473,7 +1527,8 @@ export default function Gallery() {
     setPickRefSlot(null)
     setTransforming(true)
     try {
-      const max = i2iMaxRefs(transformModel)
+      const meta = i2iModelOf(transformModel)
+      const max = meta.maxRefs || 1
       const extraUrls = transformRefs
         .map(r => r?.url)
         .filter(Boolean)
@@ -1490,6 +1545,15 @@ export default function Gallery() {
         if (extraUrls[0]) payload.referenceImageUrl2 = extraUrls[0]
         if (extraUrls[1]) payload.referenceImageUrl3 = extraUrls[1]
         if (extraUrls[2]) payload.referenceImageUrl4 = extraUrls[2]
+      }
+      // Output size / ratio — shape depends on model family
+      const sizeVal = transformSize || meta.defaultSize
+      if (meta.sizeMode === 'aspect' && sizeVal && sizeVal.includes('|')) {
+        const [ar, res] = sizeVal.split('|')
+        payload.aspectRatio = ar
+        payload.resolution = res || '2k'
+      } else if (sizeVal) {
+        payload.size = sizeVal
       }
       const res = await fetch('/api/generate-image', {
         method: 'POST',
@@ -1508,6 +1572,7 @@ export default function Gallery() {
         prompt: transformPrompt,
         source_prompt: transformSource.prompt || null,
         model: transformModel,
+        size: data.size || (meta.sizeMode === 'pixel' ? sizeVal : null),
       }, 'Your transformed image')
       setTransformRefs([])
       load()
@@ -2800,6 +2865,9 @@ export default function Gallery() {
                 setTransformModel(next)
                 const allow = Math.max(0, i2iMaxRefs(next) - 1)
                 setTransformRefs(prev => prev.slice(0, allow))
+                const opts = i2iSizesOf(next)
+                const def = i2iDefaultSize(next)
+                setTransformSize(opts.some(o => o.value === transformSize) ? transformSize : def)
               }}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
             >
@@ -2811,6 +2879,24 @@ export default function Gallery() {
             </select>
             <p className="text-[10px] text-gray-600 mb-3">
               {priceLabel(I2I_MODELS.find(m => m.id === transformModel))}
+            </p>
+
+            <label className="block text-xs text-gray-400 mb-1">Output size / ratio</label>
+            <select
+              value={
+                i2iSizesOf(transformModel).some(o => o.value === transformSize)
+                  ? transformSize
+                  : i2iDefaultSize(transformModel)
+              }
+              onChange={e => setTransformSize(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500"
+            >
+              {i2iSizesOf(transformModel).map(s => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+            <p className="text-[10px] text-gray-600 mb-3">
+              Options depend on the model. Grok uses aspect + resolution; Seedream / Wan use pixel size.
             </p>
 
             <label className="block text-xs text-gray-400 mb-1">What should change?</label>
