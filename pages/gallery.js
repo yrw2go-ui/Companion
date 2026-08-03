@@ -144,6 +144,8 @@ export default function Gallery() {
     } catch { return {} }
   }) // folder_id -> last opened (ms)
   const downloadCounter = useRef(0)
+  // Prefetch blob when detail opens so Download stays in a real user-gesture (Android)
+  const prefetchBlobRef = useRef(null) // { url, blob, mime }
   const [gSort, setGSort] = useState('date_desc')
   const [gSearch, setGSearch] = useState('')
   const [favOnly, setFavOnly] = useState(false)
@@ -269,6 +271,39 @@ export default function Gallery() {
       setEditPrompt('')
     }
   }, [selected?.key, selected?.id, selected?.prompt])
+
+  // Prefetch file bytes when detail opens — fixes "download only works after refresh"
+  // (Android Chrome drops <a download> if click happens after await fetch)
+  useEffect(() => {
+    let cancelled = false
+    prefetchBlobRef.current = null
+    const url = selected?.url
+    if (!url) return undefined
+    ;(async () => {
+      try {
+        const res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' })
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        const buf = await res.arrayBuffer()
+        if (cancelled) return
+        const urlLow = String(url).toLowerCase()
+        let mime = res.headers.get('content-type') || ''
+        if (!mime || mime === 'application/octet-stream') {
+          if (urlLow.includes('.png')) mime = 'image/png'
+          else if (urlLow.includes('.webp')) mime = 'image/webp'
+          else if (urlLow.includes('.gif')) mime = 'image/gif'
+          else if (urlLow.includes('.mp4')) mime = 'video/mp4'
+          else if (urlLow.includes('.webm')) mime = 'video/webm'
+          else if (urlLow.includes('.jpg') || urlLow.includes('.jpeg')) mime = 'image/jpeg'
+          else if (selected?.type === 'video') mime = 'video/mp4'
+          else mime = 'image/jpeg'
+        }
+        prefetchBlobRef.current = { url, blob: new Blob([buf], { type: mime }), mime }
+      } catch (err) {
+        console.warn('prefetch download blob', err)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [selected?.url, selected?.key, selected?.id])
 
   // Same combined Reset All as Settings (keeps essential folders empty)
   const ESSENTIAL_FOLDER_NAMES = ['main banner', '+media', 'misc beauties']
@@ -2133,18 +2168,37 @@ export default function Gallery() {
     return `${base}_${stamp}_${seq}.${ext}`
   }
 
+  const mimeFromName = (fileName, fallback = 'application/octet-stream') => {
+    const n = String(fileName || '').toLowerCase()
+    if (n.endsWith('.png')) return 'image/png'
+    if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'image/jpeg'
+    if (n.endsWith('.webp')) return 'image/webp'
+    if (n.endsWith('.gif')) return 'image/gif'
+    if (n.endsWith('.mp4')) return 'video/mp4'
+    if (n.endsWith('.webm')) return 'video/webm'
+    return fallback
+  }
+
   const triggerBlobDownload = (blob, fileName) => {
-    const objUrl = URL.createObjectURL(blob)
+    // Ensure correct MIME so Android saves as PNG/JPG instead of queuing oddly
+    const mime = blob.type && blob.type !== 'application/octet-stream'
+      ? blob.type
+      : mimeFromName(fileName, 'image/jpeg')
+    const typed = blob.type === mime ? blob : new Blob([blob], { type: mime })
+    const objUrl = URL.createObjectURL(typed)
     const a = document.createElement('a')
     a.href = objUrl
     a.download = fileName
+    a.rel = 'noopener'
     a.style.display = 'none'
     document.body.appendChild(a)
+    // Synchronous click — must stay inside user gesture when possible
     a.click()
+    // Keep blob URL alive longer; Android often finishes write after 1–2s
     setTimeout(() => {
-      a.remove()
-      URL.revokeObjectURL(objUrl)
-    }, 1500)
+      try { a.remove() } catch {}
+      try { URL.revokeObjectURL(objUrl) } catch {}
+    }, 60000)
   }
 
   const downloadItem = async (item) => {
@@ -2153,37 +2207,93 @@ export default function Gallery() {
       return
     }
     const fileName = buildDownloadName(item)
+    const wantMime = mimeFromName(fileName, item.type === 'video' ? 'video/mp4' : 'image/jpeg')
 
-    // 1) Blob + <a download> — real file save, no share sheet
+    // 0) Prefer prefetched blob (still inside user gesture — no await)
+    const pre = prefetchBlobRef.current
+    if (pre?.url === item.url && pre.blob && pre.blob.size > 0) {
+      try {
+        const typed = pre.blob.type && pre.blob.type !== 'application/octet-stream'
+          ? pre.blob
+          : new Blob([pre.blob], { type: wantMime })
+        // File System Access API (Chrome desktop / some Android)
+        if (typeof window.showSaveFilePicker === 'function') {
+          try {
+            const handle = await window.showSaveFilePicker({
+              suggestedName: fileName,
+              types: [{
+                description: 'Media',
+                accept: { [wantMime]: ['.' + fileName.split('.').pop()] },
+              }],
+            })
+            const writable = await handle.createWritable()
+            await writable.write(typed)
+            await writable.close()
+            return
+          } catch (e) {
+            // user cancelled or unsupported — fall through to anchor
+            if (e && e.name === 'AbortError') return
+          }
+        }
+        triggerBlobDownload(typed, fileName)
+        return
+      } catch (err) {
+        console.warn('prefetch download failed', err)
+      }
+    }
+
+    // 1) Fetch now, force MIME, then download
     try {
-      const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'no-store' })
+      const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'no-cache' })
       if (!res.ok) throw new Error('HTTP ' + res.status)
-      const blob = await res.blob()
-      if (!blob || blob.size === 0) throw new Error('Empty file')
+      const buf = await res.arrayBuffer()
+      if (!buf || buf.byteLength === 0) throw new Error('Empty file')
+      let mime = res.headers.get('content-type') || ''
+      if (!mime || mime === 'application/octet-stream') mime = wantMime
+      const blob = new Blob([buf], { type: mime })
+      prefetchBlobRef.current = { url: item.url, blob, mime }
+      if (typeof window.showSaveFilePicker === 'function') {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: fileName,
+            types: [{
+              description: 'Media',
+              accept: { [mime]: ['.' + fileName.split('.').pop()] },
+            }],
+          })
+          const writable = await handle.createWritable()
+          await writable.write(blob)
+          await writable.close()
+          return
+        } catch (e) {
+          if (e && e.name === 'AbortError') return
+        }
+      }
       triggerBlobDownload(blob, fileName)
       return
     } catch (err) {
       console.warn('blob download failed', err)
     }
 
-    // 2) Same-origin style anchor (no share API)
+    // 2) Direct anchor (cross-origin may ignore download attr)
     try {
       const a = document.createElement('a')
       a.href = item.url
       a.download = fileName
       a.rel = 'noopener noreferrer'
+      a.target = '_blank'
       a.style.display = 'none'
       document.body.appendChild(a)
       a.click()
-      setTimeout(() => a.remove(), 500)
+      setTimeout(() => a.remove(), 1000)
       return
     } catch (err) {
       console.warn('anchor download failed', err)
     }
 
-    // 3) Open only if download is impossible (CORS) — not a share sheet
+    // 3) Last resort — open tab so user can long-press Save
     window.open(item.url, '_blank', 'noopener,noreferrer')
-    alert('Could not force a download (storage CORS).\n\nFile opened in a new tab — long-press → Save image/video.')
+    alert('Could not force a download.\n\nFile opened in a new tab — long-press → Save image/video.')
   }
 
   const copyUrl = (val) => {
