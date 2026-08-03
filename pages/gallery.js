@@ -32,13 +32,15 @@ const T2V_PRICE = null
 const VIDEO_EDIT_MODEL = 'kwaivgi/kling-video-o3-pro/video-edit'
 
 const IMAGE_MODELS = [
-  { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux', price: null },
-  { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux', price: null },
-  { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell', price: null },
-  { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream', price: null },
-  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok', price: { '1k': 0.05, '2k': 0.07 } },
+  { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux', price: null, maxRefs: 0 },
+  { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux', price: null, maxRefs: 0 },
+  { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell', price: null, maxRefs: 0 },
+  { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream', price: null, maxRefs: 4 },
+  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok', price: { '1k': 0.05, '2k': 0.07 }, maxRefs: 1 },
 ]
 const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
+const createMaxRefs = (modelId) =>
+  (IMAGE_MODELS.find(m => m.id === modelId) || IMAGE_MODELS[0]).maxRefs || 0
 
 // image-to-image (transform) models
 // maxRefs = total images including the main source (1 = single only, 4 = main + 3 extras)
@@ -105,6 +107,8 @@ export default function Gallery() {
   const [guidance, setGuidance] = useState(3.5)
   const [steps, setSteps] = useState(28)
   const [creating, setCreating] = useState(false)
+  const [createRefs, setCreateRefs] = useState([]) // optional reference images
+  const [pickCreateRef, setPickCreateRef] = useState(null) // 'next' | index
 
   const [showVideo, setShowVideo] = useState(false)
   const [videoSource, setVideoSource] = useState('')
@@ -635,6 +639,8 @@ export default function Gallery() {
     setGuidance(3.5)
     setSteps(28)
     setCreateModel('z-image/turbo')
+    setCreateRefs([])
+    setPickCreateRef(null)
     setShowCreate(true)
   }
 
@@ -648,6 +654,8 @@ export default function Gallery() {
     setGuidance(3.5)
     setSteps(28)
     setCreateModel('z-image/turbo')
+    setCreateRefs([])
+    setPickCreateRef(null)
     setSelected(null)
     setShowCreate(true)
   }
@@ -657,6 +665,8 @@ export default function Gallery() {
     setCreating(true)
     try {
       const fam = imgFamilyOf(createModel)
+      const maxR = createMaxRefs(createModel)
+      const refUrls = createRefs.map(r => r?.url).filter(Boolean).slice(0, maxR)
       const payload = { model: createModel, prompt }
       if (fam === 'grok') {
         payload.aspectRatio = '2:3'; payload.resolution = '2k'
@@ -667,6 +677,13 @@ export default function Gallery() {
       } else {
         payload.size = size; payload.seed = seed || undefined
         payload.negativePrompt = negative; payload.guidance = guidance; payload.steps = steps
+      }
+      if (refUrls.length) {
+        payload.referenceImageUrl = refUrls[0]
+        payload.referenceImageUrls = refUrls
+        if (refUrls[1]) payload.referenceImageUrl2 = refUrls[1]
+        if (refUrls[2]) payload.referenceImageUrl3 = refUrls[2]
+        if (refUrls[3]) payload.referenceImageUrl4 = refUrls[3]
       }
       const res = await fetch('/api/generate-image', {
         method: 'POST',
@@ -694,6 +711,8 @@ export default function Gallery() {
       setShowCreate(false)
       setPrompt('')
       setSeed('')
+      setCreateRefs([])
+      setPickCreateRef(null)
       load()
     } catch (err) {
       alert('Error: ' + err.message)
@@ -2250,19 +2269,65 @@ export default function Gallery() {
       )}
 
       {/* CREATE / REGENERATE */}
-      {showCreate && (
+      {showCreate && (() => {
+        const maxR = createMaxRefs(createModel)
+        const refs = createRefs.slice(0, maxR)
+        return (
         <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-50 overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
             <h2 className="font-bold text-lg mb-3">Create Image</h2>
 
             <label className="block text-xs text-gray-400 mb-1">Model</label>
-            <select value={createModel} onChange={e => setCreateModel(e.target.value)}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500">
-              {IMAGE_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            <select
+              value={createModel}
+              onChange={e => {
+                const next = e.target.value
+                setCreateModel(next)
+                setCreateRefs(prev => prev.slice(0, createMaxRefs(next)))
+              }}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500"
+            >
+              {IMAGE_MODELS.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.label}{m.maxRefs > 0 ? ` · up to ${m.maxRefs} ref${m.maxRefs > 1 ? 's' : ''}` : ''}
+                </option>
+              ))}
             </select>
             <p className="text-[10px] text-gray-600 mb-3">
               {priceLabel(IMAGE_MODELS.find(m => m.id === createModel), '2k')}
             </p>
+
+            {maxR > 0 && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">Reference images (optional)</label>
+                <div className="flex gap-2 mb-2 flex-wrap items-start">
+                  {refs.map((ref, idx) => (
+                    <div key={idx} className="relative">
+                      <img src={ref.url} alt="" className="w-20 h-20 rounded-lg object-cover border border-pink-700" />
+                      <button
+                        type="button"
+                        onClick={() => setCreateRefs(prev => prev.filter((_, i) => i !== idx))}
+                        className="absolute -top-2 -right-2 bg-red-800 text-white text-xs w-5 h-5 rounded-full"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  {refs.length < maxR && (
+                    <button
+                      type="button"
+                      onClick={() => setPickCreateRef('next')}
+                      className="w-20 h-20 rounded-lg border border-dashed border-gray-600 text-[10px] text-gray-400 hover:border-pink-500 hover:text-pink-300"
+                    >
+                      + Ref {refs.length + 1}
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-gray-600 mb-3">
+                  Face, outfit, pose, or style refs. Up to {maxR} for this model.
+                </p>
+              </>
+            )}
 
             <label className="block text-xs text-gray-400 mb-1">Prompt</label>
             <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={5}
@@ -2319,11 +2384,60 @@ export default function Gallery() {
             </select>
 
             <div className="flex gap-2">
-              <button onClick={() => setShowCreate(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button
+                onClick={() => { setShowCreate(false); setCreateRefs([]); setPickCreateRef(null) }}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold"
+              >
+                Cancel
+              </button>
               <button onClick={createImage} disabled={creating} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
                 {creating ? 'Generating...' : 'Generate'}
               </button>
             </div>
+          </div>
+        </div>
+        )
+      })()}
+
+      {/* Pick create reference from gallery */}
+      {pickCreateRef != null && (
+        <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-4 z-[70] overflow-y-auto">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-lg my-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold">Pick reference image</h3>
+              <button type="button" onClick={() => setPickCreateRef(null)} className="text-gray-400 text-lg px-2">✕</button>
+            </div>
+            <div className="grid grid-cols-3 gap-2 max-h-[60vh] overflow-y-auto">
+              {media
+                .filter(m => {
+                  if (m.type !== 'image' || !m.url) return false
+                  if (createRefs.some(r => r?.url === m.url)) return false
+                  return true
+                })
+                .slice(0, 60)
+                .map(m => (
+                  <button
+                    key={m.key || m.id}
+                    type="button"
+                    onClick={() => {
+                      const maxR = createMaxRefs(createModel)
+                      setCreateRefs(prev => {
+                        const next = [...prev]
+                        if (typeof pickCreateRef === 'number' && pickCreateRef >= 0) next[pickCreateRef] = m
+                        else next.push(m)
+                        return next.slice(0, maxR)
+                      })
+                      setPickCreateRef(null)
+                    }}
+                    className="rounded-lg overflow-hidden border border-gray-800 hover:border-pink-500 aspect-[3/4] bg-gray-800"
+                  >
+                    <img src={m.thumbnail_url || m.url} alt="" className="w-full h-full object-cover object-top" />
+                  </button>
+                ))}
+            </div>
+            {media.filter(m => m.type === 'image').length === 0 && (
+              <p className="text-sm text-gray-500 text-center py-8">No images in gallery</p>
+            )}
           </div>
         </div>
       )}

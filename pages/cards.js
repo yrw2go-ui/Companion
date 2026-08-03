@@ -140,11 +140,13 @@ export default function Cards() {
   const [createArtSource, setCreateArtSource] = useState('generate')
   const [draftFrontUrl, setDraftFrontUrl] = useState('')
   const [draftBackUrl, setDraftBackUrl] = useState('')
-  // gallery image picker overlay
-  const [galleryPicker, setGalleryPicker] = useState(null) // 'create-front' | 'create-back' | 'edit-front' | 'edit-back' | null
+  // gallery image/video picker overlay
+  const [galleryPicker, setGalleryPicker] = useState(null) // 'create-front' | 'create-back' | 'edit-front' | 'edit-back' | 'attach-video' | 'char-media' | null
   const [galleryPool, setGalleryPool] = useState([])
   const [galleryPoolLoading, setGalleryPoolLoading] = useState(false)
   const [galleryPoolSearch, setGalleryPoolSearch] = useState('')
+  const [posterBusy, setPosterBusy] = useState(false)
+  const [attachBusy, setAttachBusy] = useState(false)
   const [negative, setNegative] = useState(DEFAULT_NEGATIVE)
   const [size, setSize] = useState('768*1024')
   const [artStyle, setArtStyle] = useState((ART_STYLES.find(s => s.label === 'Studio Beauty') || ART_STYLES[1]).value)
@@ -594,18 +596,21 @@ export default function Cards() {
   }
 
 
-  const loadGalleryPool = async () => {
+  const loadGalleryPool = async (typeFilter = 'image') => {
     setGalleryPoolLoading(true)
     try {
       let rows = []
       let offset = 0
       while (true) {
-        const { data: page, error } = await supabase
+        let q = supabase
           .from('gallery_media')
-          .select('id, url, prompt, type, created_at, thumbnail_url')
-          .eq('type', 'image')
+          .select('id, url, prompt, type, created_at, thumbnail_url, poster_url')
           .order('created_at', { ascending: false })
           .range(offset, offset + 199)
+        if (typeFilter === 'image' || typeFilter === 'video') {
+          q = q.eq('type', typeFilter)
+        }
+        const { data: page, error } = await q
         if (error || !page || page.length === 0) break
         rows = rows.concat(page)
         if (page.length < 200) break
@@ -623,10 +628,66 @@ export default function Cards() {
   const openGalleryPicker = async (target) => {
     setGalleryPicker(target)
     setGalleryPoolSearch('')
-    if (galleryPool.length === 0) await loadGalleryPool()
+    let typeFilter = 'image'
+    if (target === 'attach-video') typeFilter = 'video'
+    if (target === 'char-media') typeFilter = mediaType === 'video' ? 'video' : 'image'
+    await loadGalleryPool(typeFilter)
   }
 
-  const applyGalleryPick = async (url) => {
+  // Attach any video URL as this card's front animation (+ optional poster)
+  const attachFrontAnimation = async (videoUrl, posterUrl = null) => {
+    if (!selected?.id || !videoUrl) return
+    setAttachBusy(true)
+    try {
+      let poster = posterUrl || null
+      if (!poster) {
+        try {
+          if (typeof makePoster === 'function') poster = await makePoster(videoUrl)
+        } catch (e) {
+          console.warn('poster', e)
+        }
+      }
+      const patch = {
+        video_url: videoUrl,
+        poster_url: poster || selected.poster_url || null,
+      }
+      const { error } = await supabase.from('cards').update(patch).eq('id', selected.id)
+      if (error) throw new Error(error.message)
+      setSelected(prev => prev ? { ...prev, ...patch } : prev)
+      setCards(prev => prev.map(c => c.id === selected.id ? { ...c, ...patch } : c))
+      setView('animated')
+      alert('Front animation attached')
+    } catch (err) {
+      alert('Attach failed: ' + err.message)
+    }
+    setAttachBusy(false)
+  }
+
+  // Generate / refresh poster (thumbnail) for the card's current video
+  const generateCardPoster = async () => {
+    if (!selected?.video_url || !selected?.id) {
+      alert('This card has no video yet')
+      return
+    }
+    setPosterBusy(true)
+    try {
+      let poster = null
+      if (typeof makePoster === 'function') {
+        poster = await makePoster(selected.video_url)
+      }
+      if (!poster) throw new Error('Could not capture a frame (CORS or bad video)')
+      const { error } = await supabase.from('cards').update({ poster_url: poster }).eq('id', selected.id)
+      if (error) throw new Error(error.message)
+      setSelected(prev => prev ? { ...prev, poster_url: poster } : prev)
+      setCards(prev => prev.map(c => c.id === selected.id ? { ...c, poster_url: poster } : c))
+      alert('Poster saved')
+    } catch (err) {
+      alert('Poster failed: ' + err.message)
+    }
+    setPosterBusy(false)
+  }
+
+  const applyGalleryPick = async (url, item = null) => {
     if (!galleryPicker || !url) return
     const target = galleryPicker
     setGalleryPicker(null)
@@ -639,21 +700,26 @@ export default function Cards() {
       setDraftBackUrl(url)
       return
     }
+    if (target === 'attach-video') {
+      await attachFrontAnimation(url, item?.poster_url || null)
+      return
+    }
+    if (target === 'char-media') {
+      setMediaUrl(url)
+      if (item?.type === 'video' || item?.type === 'image') {
+        setMediaType(item.type)
+      }
+      // leave title for user to fill
+      return
+    }
     if (target === 'edit-front' || target === 'edit-back') {
       if (!editing) return
       const which = target === 'edit-front' ? 'front' : 'back'
-      const oldUrl = which === 'front' ? editing.image_url : editing.back_image_url
       const patch = which === 'front'
         ? { image_url: url }
         : { back_image_url: url }
       const { error } = await supabase.from('cards').update(patch).eq('id', editing.id)
       if (error) { alert('Save error: ' + error.message); return }
-      // Do not delete gallery source files — only drop card-owned storage if different path
-      if (oldUrl && oldUrl !== url) {
-        const f = oldUrl.split('/character-images/')[1]
-        // only remove if it looks generated for cards (optional — skip to avoid nuking gallery assets)
-        // leave storage alone when swapping from gallery
-      }
       setEditing({ ...editing, ...patch })
       if (selected?.id === editing.id) setSelected(prev => prev ? { ...prev, ...patch } : prev)
       loadCards()
@@ -2113,6 +2179,24 @@ export default function Cards() {
               className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2">
               {animating ? 'Animating...' : selected.video_url ? '🎬 Re-animate Front' : '🎬 Animate Front'}
             </button>
+            <button
+              type="button"
+              onClick={() => openGalleryPicker('attach-video')}
+              disabled={attachBusy}
+              className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2"
+            >
+              {attachBusy ? 'Attaching…' : '🎞 Attach gallery video as front animation'}
+            </button>
+            {selected.video_url && (
+              <button
+                type="button"
+                onClick={generateCardPoster}
+                disabled={posterBusy}
+                className="w-full bg-amber-900/70 hover:bg-amber-800 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2"
+              >
+                {posterBusy ? 'Generating…' : selected.poster_url ? '🖼 Regenerate video poster' : '🖼 Generate video poster'}
+              </button>
+            )}
             <button onClick={() => handleDownload(selected)} disabled={downloading}
               className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2">
               {downloading ? 'Rendering...' : '⬇ Download PNG'}
@@ -2142,13 +2226,23 @@ export default function Cards() {
                   {charMedia.map(m => (
                     <div key={m.id} className="flex gap-2 items-center bg-black/40 rounded-lg p-2">
                       {m.type === 'video' ? (
-                        <video src={m.url} className="w-12 h-12 rounded object-cover" muted />
+                        <video src={m.url} className="w-12 h-12 rounded object-cover" muted playsInline />
                       ) : (
                         <img src={m.url} alt="" className="w-12 h-12 rounded object-cover" />
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="text-xs truncate">{m.title || m.type}</p>
-                        <p className="text-[10px] text-gray-500">{m.unlock_method} · {m.token_cost || 0} tok</p>
+                        <p className="text-[10px] text-gray-500">{m.unlock_method} · ed. {m.edition_size || 300}</p>
+                        {m.type === 'video' && (
+                          <button
+                            type="button"
+                            disabled={attachBusy}
+                            onClick={() => attachFrontAnimation(m.url)}
+                            className="text-[10px] text-pink-300 hover:text-pink-200 mt-0.5 font-semibold"
+                          >
+                            Set as front animation
+                          </button>
+                        )}
                       </div>
                       <button onClick={() => toggleMediaPublish(m)}
                         className={`text-[10px] px-2 py-1 rounded font-semibold ${m.published ? 'bg-emerald-700' : 'bg-gray-700'}`}>
@@ -2164,6 +2258,16 @@ export default function Cards() {
                 className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs mb-2 outline-none focus:border-purple-500" />
               <input value={mediaUrl} onChange={e => setMediaUrl(e.target.value)} placeholder="Media URL (image or video)"
                 className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs mb-2 outline-none focus:border-purple-500" />
+              {mediaUrl ? (
+                <div className="mb-2 flex items-center gap-2">
+                  {mediaType === 'video' ? (
+                    <video src={mediaUrl} className="w-12 h-12 rounded object-cover" muted playsInline />
+                  ) : (
+                    <img src={mediaUrl} alt="" className="w-12 h-12 rounded object-cover" />
+                  )}
+                  <button type="button" onClick={() => setMediaUrl('')} className="text-[10px] text-gray-400 hover:text-white">Clear</button>
+                </div>
+              ) : null}
               <div className="flex gap-2 mb-2">
                 <select value={mediaType} onChange={e => setMediaType(e.target.value)}
                   className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none">
@@ -2184,13 +2288,20 @@ export default function Cards() {
                   ))}
                 </select>
               </div>
+              <button
+                type="button"
+                onClick={() => openGalleryPicker('char-media')}
+                className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold mb-2"
+              >
+                🖼 Pick from gallery
+              </button>
               <button onClick={openCreateMedia}
                 className="w-full bg-pink-600 hover:bg-pink-500 rounded-lg py-2 text-xs font-semibold mb-2">
                 ✦ Create +media from this card
               </button>
               <button onClick={addCharMedia} disabled={mediaBusy}
                 className="w-full bg-pink-900/60 hover:bg-pink-800 disabled:opacity-50 rounded-lg py-2 text-xs font-semibold">
-                {mediaBusy ? 'Saving...' : '+ Paste URL media'}
+                {mediaBusy ? 'Saving...' : mediaUrl ? '+ Add selected media' : '+ Paste URL / pick media'}
               </button>
             </div>
 
@@ -2377,15 +2488,27 @@ export default function Cards() {
         </div>
       )}
 
-      {/* GALLERY IMAGE PICKER */}
+      {/* GALLERY IMAGE / VIDEO PICKER */}
       {galleryPicker && (
         <div className="fixed inset-0 z-[90] bg-black/90 flex items-end sm:items-center justify-center p-0 sm:p-5">
           <div className="bg-gray-950 border border-gray-800 rounded-t-2xl sm:rounded-2xl w-full max-w-lg max-h-[88vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
               <div>
-                <p className="font-bold text-sm">Pick from gallery</p>
+                <p className="font-bold text-sm">
+                  {galleryPicker === 'attach-video'
+                    ? 'Pick video for front animation'
+                    : galleryPicker === 'char-media'
+                      ? `Pick ${mediaType} for character media`
+                      : 'Pick from gallery'}
+                </p>
                 <p className="text-[10px] text-gray-500">
-                  {galleryPicker.includes('front') ? 'Front image' : 'Back image'}
+                  {galleryPicker === 'attach-video'
+                    ? 'Any gallery video → becomes this card’s animated front'
+                    : galleryPicker === 'char-media'
+                      ? 'Fills the URL field — add a title, then save'
+                      : galleryPicker.includes('front')
+                        ? 'Front image'
+                        : 'Back image'}
                 </p>
               </div>
               <button type="button" onClick={() => setGalleryPicker(null)} className="text-gray-400 hover:text-white text-lg px-2">✕</button>
@@ -2400,9 +2523,13 @@ export default function Cards() {
             </div>
             <div className="flex-1 overflow-y-auto px-4 pb-4">
               {galleryPoolLoading ? (
-                <p className="text-center text-gray-500 text-sm py-10">Loading images...</p>
+                <p className="text-center text-gray-500 text-sm py-10">Loading…</p>
               ) : galleryPool.length === 0 ? (
-                <p className="text-center text-gray-500 text-sm py-10">No gallery images found.</p>
+                <p className="text-center text-gray-500 text-sm py-10">
+                  {galleryPicker === 'attach-video' || (galleryPicker === 'char-media' && mediaType === 'video')
+                    ? 'No gallery videos found.'
+                    : 'No gallery images found.'}
+                </p>
               ) : (
                 <div className="grid grid-cols-3 gap-2">
                   {galleryPool
@@ -2415,10 +2542,21 @@ export default function Cards() {
                       <button
                         key={g.id}
                         type="button"
-                        onClick={() => applyGalleryPick(g.url)}
+                        onClick={() => applyGalleryPick(g.url, g)}
                         className="relative aspect-square rounded-lg overflow-hidden bg-gray-900 border border-gray-800 active:scale-95 transition"
                       >
-                        <img src={g.thumbnail_url || g.url} alt="" className="w-full h-full object-cover" />
+                        {g.type === 'video' ? (
+                          g.poster_url || g.thumbnail_url ? (
+                            <img src={g.poster_url || g.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <video src={g.url} muted playsInline preload="metadata" className="w-full h-full object-cover" />
+                          )
+                        ) : (
+                          <img src={g.thumbnail_url || g.url} alt="" className="w-full h-full object-cover" />
+                        )}
+                        {g.type === 'video' && (
+                          <span className="absolute bottom-1 right-1 bg-black/70 rounded px-1 text-[9px]">▶</span>
+                        )}
                       </button>
                     ))}
                 </div>
