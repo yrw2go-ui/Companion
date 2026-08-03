@@ -1177,6 +1177,44 @@ export default function Cards() {
     }
   }
 
+  // Remove series label from all cards with this name — does NOT delete cards or media
+  const deleteSeriesName = async (seriesName) => {
+    const name = (seriesName || '').trim()
+    if (!name) return
+    const members = cards.filter(c => (c.series_name || '').trim() === name)
+    const ok = confirm(
+      `Remove series “${name}” from ${members.length} card${members.length === 1 ? '' : 's'}?\n\n` +
+      `Cards and all media stay. Only the series name / 👑 is cleared.`
+    )
+    if (!ok) return
+    const ids = members.map(c => c.id)
+    // batch update
+    for (let i = 0; i < ids.length; i += 50) {
+      const chunk = ids.slice(i, i + 50)
+      const { error } = await supabase.from('cards').update({ series_name: null }).in('id', chunk)
+      if (error) {
+        alert('Could not clear series: ' + error.message)
+        return
+      }
+    }
+    setCards(prev => prev.map(c =>
+      (c.series_name || '').trim() === name ? { ...c, series_name: null } : c
+    ))
+    setSelected(prev =>
+      prev && (prev.series_name || '').trim() === name
+        ? { ...prev, series_name: '', _seriesNew: false }
+        : prev
+    )
+    setEditing(prev =>
+      prev && (prev.series_name || '').trim() === name
+        ? { ...prev, series_name: '', _seriesNew: false }
+        : prev
+    )
+    if (selectedSeries === name) setSelectedSeries(null)
+    if (seriesFilter === name) setSeriesFilter('all')
+    alert(`Series “${name}” removed from ${members.length} card${members.length === 1 ? '' : 's'}. Media kept.`)
+  }
+
 
   const inputRow = (label, value, onChange, multiline = false, rows = 2) => (
     <>
@@ -1322,6 +1360,13 @@ export default function Cards() {
                         className="w-full text-xs text-pink-400 hover:text-pink-300 py-2"
                       >
                         Show these in card grid →
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteSeriesName(s.name)}
+                        className="w-full text-xs text-red-400 hover:text-red-300 py-2 border border-red-900/40 rounded-lg"
+                      >
+                        Delete series name only (keep cards &amp; media)
                       </button>
                     </div>
                   )}
