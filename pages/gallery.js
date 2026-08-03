@@ -2320,7 +2320,7 @@ export default function Gallery() {
   )
 
   return (
-    <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
+    <div className="min-h-screen bg-black text-white p-5 w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto">
       <Script
         type="module"
         src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"
@@ -2512,7 +2512,7 @@ export default function Gallery() {
       ) : shown.length === 0 ? (
         <p className="text-gray-500 text-sm">Nothing here yet. Tap "+ Create" to make something.</p>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
           {shown.map(item => (
             <button key={item.key} onClick={() => setSelected(item)}
               className="relative aspect-square rounded-xl overflow-hidden bg-gray-900">

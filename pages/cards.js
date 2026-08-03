@@ -1597,7 +1597,7 @@ export default function Cards() {
   )
 
   return (
-    <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
+    <div className="min-h-screen bg-black text-white p-5 w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
@@ -1688,7 +1688,7 @@ export default function Cards() {
                         ))}
                       </div>
                       <p className="text-[10px] tracking-wide uppercase text-gray-500 pt-1">Cards in series</p>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
                         {s.members.map(c => (
                           <button
                             key={c.id}

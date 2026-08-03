@@ -63,7 +63,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <div className="max-w-lg mx-auto px-4 pt-6 pb-24">
+      <div className="w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto px-4 pt-6 pb-24">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Companion</h1>
           <div className="flex items-center gap-2">
@@ -113,7 +113,7 @@ export default function Home() {
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
           <button
             type="button"
             onClick={() => router.push('/gallery')}

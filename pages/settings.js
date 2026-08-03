@@ -607,7 +607,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
+    <div className="min-h-screen bg-black text-white p-5 w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <h1 className="text-xl font-bold">Settings</h1>

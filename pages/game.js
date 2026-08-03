@@ -1618,7 +1618,7 @@ export default function Game() {
     // nothing configured, or video finished and no static image → no gap
     if (!showVideo && !image) return null
     return (
-      <div className="w-full max-w-lg mx-auto px-4 mb-4">
+      <div className="w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto px-4 mb-4">
         <div className="relative w-full aspect-[21/9] rounded-xl overflow-hidden border border-white/10 bg-black">
           {showVideo ? (
             <video
@@ -1649,7 +1649,7 @@ export default function Game() {
   }
 
   const TabHeader = ({ title }) => (
-    <div className="flex items-center justify-between mb-3 px-4 max-w-lg mx-auto">
+    <div className="flex items-center justify-between mb-3 px-4 w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto">
       <button onClick={() => setTab('home')} className="text-sm text-gray-400 hover:text-white">← Back</button>
       <h2 className="font-bold text-lg">{title}</h2>
       <button onClick={() => setTab('home')} className="text-gray-400 hover:text-white text-lg leading-none px-1">✕</button>
@@ -1659,7 +1659,7 @@ export default function Game() {
   return (
     <div className="min-h-screen bg-black text-white overflow-x-hidden">
       <div className="fixed top-0 inset-x-0 z-40 bg-black/70 backdrop-blur border-b border-white/10">
-        <div className="max-w-lg mx-auto flex items-center justify-between px-4 py-3">
+        <div className="w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto flex items-center justify-between px-4 py-3">
           <button
             type="button"
             onClick={() => setShowUserSettings(true)}
@@ -1715,7 +1715,7 @@ export default function Game() {
             </div>
           )}
 
-          <div className="max-w-lg mx-auto px-4 mt-8 space-y-3 pb-24">
+          <div className="w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto px-4 mt-8 space-y-3 pb-24">
             <p className="text-[10px] tracking-[0.25em] uppercase text-gray-500 mb-1">Play</p>
 
             <button onClick={() => openTab('packs')} className="w-full text-left bg-gradient-to-r from-emerald-700 to-teal-800 rounded-2xl p-4 active:scale-[0.98] transition">
@@ -1771,7 +1771,7 @@ export default function Game() {
         <div className="pt-16 pb-24">
           <TabHeader title={tabTitles.collection || "My Collection"} />
           <TabBanner tabKey="collection" />
-          <div className="max-w-lg mx-auto px-4">
+          <div className="w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto px-4">
             <p className="text-xs text-gray-500 mb-4">
               Your Harem · {ownedCards.length} card{ownedCards.length === 1 ? '' : 's'}
               {ownedMedia.length > 0 ? ` · ${ownedMedia.length} media` : ''}
@@ -1913,7 +1913,7 @@ export default function Game() {
         <div className="pt-16 pb-24">
           <TabHeader title={tabTitles.shop || "Shop"} />
           <TabBanner tabKey="shop" />
-          <div className="max-w-lg mx-auto px-4">
+          <div className="w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto px-4">
             <div className="rounded-2xl border border-pink-900/40 bg-pink-950/30 p-4 mb-6">
               <p className="text-xs text-pink-300 font-semibold mb-1">Your balance</p>
               <div className="flex items-center gap-3">
@@ -2064,7 +2064,7 @@ export default function Game() {
         <div className="pt-16 pb-24">
           <TabHeader title={tabTitles.packs || "FREEBIES"} />
           <TabBanner tabKey="packs" />
-          <div className="max-w-lg mx-auto px-4">
+          <div className="w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto px-4">
             <div className="rounded-2xl border border-emerald-900/50 bg-emerald-950/30 p-4 mb-5">
               <p className="font-bold text-lg text-emerald-200">Random Freebies</p>
               <p className="text-xs text-emerald-200/70 mt-1">(while supplies last)</p>
@@ -2143,7 +2143,7 @@ export default function Game() {
         <div className="pt-16 pb-24">
           <TabHeader title={tabTitles.duel || "Duel"} />
           <TabBanner tabKey="duel" />
-          <div className="max-w-lg mx-auto px-4">
+          <div className="w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto px-4">
             <p className="text-center text-gray-500 text-sm">Duel stacks — coming soon.</p>
           </div>
         </div>
@@ -2153,7 +2153,7 @@ export default function Game() {
         <div className="pt-16 pb-24">
           <TabHeader title={tabTitles.shows || 'Shows'} />
           <TabBanner tabKey="shows" />
-          <div className="max-w-lg mx-auto px-4">
+          <div className="w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto px-4">
             {lastShowWinner && (
               <div className="rounded-2xl border border-amber-700/40 bg-gradient-to-br from-amber-950/50 to-gray-900 p-4 mb-5">
                 <p className="text-[10px] tracking-[0.2em] uppercase text-amber-400 mb-2">Last Show Winner</p>
@@ -2869,7 +2869,7 @@ export default function Game() {
       )}
 
       <div className="fixed bottom-0 inset-x-0 bg-black/90 backdrop-blur border-t border-white/10 z-40">
-        <div className="max-w-lg mx-auto grid grid-cols-5 text-center py-2 text-[10px] text-gray-500">
+        <div className="w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto grid grid-cols-5 text-center py-2 text-[10px] text-gray-500">
           <button onClick={() => openTab('home')} className={`py-2 ${tab === 'home' ? 'text-pink-400' : ''}`}>
             <div className="text-lg">🏠</div>{(tabTitles.home || 'Home').split(' ')[0]}
           </button>
