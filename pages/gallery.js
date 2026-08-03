@@ -116,9 +116,11 @@ export default function Gallery() {
 
   const [showTransform, setShowTransform] = useState(false)
   const [transformSource, setTransformSource] = useState(null)
+  const [transformSource2, setTransformSource2] = useState(null) // optional 2nd reference image
   const [transformPrompt, setTransformPrompt] = useState('')
   const [transformModel, setTransformModel] = useState('bytedance/seedream-v5.0-pro/edit')
   const [transforming, setTransforming] = useState(false)
+  const [pickSecondImage, setPickSecondImage] = useState(false)
 
 
   const [showT2V, setShowT2V] = useState(false)
@@ -1105,6 +1107,8 @@ export default function Gallery() {
 
   const openTransform = (item) => {
     setTransformSource(item)
+    setTransformSource2(null)
+    setPickSecondImage(false)
     setTransformPrompt('')
     setTransformModel('bytedance/seedream-v5.0-pro/edit')
     setSelected(null)
@@ -1115,13 +1119,18 @@ export default function Gallery() {
     if (transforming) return
     if (!transformPrompt.trim()) { alert('Describe the change you want'); return }
     setShowTransform(false)
+    setPickSecondImage(false)
     setTransforming(true)
     try {
-      // always pass the chosen edit model explicitly, whichever it is
+      // Primary image + optional second reference (for multi-image edits)
       const payload = {
         prompt: transformPrompt,
         referenceImageUrl: transformSource.url,
         model: transformModel,
+      }
+      if (transformSource2?.url) {
+        payload.referenceImageUrl2 = transformSource2.url
+        payload.referenceImageUrls = [transformSource.url, transformSource2.url]
       }
       const res = await fetch('/api/generate-image', {
         method: 'POST',
@@ -1141,6 +1150,7 @@ export default function Gallery() {
         source_prompt: transformSource.prompt || null,
         model: transformModel,
       }, 'Your transformed image')
+      setTransformSource2(null)
       load()
     } catch (err) {
       alert('Error: ' + err.message)
@@ -2179,7 +2189,40 @@ export default function Gallery() {
               subject and composition. Good for tweaks and for keeping a face consistent. Saves as a new image.
             </p>
 
-            <img src={transformSource.url} alt="" className="w-32 rounded-lg mb-3 border border-gray-700" />
+            <div className="flex gap-3 mb-3 items-start">
+              <div>
+                <p className="text-[10px] text-gray-500 mb-1">Main image</p>
+                <img src={transformSource.url} alt="" className="w-28 rounded-lg border border-gray-700" />
+              </div>
+              {transformSource2?.url ? (
+                <div>
+                  <p className="text-[10px] text-gray-500 mb-1">2nd reference</p>
+                  <div className="relative inline-block">
+                    <img src={transformSource2.url} alt="" className="w-28 rounded-lg border border-pink-700" />
+                    <button
+                      type="button"
+                      onClick={() => setTransformSource2(null)}
+                      className="absolute -top-2 -right-2 bg-red-800 text-white text-xs w-6 h-6 rounded-full"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setPickSecondImage(true)}
+                    className="w-28 h-28 rounded-lg border border-dashed border-gray-600 text-[11px] text-gray-400 hover:border-pink-500 hover:text-pink-300"
+                  >
+                    + 2nd image
+                  </button>
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-gray-600 mb-3">
+              Optional second image (outfit, pose, style, face ref). Supported best by Seedream / Wan multi-ref edits.
+            </p>
 
             <label className="block text-xs text-gray-400 mb-1">Edit Model</label>
             <select value={transformModel} onChange={e => setTransformModel(e.target.value)}
@@ -2196,9 +2239,39 @@ export default function Gallery() {
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500" />
 
             <div className="flex gap-2">
-              <button onClick={() => setShowTransform(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
+              <button onClick={() => { setShowTransform(false); setTransformSource2(null); setPickSecondImage(false) }} className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold">Cancel</button>
               <button onClick={runTransform} className="flex-1 bg-purple-600 hover:bg-purple-700 rounded-lg py-3 font-semibold">Transform</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pick 2nd reference image from gallery images */}
+      {pickSecondImage && (
+        <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-4 z-[70] overflow-y-auto">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-lg my-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold">Pick 2nd reference image</h3>
+              <button type="button" onClick={() => setPickSecondImage(false)} className="text-gray-400 text-lg px-2">✕</button>
+            </div>
+            <div className="grid grid-cols-3 gap-2 max-h-[60vh] overflow-y-auto">
+              {media.filter(m => m.type === 'image' && m.url && m.url !== transformSource?.url).slice(0, 60).map(m => (
+                <button
+                  key={m.key || m.id}
+                  type="button"
+                  onClick={() => {
+                    setTransformSource2(m)
+                    setPickSecondImage(false)
+                  }}
+                  className="rounded-lg overflow-hidden border border-gray-800 hover:border-pink-500 aspect-[3/4] bg-gray-800"
+                >
+                  <img src={m.thumbnail_url || m.url} alt="" className="w-full h-full object-cover object-top" />
+                </button>
+              ))}
+            </div>
+            {media.filter(m => m.type === 'image').length === 0 && (
+              <p className="text-sm text-gray-500 text-center py-8">No other images in gallery</p>
+            )}
           </div>
         </div>
       )}
