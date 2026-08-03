@@ -42,6 +42,30 @@ const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS
 const createMaxRefs = (modelId) =>
   (IMAGE_MODELS.find(m => m.id === modelId) || IMAGE_MODELS[0]).maxRefs || 0
 
+// Same style list as cards — appended to the end of the prompt on create
+const ART_STYLES = [
+  { value: '', label: 'None (use prompt as-is)' },
+  { value: 'Fortnite style 3D character render, Epic Games Fortnite aesthetic, stylized cartoony proportions, clean cel-shaded look, bold outlines, vibrant saturated colors, simplified facial features, game character art, not photorealistic, not realistic skin, Unreal Engine game render style', label: 'Fortnite Style (non-realistic)' },
+  { value: 'stylized 3D game character, anime-influenced proportions, smooth plastic skin shader, bright saturated palette, clean game-ready render, not photorealistic', label: 'Stylized 3D Game Character' },
+  { value: 'anime illustration, clean line art, cel shading, vibrant colors, detailed eyes, not photorealistic, 2D anime style', label: 'Anime Illustration' },
+  { value: 'comic book illustration, bold ink outlines, flat color fills, dynamic pose, graphic novel style, not photorealistic', label: 'Comic Book' },
+  { value: 'editorial fashion photography, professional studio lighting, sharp focus, natural skin texture, high end magazine quality', label: 'Editorial Fashion' },
+  { value: 'natural light portrait photography, soft window light, shallow depth of field, candid feel, realistic skin', label: 'Natural Light Portrait' },
+  { value: 'sports photography, fast shutter, dynamic action, stadium or track setting, crisp detail, athletic', label: 'Sports Action' },
+  { value: 'black and white photography, high contrast monochrome, dramatic shadows, classic film grain', label: 'Black & White' },
+  { value: 'golden hour photography, warm backlight, sun flare, glowing rim light, outdoor', label: 'Golden Hour' },
+  { value: 'street style photography, urban backdrop, candid stride, city environment, documentary feel', label: 'Street Style' },
+  { value: 'studio beauty photography, clean seamless backdrop, soft even lighting, crisp detail, minimal', label: 'Studio Beauty' },
+  { value: 'cinematic film still, anamorphic look, moody colour grade, shallow focus, narrative feel', label: 'Cinematic' },
+  { value: 'analog film photography, 35mm grain, muted colour, slight halation, nostalgic tone', label: 'Film Photography' },
+  { value: 'high fashion runway photography, backstage energy, motion, professional lighting', label: 'Runway' },
+]
+const withStyle = (base, style) => (!style ? base : `${base}, ${style}`)
+const STYLIZED_NEG =
+  'photorealistic, photo, real human, realistic skin pores, DSLR photo, 8k photo, hyperrealistic, uncanny valley'
+const isStylizedArt = (style) =>
+  /fortnite|stylized|anime|comic book|not photorealistic|cel-?shad/i.test(String(style || ''))
+
 // image-to-image (transform) models
 // maxRefs = total images including the main source (1 = single only, 4 = main + 3 extras)
 // sizeMode: 'pixel' → send size "W*H" | 'aspect' → send aspectRatio + resolution
@@ -173,6 +197,9 @@ export default function Gallery() {
   const [lowNoiseLoras, setLowNoiseLoras] = useState('')
 
   const [createModel, setCreateModel] = useState('z-image/turbo')
+  const [createArtStyle, setCreateArtStyle] = useState(
+    (ART_STYLES.find(s => s.label === 'Studio Beauty') || ART_STYLES[0]).value
+  )
 
   const [showTransform, setShowTransform] = useState(false)
   const [transformSource, setTransformSource] = useState(null)
@@ -974,16 +1001,20 @@ export default function Gallery() {
       const fam = imgFamilyOf(createModel)
       const maxR = createMaxRefs(createModel)
       const refUrls = createRefs.map(r => r?.url).filter(Boolean).slice(0, maxR)
-      const payload = { model: createModel, prompt }
+      const finalPrompt = withStyle(prompt.trim(), createArtStyle)
+      const useNeg = isStylizedArt(createArtStyle)
+        ? [negative, STYLIZED_NEG].filter(Boolean).join(', ')
+        : negative
+      const payload = { model: createModel, prompt: finalPrompt }
       if (fam === 'grok') {
         payload.aspectRatio = '2:3'; payload.resolution = '2k'
       } else if (fam === 'seedream') {
         payload.size = '1328*1776'; payload.thinking = 'disabled'
       } else if (fam === 'schnell') {
-        payload.size = size; payload.seed = seed || undefined; payload.negativePrompt = negative
+        payload.size = size; payload.seed = seed || undefined; payload.negativePrompt = useNeg
       } else {
         payload.size = size; payload.seed = seed || undefined
-        payload.negativePrompt = negative; payload.guidance = guidance; payload.steps = steps
+        payload.negativePrompt = useNeg; payload.guidance = guidance; payload.steps = steps
       }
       if (refUrls.length) {
         payload.referenceImageUrl = refUrls[0]
@@ -1007,8 +1038,8 @@ export default function Gallery() {
       await saveWithRetry({
         type: 'image',
         url: data.imageUrl,
-        prompt,
-        negative_prompt: negative,
+        prompt: finalPrompt,
+        negative_prompt: useNeg,
         seed: data.seed,
         size: data.size,
         character_id: charId || null,
@@ -2734,6 +2765,20 @@ export default function Gallery() {
             <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={5}
               placeholder="describe the image..."
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
+
+            <label className="block text-xs text-gray-400 mb-1">Art Style</label>
+            <select
+              value={createArtStyle}
+              onChange={e => setCreateArtStyle(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500"
+            >
+              {ART_STYLES.map(s => (
+                <option key={s.label} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+            <p className="text-[10px] text-gray-600 mb-3">
+              Appended to the end of your prompt on generate. Same list as card creation.
+            </p>
 
             {(imgFamilyOf(createModel) === 'flux' || imgFamilyOf(createModel) === 'schnell') && (
               <>
