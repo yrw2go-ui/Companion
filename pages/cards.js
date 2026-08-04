@@ -610,7 +610,10 @@ export default function Cards() {
 
   const saveEditionSize = async () => {
     if (!selected) return
-    const size = Math.max(1, parseInt(selected.edition_size) || 500)
+    const rarity = String(selected.rarity || '').toLowerCase()
+    const size = rarity === 'mint'
+      ? 1
+      : Math.max(1, parseInt(selected.edition_size, 10) || editionDefaultFor(selected.rarity))
     const { error } = await supabase.from('cards').update({ edition_size: size }).eq('id', selected.id)
     if (error) { alert('Could not save edition size: ' + error.message); return }
     setCards(prev => prev.map(c => c.id === selected.id ? { ...c, edition_size: size } : c))
@@ -2468,17 +2471,26 @@ export default function Cards() {
                 Open “{editing.series_name}” in Series tab →
               </button>
             )}
-            <label className="block text-xs text-gray-400 mb-1">Edition size (print run)</label>
+            <label className="block text-xs text-gray-400 mb-1">How many available (edition size)</label>
             <select
-              value={String(EDITION_QTY_OPTIONS.includes(Number(editing.edition_size)) ? editing.edition_size : 300)}
-              onChange={e => setEditing({ ...editing, edition_size: e.target.value })}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
+              value={String(
+                EDITION_QTY_OPTIONS.includes(Number(editing.edition_size))
+                  ? Number(editing.edition_size)
+                  : editionDefaultFor(editing.rarity)
+              )}
+              onChange={e => setEditing({ ...editing, edition_size: Number(e.target.value) })}
+              disabled={String(editing.rarity || '').toLowerCase() === 'mint'}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500 disabled:opacity-60"
             >
               {EDITION_QTY_OPTIONS.map(n => (
-                <option key={n} value={n}>{n}</option>
+                <option key={n} value={n}>{editionOptionLabel(n)}</option>
               ))}
             </select>
-            <p className="text-[10px] text-gray-600 mb-3 -mt-2">Default 300. Price is set in the Shop.</p>
+            <p className="text-[10px] text-gray-600 mb-3">
+              {String(editing.rarity || '').toLowerCase() === 'mint'
+                ? 'Mint is always 1 of 1.'
+                : `Default for ${rarityLabel(editing.rarity || 'common')}: ${editionDefaultFor(editing.rarity)}. Price is set in the Shop.`}
+            </p>
 
             {isStatless(editing.rarity) ? (
               <p className="text-[11px] text-gray-500 mb-3">
@@ -2677,24 +2689,40 @@ export default function Cards() {
                 <label className="block text-gray-500 mb-1">Available copies (edition size)</label>
                 <div className="flex gap-2">
                   <select
-                    value={String(EDITION_QTY_OPTIONS.includes(Number(selected.edition_size)) ? selected.edition_size : 300)}
-                    onChange={e => setSelected({ ...selected, edition_size: e.target.value })}
-                    className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-500"
+                    value={String(
+                      EDITION_QTY_OPTIONS.includes(Number(selected.edition_size))
+                        ? Number(selected.edition_size)
+                        : editionDefaultFor(selected.rarity)
+                    )}
+                    onChange={e => setSelected({ ...selected, edition_size: Number(e.target.value) })}
+                    disabled={String(selected.rarity || '').toLowerCase() === 'mint'}
+                    className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-500 disabled:opacity-60"
                   >
                     {EDITION_QTY_OPTIONS.map(n => (
-                      <option key={n} value={n}>{n}</option>
+                      <option key={n} value={n}>{editionOptionLabel(n)}</option>
                     ))}
                   </select>
                   <button
                     type="button"
                     onClick={saveEditionSize}
-                    className="bg-purple-700 hover:bg-purple-600 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                    disabled={String(selected.rarity || '').toLowerCase() === 'mint'}
+                    className="bg-purple-700 hover:bg-purple-600 disabled:opacity-50 rounded-lg px-3 py-1.5 text-xs font-semibold"
                   >
                     Save
                   </button>
                 </div>
                 <p className="text-[10px] text-gray-600 mt-1">
-                  How many of this card can exist in the game (e.g. 50 → buyers get 1/50, 2/50…). Default 300. Price is set in the Shop.
+                  {String(selected.rarity || '').toLowerCase() === 'mint'
+                    ? 'Mint is always 1 of 1.'
+                    : (
+                      <>
+                        Default for <span className="text-gray-400 capitalize">{selected.rarity || 'common'}</span>: {editionDefaultFor(selected.rarity)}.
+                        {' '}Buyers get 1/{selected.edition_size || editionDefaultFor(selected.rarity)}, 2/… Price is set in the Shop.
+                      </>
+                    )}
+                </p>
+                <p className="text-[9px] text-gray-600 mt-0.5 leading-relaxed">
+                  Defaults — common 2000 · uncommon 1000 · rare 500 · epic 350 · legendary 250 · ultra elite 150 · after hours 50 · mint 1
                 </p>
               </div>
             </div>
@@ -2822,7 +2850,7 @@ export default function Cards() {
                               className="w-20 bg-black border border-gray-700 rounded-lg px-1 py-1.5 text-xs outline-none"
                             >
                               {EDITION_QTY_OPTIONS.map(n => (
-                                <option key={n} value={n}>{n}</option>
+                                <option key={n} value={n}>{editionOptionLabel(n)}</option>
                               ))}
                             </select>
                           </div>
@@ -2880,7 +2908,7 @@ export default function Cards() {
                   title="Qty available"
                   className="w-20 bg-black border border-gray-700 rounded-lg px-1 py-1.5 text-xs outline-none">
                   {EDITION_QTY_OPTIONS.map(n => (
-                    <option key={n} value={n}>{n}</option>
+                    <option key={n} value={n}>{editionOptionLabel(n)}</option>
                   ))}
                 </select>
               </div>
