@@ -1037,6 +1037,7 @@ export default function Cards() {
 
   const makeCardNumber = async (rarity) => {
     const code = treatOf(rarity).code
+    const rarityLower = String(rarity || '').toLowerCase()
     // fill the lowest unused number for this rarity
     const { data: existing } = await supabase
       .from('cards')
@@ -1045,13 +1046,18 @@ export default function Cards() {
 
     const used = new Set()
     for (const row of existing || []) {
-      const n = parseInt(String(row.card_number || '').split('-')[1])
+      // parse MINT-001 or MINT-001 (1 of 1)
+      const core = String(row.card_number || '').split(' ')[0]
+      const n = parseInt(core.split('-')[1], 10)
       if (!isNaN(n)) used.add(n)
     }
 
     let n = 1
     while (used.has(n)) n++
-    return `${code}-${String(n).padStart(3, '0')}`
+    const base = `${code}-${String(n).padStart(3, '0')}`
+    // Mint cards are always unique 1-of-1 inserts
+    if (rarityLower === 'mint') return `${base} (1 of 1)`
+    return base
   }
 
   const createCard = async () => {
@@ -1094,6 +1100,8 @@ export default function Cards() {
       setProgress('Saving...')
       const rarity = (draft.rarity || 'common').toLowerCase()
       const cardNumber = await makeCardNumber(rarity)
+      // Mint = always 1 of 1 available
+      const editionSize = rarity === 'mint' ? 1 : (parseInt(draft.edition_size, 10) || 300)
 
       const { error } = await supabase.from('cards').insert([{
         name: draft.name || 'Unnamed',
@@ -1111,7 +1119,7 @@ export default function Cards() {
         back_seed: backSeed,
         negative_prompt: fromGallery ? null : negative,
         image_model: fromGallery ? 'gallery' : imageModel,
-        edition_size: parseInt(draft.edition_size) || 300,
+        edition_size: editionSize,
         series_name: (draft.series_name || '').trim() || null,
       }])
       if (error) { alert('Save error: ' + error.message); setGenerating(false); setProgress(''); return }
