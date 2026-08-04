@@ -146,7 +146,13 @@ export default function Game() {
     system: { family: 'system-ui, sans-serif', weight: 800 },
     mono: { family: 'ui-monospace, monospace', weight: 700 },
   }
-  const nameOverlayStyle = (fontId, pos) => {
+  const OVERLAY_SIZES = {
+    md: '0.85rem',
+    lg: '1.1rem',
+    xl: '1.35rem',
+    xxl: '1.65rem',
+  }
+  const nameOverlayStyle = (fontId, pos, sizeId = 'md') => {
     const f = NAME_FONTS[fontId] || NAME_FONTS.impact
     const base = {
       fontFamily: f.family,
@@ -157,22 +163,26 @@ export default function Game() {
       pointerEvents: 'none',
       zIndex: 6,
       position: 'absolute',
-      fontSize: '0.85rem',
+      fontSize: OVERLAY_SIZES[sizeId] || OVERLAY_SIZES.md,
       lineHeight: 1.1,
       maxWidth: '70%',
       padding: '0 6px',
     }
     if (pos === 'h-top-left') return { ...base, top: 8, left: 8 }
+    if (pos === 'h-top-center') return { ...base, top: 8, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', maxWidth: '90%' }
     if (pos === 'h-top-right') return { ...base, top: 8, right: 8, textAlign: 'right' }
     if (pos === 'h-bottom-left') return { ...base, bottom: 8, left: 8 }
+    if (pos === 'h-bottom-center') return { ...base, bottom: 8, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', maxWidth: '90%' }
     if (pos === 'h-bottom-right') return { ...base, bottom: 8, right: 8, textAlign: 'right' }
     if (pos === 'v-upper-left') return { ...base, top: 12, left: 4, writingMode: 'vertical-rl', transform: 'rotate(180deg)', maxWidth: 'none' }
+    if (pos === 'v-mid-left') return { ...base, top: '50%', left: 4, writingMode: 'vertical-rl', transform: 'translateY(-50%) rotate(180deg)', maxWidth: 'none' }
     if (pos === 'v-upper-right') return { ...base, top: 12, right: 4, writingMode: 'vertical-rl', maxWidth: 'none' }
+    if (pos === 'v-mid-right') return { ...base, top: '50%', right: 4, writingMode: 'vertical-rl', transform: 'translateY(-50%)', maxWidth: 'none' }
     return { ...base, top: 8, left: 8 }
   }
-  const NameOverlay = ({ name, font, position }) => {
+  const NameOverlay = ({ name, font, position, size }) => {
     if (!name) return null
-    return <span style={nameOverlayStyle(font, position)}>{name}</span>
+    return <span style={nameOverlayStyle(font, position, size)}>{name}</span>
   }
 
   // Sell back to system (fixed). Mint cannot be sold to system.
@@ -2700,7 +2710,7 @@ export default function Game() {
                 ) : (
                   <img src={mediaUrl} alt="" className="w-full max-h-[55vh] object-contain" />
                 )}
-                <NameOverlay name={m.overlay_name} font={m.overlay_font} position={m.overlay_position} />
+                <NameOverlay name={m.overlay_name} font={m.overlay_font} position={m.overlay_position} size={m.overlay_size || 'md'} />
                 {viewOwned.kind === 'misc' && (
                   <div className="absolute top-2 left-2 bg-black/80 rounded-lg px-2 py-1.5 max-w-[70%] z-[5]">
                     <p className="text-[10px] font-mono text-pink-300">{m.public_id}</p>

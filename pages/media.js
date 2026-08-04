@@ -49,6 +49,7 @@ export default function MediaLibrary() {
   const [editOverlayName, setEditOverlayName] = useState('')
   const [editOverlayFont, setEditOverlayFont] = useState('impact')
   const [editOverlayPos, setEditOverlayPos] = useState('h-top-left')
+  const [editOverlaySize, setEditOverlaySize] = useState('md')
   const [miscSets, setMiscSets] = useState([])
   const [editSetMode, setEditSetMode] = useState('standalone') // standalone | existing | new
   const [editSetId, setEditSetId] = useState('')
@@ -64,15 +65,26 @@ export default function MediaLibrary() {
   ]
   const NAME_POSITIONS = [
     { id: 'h-top-left', label: 'Horizontal · top left' },
+    { id: 'h-top-center', label: 'Horizontal · top middle' },
     { id: 'h-top-right', label: 'Horizontal · top right' },
-    { id: 'v-upper-left', label: 'Vertical · upper left side' },
-    { id: 'v-upper-right', label: 'Vertical · upper right side' },
     { id: 'h-bottom-left', label: 'Horizontal · bottom left' },
+    { id: 'h-bottom-center', label: 'Horizontal · bottom middle' },
     { id: 'h-bottom-right', label: 'Horizontal · bottom right' },
+    { id: 'v-upper-left', label: 'Vertical · upper left side' },
+    { id: 'v-mid-left', label: 'Vertical · left side middle' },
+    { id: 'v-upper-right', label: 'Vertical · upper right side' },
+    { id: 'v-mid-right', label: 'Vertical · right side middle' },
+  ]
+  const NAME_SIZES = [
+    { id: 'md', label: 'Default', fontSize: '0.85rem' },
+    { id: 'lg', label: 'Large', fontSize: '1.1rem' },
+    { id: 'xl', label: 'Extra large', fontSize: '1.35rem' },
+    { id: 'xxl', label: 'Huge', fontSize: '1.65rem' },
   ]
 
-  const nameOverlayStyle = (fontId, pos) => {
+  const nameOverlayStyle = (fontId, pos, sizeId = 'md') => {
     const f = NAME_FONTS.find(x => x.id === fontId) || NAME_FONTS[0]
+    const sz = NAME_SIZES.find(s => s.id === sizeId) || NAME_SIZES[0]
     const base = {
       fontFamily: f.family,
       fontWeight: f.weight,
@@ -82,17 +94,21 @@ export default function MediaLibrary() {
       pointerEvents: 'none',
       zIndex: 6,
       position: 'absolute',
-      fontSize: '0.85rem',
+      fontSize: sz.fontSize,
       lineHeight: 1.1,
       maxWidth: '70%',
       padding: '0 6px',
     }
     if (pos === 'h-top-left') return { ...base, top: 8, left: 8 }
+    if (pos === 'h-top-center') return { ...base, top: 8, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', maxWidth: '90%' }
     if (pos === 'h-top-right') return { ...base, top: 8, right: 8, textAlign: 'right' }
     if (pos === 'h-bottom-left') return { ...base, bottom: 8, left: 8 }
+    if (pos === 'h-bottom-center') return { ...base, bottom: 8, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', maxWidth: '90%' }
     if (pos === 'h-bottom-right') return { ...base, bottom: 8, right: 8, textAlign: 'right' }
-    if (pos === 'v-upper-left') return { ...base, top: 12, left: 4, writingMode: 'vertical-rl', transform: 'rotate(180deg)' }
-    if (pos === 'v-upper-right') return { ...base, top: 12, right: 4, writingMode: 'vertical-rl' }
+    if (pos === 'v-upper-left') return { ...base, top: 12, left: 4, writingMode: 'vertical-rl', transform: 'rotate(180deg)', maxWidth: 'none' }
+    if (pos === 'v-mid-left') return { ...base, top: '50%', left: 4, writingMode: 'vertical-rl', transform: 'translateY(-50%) rotate(180deg)', maxWidth: 'none' }
+    if (pos === 'v-upper-right') return { ...base, top: 12, right: 4, writingMode: 'vertical-rl', maxWidth: 'none' }
+    if (pos === 'v-mid-right') return { ...base, top: '50%', right: 4, writingMode: 'vertical-rl', transform: 'translateY(-50%)', maxWidth: 'none' }
     return { ...base, top: 8, left: 8 }
   }
 
@@ -223,6 +239,7 @@ export default function MediaLibrary() {
     setEditOverlayName(m.overlay_name || m.character_name || '')
     setEditOverlayFont(m.overlay_font || 'impact')
     setEditOverlayPos(m.overlay_position || 'h-top-left')
+    setEditOverlaySize(m.overlay_size || 'md')
     if (kind === 'misc' || kind === 'draft') {
       if (m.set_id && m.misc_sets) {
         setEditSetMode('existing')
@@ -328,6 +345,7 @@ export default function MediaLibrary() {
         overlay_name: overlayName,
         overlay_font: overlayName ? editOverlayFont : null,
         overlay_position: overlayName ? editOverlayPos : null,
+        overlay_size: overlayName ? editOverlaySize : null,
       }]).select('*, misc_sets(id, name, code_prefix)').single()
       if (error) throw new Error(error.message)
       // Auto-file into Gallery → Misc Beauties folder
@@ -378,6 +396,7 @@ export default function MediaLibrary() {
           overlay_name: overlayName,
           overlay_font: overlayName ? editOverlayFont : null,
           overlay_position: overlayName ? editOverlayPos : null,
+          overlay_size: overlayName ? editOverlaySize : null,
         }
         const { data, error } = await supabase
           .from('misc_items')
@@ -405,6 +424,7 @@ export default function MediaLibrary() {
           overlay_name: overlayName,
           overlay_font: overlayName ? editOverlayFont : null,
           overlay_position: overlayName ? editOverlayPos : null,
+          overlay_size: overlayName ? editOverlaySize : null,
         }
         const { data, error } = await supabase
           .from('character_media')
@@ -731,7 +751,11 @@ export default function MediaLibrary() {
               )}
               {/* Name overlay — uses live edit fields */}
               {(editOverlayName || selected.overlay_name) && (
-                <span style={nameOverlayStyle(editOverlayFont || selected.overlay_font, editOverlayPos || selected.overlay_position)}>
+                <span style={nameOverlayStyle(
+                  editOverlayFont || selected.overlay_font,
+                  editOverlayPos || selected.overlay_position,
+                  editOverlaySize || selected.overlay_size || 'md'
+                )}>
                   {editOverlayName || selected.overlay_name}
                 </span>
               )}
@@ -863,13 +887,20 @@ export default function MediaLibrary() {
                 />
                 {editOverlayName.trim() && (
                   <>
+                    <label className="block text-[10px] text-gray-600 mb-1">Font</label>
                     <select value={editOverlayFont} onChange={e => setEditOverlayFont(e.target.value)}
                       className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none">
                       {NAME_FONTS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
                     </select>
+                    <label className="block text-[10px] text-gray-600 mb-1">Position</label>
                     <select value={editOverlayPos} onChange={e => setEditOverlayPos(e.target.value)}
-                      className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+                      className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none">
                       {NAME_POSITIONS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>
+                    <label className="block text-[10px] text-gray-600 mb-1">Text size</label>
+                    <select value={editOverlaySize} onChange={e => setEditOverlaySize(e.target.value)}
+                      className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+                      {NAME_SIZES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                     </select>
                   </>
                 )}

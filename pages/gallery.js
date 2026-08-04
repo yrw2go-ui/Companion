@@ -255,6 +255,7 @@ export default function Gallery() {
   const [miscOverlayName, setMiscOverlayName] = useState('')
   const [miscOverlayFont, setMiscOverlayFont] = useState('impact')
   const [miscOverlayPos, setMiscOverlayPos] = useState('h-top-left')
+  const [miscOverlaySize, setMiscOverlaySize] = useState('md')
   const [showFreebieModal, setShowFreebieModal] = useState(false)
 
   const NAME_FONTS = [
@@ -266,12 +267,23 @@ export default function Gallery() {
   ]
   const NAME_POSITIONS = [
     { id: 'h-top-left', label: 'Horizontal · top left' },
+    { id: 'h-top-center', label: 'Horizontal · top middle' },
     { id: 'h-top-right', label: 'Horizontal · top right' },
-    { id: 'v-upper-left', label: 'Vertical · upper left side' },
-    { id: 'v-upper-right', label: 'Vertical · upper right side' },
     { id: 'h-bottom-left', label: 'Horizontal · bottom left' },
+    { id: 'h-bottom-center', label: 'Horizontal · bottom middle' },
     { id: 'h-bottom-right', label: 'Horizontal · bottom right' },
+    { id: 'v-upper-left', label: 'Vertical · upper left side' },
+    { id: 'v-mid-left', label: 'Vertical · left side middle' },
+    { id: 'v-upper-right', label: 'Vertical · upper right side' },
+    { id: 'v-mid-right', label: 'Vertical · right side middle' },
   ]
+  const NAME_SIZES = [
+    { id: 'md', label: 'Default' },
+    { id: 'lg', label: 'Large' },
+    { id: 'xl', label: 'Extra large' },
+    { id: 'xxl', label: 'Huge' },
+  ]
+  const OVERLAY_SIZE_PX = { md: '0.85rem', lg: '1.1rem', xl: '1.35rem', xxl: '1.65rem' }
   const [freebieTitle, setFreebieTitle] = useState('')
   const [freebieType, setFreebieType] = useState('media') // media | tokens
   const [freebieTokens, setFreebieTokens] = useState('100')
@@ -1990,6 +2002,7 @@ export default function Gallery() {
     setMiscOverlayName('')
     setMiscOverlayFont('impact')
     setMiscOverlayPos('h-top-left')
+    setMiscOverlaySize('md')
     setShowMiscModal(true)
   }
 
@@ -2136,6 +2149,7 @@ export default function Gallery() {
         overlay_name: overlayName,
         overlay_font: overlayName ? miscOverlayFont : null,
         overlay_position: overlayName ? miscOverlayPos : null,
+        overlay_size: overlayName ? miscOverlaySize : null,
       }]).select().single()
       if (iErr) throw new Error(iErr.message)
 
@@ -3838,22 +3852,32 @@ export default function Gallery() {
                 </select>
                 <label className="block text-xs text-gray-400 mb-1">Position</label>
                 <select value={miscOverlayPos} onChange={e => setMiscOverlayPos(e.target.value)}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none">
                   {NAME_POSITIONS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
                 </select>
-                <div className="relative h-28 rounded-xl overflow-hidden bg-gray-800 mb-3 border border-gray-700">
+                <label className="block text-xs text-gray-400 mb-1">Text size</label>
+                <select value={miscOverlaySize} onChange={e => setMiscOverlaySize(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none">
+                  {NAME_SIZES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+                <div className="relative h-36 rounded-xl overflow-hidden bg-gray-800 mb-3 border border-gray-700">
                   <div className="absolute inset-0 opacity-40 bg-gradient-to-br from-pink-900 to-black" />
                   <span
-                    className="absolute text-white text-sm drop-shadow-lg px-2"
+                    className="absolute text-white drop-shadow-lg px-2"
                     style={{
                       fontFamily: (NAME_FONTS.find(f => f.id === miscOverlayFont) || NAME_FONTS[0]).family,
                       fontWeight: (NAME_FONTS.find(f => f.id === miscOverlayFont) || NAME_FONTS[0]).weight,
+                      fontSize: OVERLAY_SIZE_PX[miscOverlaySize] || OVERLAY_SIZE_PX.md,
                       ...(miscOverlayPos === 'h-top-left' ? { top: 8, left: 8 } : {}),
+                      ...(miscOverlayPos === 'h-top-center' ? { top: 8, left: '50%', transform: 'translateX(-50%)', textAlign: 'center' } : {}),
                       ...(miscOverlayPos === 'h-top-right' ? { top: 8, right: 8, textAlign: 'right' } : {}),
                       ...(miscOverlayPos === 'h-bottom-left' ? { bottom: 8, left: 8 } : {}),
+                      ...(miscOverlayPos === 'h-bottom-center' ? { bottom: 8, left: '50%', transform: 'translateX(-50%)', textAlign: 'center' } : {}),
                       ...(miscOverlayPos === 'h-bottom-right' ? { bottom: 8, right: 8, textAlign: 'right' } : {}),
                       ...(miscOverlayPos === 'v-upper-left' ? { top: 12, left: 6, writingMode: 'vertical-rl', transform: 'rotate(180deg)' } : {}),
+                      ...(miscOverlayPos === 'v-mid-left' ? { top: '50%', left: 6, writingMode: 'vertical-rl', transform: 'translateY(-50%) rotate(180deg)' } : {}),
                       ...(miscOverlayPos === 'v-upper-right' ? { top: 12, right: 6, writingMode: 'vertical-rl' } : {}),
+                      ...(miscOverlayPos === 'v-mid-right' ? { top: '50%', right: 6, writingMode: 'vertical-rl', transform: 'translateY(-50%)' } : {}),
                     }}
                   >
                     {miscOverlayName.trim()}
