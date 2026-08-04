@@ -123,6 +123,16 @@ const editionDefaultFor = (rarity) => {
   const key = String(rarity || 'common').toLowerCase()
   return RARITY_EDITION_DEFAULTS[key] ?? 300
 }
+// Dropdown shows number + which rarities use it as default
+const editionOptionLabel = (n) => {
+  const num = Number(n)
+  const rarities = Object.entries(RARITY_EDITION_DEFAULTS)
+    .filter(([, v]) => v === num)
+    .map(([k]) => rarityLabel(k))
+  if (num === 1) return '1 · Mint (1 of 1)'
+  if (rarities.length) return `${num} · ${rarities.join(', ')} default`
+  return String(num)
+}
 
 const emptyDraft = () => ({
   name: '', title: '', description: '', flavor_text: '', rarity: 'common',
@@ -2229,30 +2239,35 @@ export default function Cards() {
                     <> · <button type="button" className="text-pink-400 hover:text-pink-300" onClick={() => { setPageMode('series'); setSelectedSeries(draft.series_name); setShowCreate(false) }}>Open in Series tab</button></>
                   )}
                 </p>
-                <label className="block text-xs text-gray-400 mb-1">Edition size (print run)</label>
+                <label className="block text-xs text-gray-400 mb-1">
+                  How many available (edition size)
+                </label>
                 <select
                   value={String(
                     EDITION_QTY_OPTIONS.includes(Number(draft.edition_size))
-                      ? draft.edition_size
+                      ? Number(draft.edition_size)
                       : editionDefaultFor(draft.rarity)
                   )}
-                  onChange={e => setDraft({ ...draft, edition_size: e.target.value })}
+                  onChange={e => setDraft({ ...draft, edition_size: Number(e.target.value) })}
                   disabled={String(draft.rarity || '').toLowerCase() === 'mint'}
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500 disabled:opacity-60"
                 >
                   {EDITION_QTY_OPTIONS.map(n => (
-                    <option key={n} value={n}>{n}</option>
+                    <option key={n} value={n}>{editionOptionLabel(n)}</option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-600 mb-3">
+                <p className="text-[10px] text-gray-600 mb-1">
                   {String(draft.rarity || '').toLowerCase() === 'mint'
                     ? 'Mint is always 1 of 1.'
                     : (
                       <>
-                        Default for <span className="text-gray-400 capitalize">{draft.rarity || 'common'}</span>: {editionDefaultFor(draft.rarity)}.
-                        {' '}Players get &quot;3 of {draft.edition_size || editionDefaultFor(draft.rarity)}&quot; style numbers. Price is set in the Shop.
+                        Selected rarity default: <span className="text-pink-300 font-semibold">{editionDefaultFor(draft.rarity)}</span>
+                        {' '}({rarityLabel(draft.rarity || 'common')}). Changing rarity auto-fills this.
                       </>
                     )}
+                </p>
+                <p className="text-[9px] text-gray-600 mb-3 leading-relaxed">
+                  Defaults — common 2000 · uncommon 1000 · rare 500 · epic 350 · legendary 250 · ultra elite 150 · after hours 50 · mint 1
                 </p>
 
                 {isStatless(draft.rarity) ? (
