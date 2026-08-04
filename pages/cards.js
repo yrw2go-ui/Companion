@@ -882,6 +882,7 @@ export default function Cards() {
           .select('id, url, prompt, type, created_at, thumbnail_url, poster_url')
           .order('created_at', { ascending: false })
           .range(offset, offset + 199)
+        // 'all' = images + videos (character media picker)
         if (typeFilter === 'image' || typeFilter === 'video') {
           q = q.eq('type', typeFilter)
         }
@@ -890,7 +891,19 @@ export default function Cards() {
         rows = rows.concat(page)
         if (page.length < 200) break
         offset += 200
-        if (offset >= 600) break // soft cap for picker UI
+        if (offset >= 800) break // soft cap for picker UI
+      }
+      // Fallback: treat .mp4/.webm/.mov as video even if type column is wrong
+      rows = rows.map(r => {
+        if (r.type === 'video') return r
+        const u = String(r.url || '').toLowerCase()
+        if (/\.(mp4|webm|mov)(\?|$)/.test(u)) return { ...r, type: 'video' }
+        return r
+      })
+      if (typeFilter === 'video') {
+        rows = rows.filter(r => r.type === 'video')
+      } else if (typeFilter === 'image') {
+        rows = rows.filter(r => r.type !== 'video')
       }
       setGalleryPool(rows)
     } catch (err) {
@@ -905,7 +918,8 @@ export default function Cards() {
     setGalleryPoolSearch('')
     let typeFilter = 'image'
     if (target === 'attach-video') typeFilter = 'video'
-    if (target === 'char-media') typeFilter = mediaType === 'video' ? 'video' : 'image'
+    // Character media: show images AND animations
+    if (target === 'char-media') typeFilter = 'all'
     await loadGalleryPool(typeFilter)
   }
 
@@ -2848,7 +2862,7 @@ export default function Cards() {
                 onClick={() => openGalleryPicker('char-media')}
                 className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold mb-2"
               >
-                🖼 Pick from gallery
+                🖼▶ Pick image or video from gallery
               </button>
               <button onClick={openCreateMedia}
                 className="w-full bg-pink-600 hover:bg-pink-500 rounded-lg py-2 text-xs font-semibold mb-2">
@@ -3053,14 +3067,14 @@ export default function Cards() {
                   {galleryPicker === 'attach-video'
                     ? 'Pick a gallery video'
                     : galleryPicker === 'char-media'
-                      ? `Pick ${mediaType} for character media`
+                      ? 'Pick image or video for character media'
                       : 'Pick from gallery'}
                 </p>
                 <p className="text-[10px] text-gray-500">
                   {galleryPicker === 'attach-video'
                     ? 'After you pick, choose front animation or extra character media'
                     : galleryPicker === 'char-media'
-                      ? 'Fills the URL field — add a title, then save'
+                      ? 'Videos show a ▶ badge. Then add a title and save.'
                       : galleryPicker.includes('front')
                         ? 'Front image'
                         : 'Back image'}
@@ -3081,9 +3095,11 @@ export default function Cards() {
                 <p className="text-center text-gray-500 text-sm py-10">Loading…</p>
               ) : galleryPool.length === 0 ? (
                 <p className="text-center text-gray-500 text-sm py-10">
-                  {galleryPicker === 'attach-video' || (galleryPicker === 'char-media' && mediaType === 'video')
+                  {galleryPicker === 'attach-video'
                     ? 'No gallery videos found.'
-                    : 'No gallery images found.'}
+                    : galleryPicker === 'char-media'
+                      ? 'No gallery images or videos found.'
+                      : 'No gallery images found.'}
                 </p>
               ) : (
                 <div className="grid grid-cols-3 gap-2">
