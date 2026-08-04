@@ -2528,71 +2528,66 @@ export default function Game() {
                       {c.back_image_url ? (
                         <img src={c.back_image_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
                       ) : <div className="absolute inset-0 bg-gray-900" />}
-                      {/* Mint: logo + shimmer only */}
-                      {!isMintRarity(c.rarity) && (
-                        <>
-                          <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black from-30% via-black/80 to-transparent" />
-                          {c.series_name && (
-                            <div className="absolute top-3 inset-x-0 text-center z-[2] px-2">
-                              <span
-                                className="text-[10px] text-black font-bold tracking-[0.18em] uppercase"
-                                style={{
-                                  fontFamily: 'Georgia, serif',
-                                  textShadow: '0 0 4px rgba(255,255,255,0.95), 0 0 10px rgba(255,255,255,0.75), 0 0 18px rgba(255,255,255,0.45)',
-                                }}
-                              >
-                                {String(c.series_name).toUpperCase()}
-                              </span>
-                            </div>
-                          )}
-                          <div className="absolute inset-x-0 bottom-0 z-[3] p-3 flex flex-col justify-end">
-                            {(c.description || c.flavor_text) && (
-                              <div
-                                className="mb-2 p-2.5"
-                                style={{
-                                  background: 'rgba(0,0,0,0.72)',
-                                  borderRadius: 10,
-                                  boxShadow: '0 0 18px 10px rgba(0,0,0,0.55)',
-                                }}
-                              >
-                                {c.description && (
-                                  <p className="text-[11px] text-white leading-snug mb-1.5 last:mb-0" style={{ textAlign: 'justify', textAlignLast: 'center' }}>
-                                    {c.description}
-                                  </p>
-                                )}
-                                {c.flavor_text && (
-                                  <p className="text-[10px] italic text-white/80 leading-snug" style={{ textAlign: 'justify', textAlignLast: 'center' }}>
-                                    &quot;{c.flavor_text}&quot;
-                                  </p>
-                                )}
-                              </div>
+                      <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black from-30% via-black/80 to-transparent" />
+                      {c.series_name && (
+                        <div className="absolute top-3 inset-x-0 text-center z-[2] px-2">
+                          <span
+                            className="text-[10px] text-black font-bold tracking-[0.18em] uppercase"
+                            style={{
+                              fontFamily: 'Georgia, serif',
+                              textShadow: '0 0 4px rgba(255,255,255,0.95), 0 0 10px rgba(255,255,255,0.75), 0 0 18px rgba(255,255,255,0.45)',
+                            }}
+                          >
+                            {String(c.series_name).toUpperCase()}
+                          </span>
+                        </div>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 z-[3] p-3 flex flex-col justify-end">
+                        {(c.description || c.flavor_text) && (
+                          <div
+                            className="mb-2 p-2.5"
+                            style={{
+                              background: 'rgba(0,0,0,0.72)',
+                              borderRadius: 10,
+                              boxShadow: '0 0 18px 10px rgba(0,0,0,0.55)',
+                            }}
+                          >
+                            {c.description && (
+                              <p className="text-[11px] text-white leading-snug mb-1.5 last:mb-0" style={{ textAlign: 'justify', textAlignLast: 'center' }}>
+                                {c.description}
+                              </p>
                             )}
-                            {stats.length > 0 && (
-                              <div className="space-y-1.5 mb-2">
-                                {stats.map((s, i) => (
-                                  <div key={i} className="flex items-center gap-2 text-[9px]">
-                                    <span className="w-16 text-gray-200 truncate uppercase tracking-wide">{s.label}</span>
-                                    <div className="flex-1 bg-white/25 rounded-full h-1">
-                                      <div className="bg-white h-1 rounded-full" style={{ width: `${Math.min(100, Number(s.value) || 0)}%` }} />
-                                    </div>
-                                    <span className="w-6 text-right text-gray-100">{s.value}</span>
-                                  </div>
-                                ))}
-                              </div>
+                            {c.flavor_text && (
+                              <p className="text-[10px] italic text-white/80 leading-snug" style={{ textAlign: 'justify', textAlignLast: 'center' }}>
+                                &quot;{c.flavor_text}&quot;
+                              </p>
                             )}
-                            <div className="flex items-center justify-between pt-2 border-t border-white/15 gap-2">
-                              <span className="font-mono text-[9px] text-gray-400 tracking-widest">{c.card_number || '—'}</span>
-                              {(o.edition_number && o.edition_total) ? (
-                                <span className="text-[10px] text-amber-300 font-semibold tracking-wide shrink-0">{o.edition_number}/{o.edition_total}</span>
-                              ) : null}
-                              <span className="text-[9px] text-gray-300 tracking-widest font-semibold shrink-0">COMP-GA</span>
-                            </div>
                           </div>
-                        </>
-                      )}
-                      {isMintRarity(c.rarity) && (
-                        <img src="/ga-mark.png" alt="" className="absolute bottom-0.5 right-1 z-[20] h-28 w-28 object-contain drop-shadow-lg pointer-events-none" />
-                      )}
+                        )}
+                        {stats.length > 0 && (
+                          <div className="space-y-1.5 mb-2">
+                            {stats.map((s, i) => (
+                              <div key={i} className="flex items-center gap-2 text-[9px]">
+                                <span className="w-16 text-gray-200 truncate uppercase tracking-wide">{s.label}</span>
+                                <div className="flex-1 bg-white/25 rounded-full h-1">
+                                  <div className="bg-white h-1 rounded-full" style={{ width: `${Math.min(100, Number(s.value) || 0)}%` }} />
+                                </div>
+                                <span className="w-6 text-right text-gray-100">{s.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between pt-2 border-t border-white/15 gap-2">
+                          <span className="font-mono text-[9px] text-gray-400 tracking-widest">{c.card_number || '—'}</span>
+                          {(o.edition_number && o.edition_total) ? (
+                            <span className="text-[10px] text-amber-300 font-semibold tracking-wide shrink-0">{o.edition_number}/{o.edition_total}</span>
+                          ) : isMintRarity(c.rarity) ? (
+                            <span className="text-[10px] text-amber-300 font-semibold tracking-wide shrink-0">1/1</span>
+                          ) : null}
+                          <span className="text-[9px] text-gray-300 tracking-widest font-semibold shrink-0">COMP-GA</span>
+                        </div>
+                      </div>
+                      <img src="/ga-mark.png" alt="" className="absolute bottom-0.5 right-1 z-[20] h-28 w-28 object-contain drop-shadow-lg pointer-events-none" />
                     </>
                   ) : (
                     <>
@@ -2617,13 +2612,14 @@ export default function Game() {
                       ) : c.image_url ? (
                         <img src={c.image_url} alt={c.name || ''} className="absolute inset-0 w-full h-full object-cover object-top" />
                       ) : <div className="absolute inset-0 bg-gray-800" />}
-                      {!isMintRarity(c.rarity) && c.series_name && <span className="absolute top-3 left-3 text-lg drop-shadow z-[2]">👑</span>}
-                      {!isMintRarity(c.rarity) && (
-                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10 z-[5]">
-                          <p className="font-bold text-[15px] leading-tight truncate pr-24">{c.name}</p>
-                          {c.title && <p className="text-[10px] text-gray-300 uppercase tracking-[0.12em] mt-0.5 truncate pr-24">{c.title}</p>}
-                        </div>
-                      )}
+                      {c.series_name && <span className="absolute top-3 left-3 text-lg drop-shadow z-[2]">👑</span>}
+                      <div className="absolute top-3 right-3 z-[6] rounded-full bg-black/60 border border-white/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-200">
+                        {c.rarity || 'mint'}
+                      </div>
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10 z-[5]">
+                        <p className="font-bold text-[15px] leading-tight truncate pr-24">{c.name}</p>
+                        {c.title && <p className="text-[10px] text-gray-300 uppercase tracking-[0.12em] mt-0.5 truncate pr-24">{c.title}</p>}
+                      </div>
                       <img src="/ga-mark.png" alt="" className="absolute bottom-0.5 right-1 z-[20] h-28 w-28 object-contain drop-shadow-lg pointer-events-none" />
                     </>
                   )}

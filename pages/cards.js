@@ -1411,22 +1411,20 @@ export default function Cards() {
             ) : (
               <div className="absolute inset-0 bg-gray-900" />
             )}
-            {/* Mint: only logo + holo shimmer — no badge, nameplate, crown */}
-            {!mint && card.series_name && (
+            {/* Same overlays as other rarities + mint edge/shimmer */}
+            {card.series_name && (
               <span
                 className={`absolute top-2 left-2 z-[6] ${big ? 'text-lg' : 'text-sm'} drop-shadow`}
                 title={card.series_name}
               >👑</span>
             )}
-            {!mint && <span className={`badge ${t.badge}`}>{card.rarity}</span>}
-            {!mint && (
-              <div className="nameplate" style={{ zIndex: 8 }}>
-                <div className={`font-bold leading-tight truncate tracking-wide ${big ? 'text-2xl pr-28' : 'text-[15px] pr-20'}`}>{card.name}</div>
-                {card.title && (
-                  <div className={`text-gray-300 truncate uppercase tracking-[0.12em] mt-0.5 ${big ? 'text-xs pr-28' : 'text-[10px] pr-20'}`}>{card.title}</div>
-                )}
-              </div>
-            )}
+            <span className={`badge ${t.badge}`}>{card.rarity}</span>
+            <div className="nameplate" style={{ zIndex: 8 }}>
+              <div className={`font-bold leading-tight truncate tracking-wide ${big ? 'text-2xl pr-28' : 'text-[15px] pr-20'}`}>{card.name}</div>
+              {card.title && (
+                <div className={`text-gray-300 truncate uppercase tracking-[0.12em] mt-0.5 ${big ? 'text-xs pr-28' : 'text-[10px] pr-20'}`}>{card.title}</div>
+              )}
+            </div>
             <img
               src="/ga-mark.png"
               alt=""
@@ -1451,12 +1449,10 @@ export default function Cards() {
             ) : (
               <div className="absolute inset-0 bg-gray-900 flex items-center justify-center text-gray-700 text-[10px]">no back art</div>
             )}
-            {!mint && (
-              <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black from-35% via-black/85 to-transparent" />
-            )}
-            {!mint && <span className={`badge ${t.badge}`}>{card.rarity}</span>}
+            <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black from-35% via-black/85 to-transparent" />
+            <span className={`badge ${t.badge}`}>{card.rarity}</span>
 
-            {!mint && card.series_name && (
+            {card.series_name && (
               <div className={`absolute top-3 inset-x-0 z-[5] text-center px-2`}>
                 <span
                   className={`text-black font-bold tracking-[0.18em] uppercase ${big ? 'text-xs' : 'text-[9px]'}`}
@@ -1470,7 +1466,6 @@ export default function Cards() {
               </div>
             )}
 
-            {!mint && (
             <div className={`absolute inset-0 z-[4] flex flex-col justify-end ${big ? 'p-4' : 'p-2.5'}`}>
               {(card.description || card.flavor_text) && (
                 <div
@@ -1509,15 +1504,11 @@ export default function Cards() {
                 <span className={`text-gray-500 tracking-widest uppercase ${big ? 'text-[11px]' : 'text-[9px]'}`}>COMP-GA</span>
               </div>
             </div>
-            )}
-            {/* Mint back: logo only + shimmer */}
-            {mint && (
-              <img
-                src="/ga-mark.png"
-                alt=""
-                className={`absolute bottom-2 right-1.5 z-[20] object-contain drop-shadow-lg pointer-events-none ${big ? 'h-24 w-24' : 'h-16 w-16'}`}
-              />
-            )}
+            <img
+              src="/ga-mark.png"
+              alt=""
+              className={`absolute bottom-2 right-1.5 z-[20] object-contain drop-shadow-lg pointer-events-none ${big ? 'h-24 w-24' : 'h-16 w-16'}`}
+            />
           </div>
         </div>
       </div>
