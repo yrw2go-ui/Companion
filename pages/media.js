@@ -945,24 +945,17 @@ export default function MediaLibrary() {
 
             {selectedKind === 'character' && (
               <>
-                <div className="grid grid-cols-2 gap-2 mb-2">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Unlock</label>
-                    <select value={editUnlock} onChange={e => setEditUnlock(e.target.value)}
-                      className="w-full bg-black border border-gray-700 rounded-lg px-2 py-2 text-xs outline-none">
-                      <option value="shop">Shop</option>
-                      <option value="pack">Pack</option>
-                      <option value="mine">Mine</option>
-                      <option value="trade">Trade</option>
-                      <option value="battle">Battle</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Cost</label>
-                    <input value={editCost} onChange={e => setEditCost(e.target.value)}
-                      className="w-full bg-black border border-gray-700 rounded-lg px-2 py-2 text-xs outline-none" />
-                  </div>
-                </div>
+                <label className="block text-xs text-gray-500 mb-1">Unlock</label>
+                <select
+                  value={['shop', 'mine', 'both'].includes(editUnlock) ? editUnlock : 'shop'}
+                  onChange={e => setEditUnlock(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-pink-500"
+                >
+                  <option value="shop">Shop</option>
+                  <option value="mine">Mine</option>
+                  <option value="both">Both</option>
+                </select>
+                <p className="text-[10px] text-gray-600 mb-3 -mt-2">Price is set in the Shop. Cost is not edited here.</p>
                 <label className="block text-xs text-gray-500 mb-1">How many available (edition size)</label>
                 <select
                   value={String(
