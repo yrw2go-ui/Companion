@@ -683,18 +683,44 @@ export default function Cards() {
     return folder.id
   }
 
-  // When a card front/back/video is replaced: keep the old file, put it in Gallery,
-  // and leave it unlinked from the card (card already points at the new URL).
+  // Delete a storage object by public URL (posters / thumbs / unused replaces)
+  const deleteStorageByUrl = async (url) => {
+    if (!url) return
+    try {
+      const f = String(url).split('/character-images/')[1]
+      if (!f) return
+      const path = f.split('?')[0]
+      if (!path) return
+      await supabase.storage.from('character-images').remove([path])
+    } catch (err) {
+      console.warn('deleteStorageByUrl', err)
+    }
+  }
+
+  // When a card front/back/video is replaced: keep the old MAIN file, put it in Gallery.
+  // Derivative files (posters, thumbs) should be deleted — not left as orphans.
   const releaseCardMediaToGallery = async (url, { type = 'image', prompt = null, model = 'card-retired' } = {}) => {
     if (!url) return null
     try {
+      // Posters / banner thumbs are never "content" — delete instead of parking in gallery
+      const path = String(url).split('/character-images/')[1]?.split('?')[0] || ''
+      if (path.startsWith('thumb_') || path.startsWith('poster_') || path.includes('/thumb') || path.includes('/poster')) {
+        await deleteStorageByUrl(url)
+        return null
+      }
+
       const { data: existing } = await supabase
         .from('gallery_media')
-        .select('id, url')
+        .select('id, url, thumbnail_url, poster_url')
         .eq('url', url)
         .limit(1)
         .maybeSingle()
-      if (existing?.id) return existing
+      if (existing?.id) {
+        // Drop derivative thumbs for this row if present
+        if (existing.thumbnail_url && existing.thumbnail_url !== url) await deleteStorageByUrl(existing.thumbnail_url)
+        if (existing.poster_url && existing.poster_url !== url) await deleteStorageByUrl(existing.poster_url)
+        return existing
+      }
 
       const row = {
         type: type === 'video' ? 'video' : 'image',
@@ -720,7 +746,7 @@ export default function Cards() {
     try {
       const { data: rows } = await supabase
         .from('gallery_media')
-        .select('id, url, type')
+        .select('id, url, type, thumbnail_url, poster_url')
         .eq('url', url)
       if (!rows?.length) return
 
@@ -739,8 +765,10 @@ export default function Cards() {
         return
       }
 
-      // mode === 'card': leave gallery entirely; card/character URL keeps the file
+      // mode === 'card': leave gallery; keep main URL on card; delete unused thumbs/posters
       for (const r of rows) {
+        if (r.thumbnail_url && r.thumbnail_url !== r.url) await deleteStorageByUrl(r.thumbnail_url)
+        if (r.poster_url && r.poster_url !== r.url) await deleteStorageByUrl(r.poster_url)
         const key = 'gal_' + r.id
         await supabase.from('folder_items').delete().eq('item_key', key)
         await supabase.from('folder_items').delete().eq('item_key', String(r.id))
@@ -889,12 +917,9 @@ export default function Cards() {
           model: 'card-retired',
         })
       }
+      // Old poster is a derivative — delete (do not orphan)
       if (oldPoster && poster && oldPoster !== poster) {
-        await releaseCardMediaToGallery(oldPoster, {
-          type: 'image',
-          prompt: `${selected.name || 'Card'} retired poster`,
-          model: 'card-retired',
-        })
+        await deleteStorageByUrl(oldPoster)
       }
       // New clip leaves gallery — card owns it
       await claimGalleryMediaByUrl(videoUrl, 'card')
@@ -917,6 +942,7 @@ export default function Cards() {
     }
     setPosterBusy(true)
     try {
+      const oldPoster = selected.poster_url
       let poster = null
       if (typeof makePoster === 'function') {
         poster = await makePoster(selected.video_url)
@@ -924,6 +950,8 @@ export default function Cards() {
       if (!poster) throw new Error('Could not capture a frame (CORS or bad video)')
       const { error } = await supabase.from('cards').update({ poster_url: poster }).eq('id', selected.id)
       if (error) throw new Error(error.message)
+      // Delete previous poster file so it does not show up as an orphan
+      if (oldPoster && oldPoster !== poster) await deleteStorageByUrl(oldPoster)
       setSelected(prev => prev ? { ...prev, poster_url: poster } : prev)
       setCards(prev => prev.map(c => c.id === selected.id ? { ...c, poster_url: poster } : c))
       alert('Poster saved')
@@ -1280,12 +1308,9 @@ export default function Cards() {
           model: 'card-retired',
         })
       }
+      // Old poster is derivative — delete so it is not orphaned
       if (selected.poster_url && poster && selected.poster_url !== poster) {
-        await releaseCardMediaToGallery(selected.poster_url, {
-          type: 'image',
-          prompt: `${selected.name || 'Card'} retired poster`,
-          model: 'card-retired',
-        })
+        await deleteStorageByUrl(selected.poster_url)
       }
 
       setSelected({ ...selected, video_url: data.videoUrl, video_prompt: animPrompt, poster_url: poster })
