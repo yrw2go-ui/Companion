@@ -2849,25 +2849,44 @@ export default function Gallery() {
         )
       })()}
 
-      {/* Pick create reference from gallery */}
+      {/* Pick create reference — all images: gallery + cards + chat */}
       {pickCreateRef != null && (
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-4 z-[70] overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-lg my-6">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold">Pick reference image</h3>
               <button type="button" onClick={() => setPickCreateRef(null)} className="text-gray-400 text-lg px-2">✕</button>
             </div>
+            <p className="text-[10px] text-gray-500 mb-2">
+              Gallery, card fronts/backs, and chat images.
+            </p>
+            <input
+              type="search"
+              placeholder="Search name or prompt…"
+              value={gSearch}
+              onChange={e => setGSearch(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-pink-500"
+            />
             <div className="grid grid-cols-3 gap-2 max-h-[60vh] overflow-y-auto">
               {media
                 .filter(m => {
                   if (m.type !== 'image' || !m.url) return false
                   if (createRefs.some(r => r?.url === m.url)) return false
-                  return true
+                  const q = String(gSearch || '').trim().toLowerCase()
+                  if (!q) return true
+                  const hay = [
+                    m.prompt,
+                    m.cardLabel,
+                    m.cardSide,
+                    m.source,
+                    m.name,
+                    m.title,
+                  ].filter(Boolean).join(' ').toLowerCase()
+                  return hay.includes(q)
                 })
-                .slice(0, 60)
                 .map(m => (
                   <button
-                    key={m.key || m.id}
+                    key={m.key || m.id || m.url}
                     type="button"
                     onClick={() => {
                       const maxR = createMaxRefs(createModel)
@@ -2879,14 +2898,24 @@ export default function Gallery() {
                       })
                       setPickCreateRef(null)
                     }}
-                    className="rounded-lg overflow-hidden border border-gray-800 hover:border-pink-500 aspect-[3/4] bg-gray-800"
+                    className="relative rounded-lg overflow-hidden border border-gray-800 hover:border-pink-500 aspect-[3/4] bg-gray-800"
                   >
-                    <img src={m.thumbnail_url || m.url} alt="" className="w-full h-full object-cover object-top" />
+                    <img src={m.thumbnail_url || m.poster_url || m.url} alt="" className="w-full h-full object-cover object-top" />
+                    {m.source === 'cards' && (
+                      <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] text-pink-200 px-1 py-0.5 truncate">
+                        Card · {m.cardLabel || ''} {m.cardSide || ''}
+                      </span>
+                    )}
+                    {m.source === 'messages' && (
+                      <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] text-gray-300 px-1 py-0.5">
+                        Chat
+                      </span>
+                    )}
                   </button>
                 ))}
             </div>
-            {media.filter(m => m.type === 'image').length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-8">No images in gallery</p>
+            {media.filter(m => m.type === 'image' && m.url).length === 0 && (
+              <p className="text-sm text-gray-500 text-center py-8">No images available</p>
             )}
           </div>
         </div>
@@ -3136,26 +3165,45 @@ export default function Gallery() {
         )
       })()}
 
-      {/* Pick extra reference image from gallery */}
+      {/* Pick extra reference — gallery + cards + chat */}
       {pickRefSlot != null && (
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-4 z-[70] overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-lg my-6">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold">Pick reference image</h3>
               <button type="button" onClick={() => setPickRefSlot(null)} className="text-gray-400 text-lg px-2">✕</button>
             </div>
+            <p className="text-[10px] text-gray-500 mb-2">
+              Gallery, card fronts/backs, and chat images.
+            </p>
+            <input
+              type="search"
+              placeholder="Search name or prompt…"
+              value={gSearch}
+              onChange={e => setGSearch(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-pink-500"
+            />
             <div className="grid grid-cols-3 gap-2 max-h-[60vh] overflow-y-auto">
               {media
                 .filter(m => {
                   if (m.type !== 'image' || !m.url) return false
                   if (m.url === transformSource?.url) return false
                   if (transformRefs.some(r => r?.url === m.url)) return false
-                  return true
+                  const q = String(gSearch || '').trim().toLowerCase()
+                  if (!q) return true
+                  const hay = [
+                    m.prompt,
+                    m.cardLabel,
+                    m.cardSide,
+                    m.source,
+                    m.name,
+                    m.title,
+                  ].filter(Boolean).join(' ').toLowerCase()
+                  return hay.includes(q)
                 })
-                .slice(0, 60)
                 .map(m => (
                   <button
-                    key={m.key || m.id}
+                    key={m.key || m.id || m.url}
                     type="button"
                     onClick={() => {
                       const maxExtra = Math.max(0, i2iMaxRefs(transformModel) - 1)
@@ -3170,14 +3218,24 @@ export default function Gallery() {
                       })
                       setPickRefSlot(null)
                     }}
-                    className="rounded-lg overflow-hidden border border-gray-800 hover:border-pink-500 aspect-[3/4] bg-gray-800"
+                    className="relative rounded-lg overflow-hidden border border-gray-800 hover:border-pink-500 aspect-[3/4] bg-gray-800"
                   >
-                    <img src={m.thumbnail_url || m.url} alt="" className="w-full h-full object-cover object-top" />
+                    <img src={m.thumbnail_url || m.poster_url || m.url} alt="" className="w-full h-full object-cover object-top" />
+                    {m.source === 'cards' && (
+                      <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] text-pink-200 px-1 py-0.5 truncate">
+                        Card · {m.cardLabel || ''} {m.cardSide || ''}
+                      </span>
+                    )}
+                    {m.source === 'messages' && (
+                      <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] text-gray-300 px-1 py-0.5">
+                        Chat
+                      </span>
+                    )}
                   </button>
                 ))}
             </div>
-            {media.filter(m => m.type === 'image').length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-8">No other images in gallery</p>
+            {media.filter(m => m.type === 'image' && m.url).length === 0 && (
+              <p className="text-sm text-gray-500 text-center py-8">No other images available</p>
             )}
           </div>
         </div>
