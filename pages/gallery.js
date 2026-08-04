@@ -976,6 +976,7 @@ export default function Gallery() {
           published: !!c.published,
           type: 'video',
           url: c.video_url,
+          poster_url: c.poster_url || null,
           seed: null,
           prompt: c.video_prompt ?? null,
           negative_prompt: null,
@@ -1371,8 +1372,12 @@ export default function Gallery() {
   }
 
   const generatePosterForItem = async (item) => {
-    if (!item || item.type !== 'video' || item.source !== 'gallery_media' || !item.id) {
-      alert('Posters can only be generated for gallery videos')
+    if (!item || item.type !== 'video' || !item.url) {
+      alert('Select a video first')
+      return
+    }
+    if (item.source !== 'gallery_media' && item.source !== 'cards') {
+      alert('Posters can be generated for gallery videos and card animations')
       return
     }
     setBulkBusy(true)
@@ -1386,10 +1391,18 @@ export default function Gallery() {
         )
         return
       }
-      const { error } = await supabase.from('gallery_media').update({ poster_url: poster }).eq('id', item.id)
-      if (error) throw new Error(error.message)
-      setMedia(prev => prev.map(m => (m.key === item.key || m.id === item.id ? { ...m, poster_url: poster } : m)))
-      setSelected(prev => (prev && (prev.key === item.key || prev.id === item.id) ? { ...prev, poster_url: poster } : prev))
+      if (item.source === 'cards') {
+        const cardId = item.cardId || item.id
+        const { error } = await supabase.from('cards').update({ poster_url: poster }).eq('id', cardId)
+        if (error) throw new Error(error.message)
+      } else {
+        const { error } = await supabase.from('gallery_media').update({ poster_url: poster }).eq('id', item.id)
+        if (error) throw new Error(error.message)
+      }
+      setMedia(prev => prev.map(m => (m.key === item.key || (m.source === item.source && m.id === item.id && m.cardSide === item.cardSide)
+        ? { ...m, poster_url: poster }
+        : m)))
+      setSelected(prev => (prev && prev.key === item.key ? { ...prev, poster_url: poster } : prev))
       alert('Poster saved')
     } catch (err) {
       alert('Poster failed: ' + err.message)
@@ -1400,14 +1413,14 @@ export default function Gallery() {
 
   const backfillMissingPosters = async () => {
     const list = media.filter(m =>
-      m.source === 'gallery_media' &&
+      (m.source === 'gallery_media' || m.source === 'cards') &&
       m.type === 'video' &&
       m.id &&
       m.url &&
       !m.poster_url
     )
     if (!list.length) {
-      alert('All gallery videos already have posters (or none found)')
+      alert('All videos already have posters (or none found)')
       return
     }
     if (!confirm(`Generate posters for ${list.length} video(s) missing thumbnails?`)) return
@@ -1420,9 +1433,15 @@ export default function Gallery() {
       try {
         const poster = await ensurePosterUrl(item.url)
         if (!poster) { fail++; continue }
-        const { error } = await supabase.from('gallery_media').update({ poster_url: poster }).eq('id', item.id)
+        let error = null
+        if (item.source === 'cards') {
+          const cardId = item.cardId || item.id
+          ;({ error } = await supabase.from('cards').update({ poster_url: poster }).eq('id', cardId))
+        } else {
+          ;({ error } = await supabase.from('gallery_media').update({ poster_url: poster }).eq('id', item.id))
+        }
         if (error) { fail++; continue }
-        setMedia(prev => prev.map(m => (m.id === item.id ? { ...m, poster_url: poster } : m)))
+        setMedia(prev => prev.map(m => (m.key === item.key ? { ...m, poster_url: poster } : m)))
         ok++
       } catch {
         fail++
@@ -3720,13 +3739,17 @@ export default function Gallery() {
               </>
             )}
 
-            {selected.type === 'video' && selected.source === 'gallery_media' && (
+            {selected.type === 'video' && (selected.source === 'gallery_media' || selected.source === 'cards') && (
               <button
                 onClick={() => generatePosterForItem(selected)}
                 disabled={bulkBusy}
                 className="w-full bg-amber-900/80 hover:bg-amber-800 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2"
               >
-                {selected.poster_url ? '↻ Regenerate poster' : '🖼 Generate poster'}
+                {selected.poster_url
+                  ? '↻ Regenerate poster'
+                  : selected.source === 'cards'
+                    ? '🖼 Generate card animation poster'
+                    : '🖼 Generate poster'}
               </button>
             )}
 
