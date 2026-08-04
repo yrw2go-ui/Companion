@@ -2131,6 +2131,7 @@ export default function Gallery() {
         title: selected.prompt ? String(selected.prompt).slice(0, 80) : null,
         public_id: publicId,
         sort_index: sortIndex,
+        edition_size: 1000,
         published: true,
         overlay_name: overlayName,
         overlay_font: overlayName ? miscOverlayFont : null,
@@ -2138,7 +2139,50 @@ export default function Gallery() {
       }]).select().single()
       if (iErr) throw new Error(iErr.message)
 
+      // Auto-place into Gallery folder "Misc Beauties"
+      try {
+        let { data: folders } = await supabase.from('gallery_folders').select('*')
+        let folder = (folders || []).find(f => String(f.name || '').trim().toLowerCase() === 'misc beauties')
+        if (!folder) {
+          const { data: created } = await supabase.from('gallery_folders').insert([{ name: 'Misc Beauties' }]).select().single()
+          folder = created
+        }
+        if (folder?.id && selected.source === 'gallery_media' && selected.id) {
+          const key = 'gal_' + selected.id
+          await supabase.from('folder_items').delete().eq('item_key', key)
+          await supabase.from('folder_items').delete().eq('item_key', String(selected.id))
+          await supabase.from('folder_items').upsert(
+            { source: 'gallery_media', item_key: key, folder_id: folder.id },
+            { onConflict: 'source,item_key' }
+          )
+        } else if (folder?.id && selected.url) {
+          // Ensure a gallery_media row exists, then file it
+          const { data: galRows } = await supabase.from('gallery_media').select('id').eq('url', selected.url).limit(1)
+          let galId = galRows?.[0]?.id
+          if (!galId) {
+            const { data: ins } = await supabase.from('gallery_media').insert([{
+              type: selected.type === 'video' ? 'video' : 'image',
+              url: selected.url,
+              prompt: selected.prompt || 'Misc Beauties',
+              model: 'misc-publish',
+            }]).select('id').single()
+            galId = ins?.id
+          }
+          if (galId) {
+            const key = 'gal_' + galId
+            await supabase.from('folder_items').delete().eq('item_key', key)
+            await supabase.from('folder_items').upsert(
+              { source: 'gallery_media', item_key: key, folder_id: folder.id },
+              { onConflict: 'source,item_key' }
+            )
+          }
+        }
+      } catch (e) {
+        console.warn('misc folder place', e)
+      }
+
       setShowMiscModal(false)
+      load()
       alert(
         setName
           ? `Live in Misc: ${publicId} · ${setName} · item ${sortIndex}`

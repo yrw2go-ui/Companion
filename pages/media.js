@@ -3,6 +3,31 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 
+// Same qty list as card creation (numbers + labels for rarity defaults)
+const EDITION_QTY_OPTIONS = [1, 5, 10, 25, 50, 100, 150, 200, 250, 300, 350, 500, 700, 1000, 2000]
+const RARITY_EDITION_DEFAULTS = {
+  common: 2000,
+  uncommon: 1000,
+  rare: 500,
+  epic: 350,
+  legendary: 250,
+  'ultra elite': 150,
+  'after hours': 50,
+  mint: 1,
+}
+const rarityLabel = (r) =>
+  String(r || 'common').split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
+const editionOptionLabel = (n) => {
+  const num = Number(n)
+  const rarities = Object.entries(RARITY_EDITION_DEFAULTS)
+    .filter(([, v]) => v === num)
+    .map(([k]) => rarityLabel(k))
+  if (num === 1) return '1 · Mint (1 of 1)'
+  if (rarities.length) return `${num} · ${rarities.join(', ')} default`
+  return String(num)
+}
+const MISC_EDITION_DEFAULT = 1000
+
 export default function MediaLibrary() {
   const router = useRouter()
   const [library, setLibrary] = useState('character') // character | misc
@@ -18,7 +43,7 @@ export default function MediaLibrary() {
   const [editTitle, setEditTitle] = useState('')
   const [editUnlock, setEditUnlock] = useState('shop')
   const [editCost, setEditCost] = useState('0')
-  const [editEdition, setEditEdition] = useState('100')
+  const [editEdition, setEditEdition] = useState(String(MISC_EDITION_DEFAULT))
   const [editChar, setEditChar] = useState('')
   const [editSort, setEditSort] = useState('1')
   const [editOverlayName, setEditOverlayName] = useState('')
@@ -31,11 +56,11 @@ export default function MediaLibrary() {
   const [editSetPrefix, setEditSetPrefix] = useState('')
 
   const NAME_FONTS = [
-    { id: 'impact', label: 'Impact Bold' },
-    { id: 'arialblack', label: 'Arial Black' },
-    { id: 'georgia', label: 'Georgia Bold' },
-    { id: 'system', label: 'System ExtraBold' },
-    { id: 'mono', label: 'Mono Bold' },
+    { id: 'impact', label: 'Impact Bold', family: 'Impact, Haettenschweiler, sans-serif', weight: 900 },
+    { id: 'arialblack', label: 'Arial Black', family: '"Arial Black", "Helvetica Neue", sans-serif', weight: 900 },
+    { id: 'georgia', label: 'Georgia Bold', family: 'Georgia, "Times New Roman", serif', weight: 700 },
+    { id: 'system', label: 'System ExtraBold', family: 'system-ui, -apple-system, sans-serif', weight: 800 },
+    { id: 'mono', label: 'Mono Bold', family: 'ui-monospace, SFMono-Regular, Menlo, monospace', weight: 700 },
   ]
   const NAME_POSITIONS = [
     { id: 'h-top-left', label: 'Horizontal · top left' },
@@ -45,6 +70,73 @@ export default function MediaLibrary() {
     { id: 'h-bottom-left', label: 'Horizontal · bottom left' },
     { id: 'h-bottom-right', label: 'Horizontal · bottom right' },
   ]
+
+  const nameOverlayStyle = (fontId, pos) => {
+    const f = NAME_FONTS.find(x => x.id === fontId) || NAME_FONTS[0]
+    const base = {
+      fontFamily: f.family,
+      fontWeight: f.weight,
+      color: '#fff',
+      textShadow: '0 1px 3px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.5)',
+      letterSpacing: '0.04em',
+      pointerEvents: 'none',
+      zIndex: 6,
+      position: 'absolute',
+      fontSize: '0.85rem',
+      lineHeight: 1.1,
+      maxWidth: '70%',
+      padding: '0 6px',
+    }
+    if (pos === 'h-top-left') return { ...base, top: 8, left: 8 }
+    if (pos === 'h-top-right') return { ...base, top: 8, right: 8, textAlign: 'right' }
+    if (pos === 'h-bottom-left') return { ...base, bottom: 8, left: 8 }
+    if (pos === 'h-bottom-right') return { ...base, bottom: 8, right: 8, textAlign: 'right' }
+    if (pos === 'v-upper-left') return { ...base, top: 12, left: 4, writingMode: 'vertical-rl', transform: 'rotate(180deg)' }
+    if (pos === 'v-upper-right') return { ...base, top: 12, right: 4, writingMode: 'vertical-rl' }
+    return { ...base, top: 8, left: 8 }
+  }
+
+  // Ensure gallery row for url lives in "Misc Beauties" folder
+  const ensureInMiscBeautiesFolder = async (url) => {
+    if (!url) return
+    try {
+      let { data: folders } = await supabase.from('gallery_folders').select('*')
+      let folder = (folders || []).find(f => String(f.name || '').trim().toLowerCase() === 'misc beauties')
+      if (!folder) {
+        const { data: created, error } = await supabase
+          .from('gallery_folders')
+          .insert([{ name: 'Misc Beauties' }])
+          .select()
+          .single()
+        if (error) throw new Error(error.message)
+        folder = created
+      }
+      const { data: galRows } = await supabase
+        .from('gallery_media')
+        .select('id, url, type')
+        .eq('url', url)
+      let galId = galRows?.[0]?.id
+      if (!galId) {
+        const type = /\.(mp4|webm|mov)(\?|$)/i.test(String(url)) ? 'video' : 'image'
+        const { data: inserted } = await supabase
+          .from('gallery_media')
+          .insert([{ type, url, prompt: 'Misc Beauties', model: 'misc-publish' }])
+          .select('id')
+          .single()
+        galId = inserted?.id
+      }
+      if (!galId) return
+      const key = 'gal_' + galId
+      await supabase.from('folder_items').delete().eq('item_key', key)
+      await supabase.from('folder_items').delete().eq('item_key', String(galId))
+      await supabase.from('folder_items').upsert(
+        { source: 'gallery_media', item_key: key, folder_id: folder.id },
+        { onConflict: 'source,item_key' }
+      )
+    } catch (e) {
+      console.warn('ensureInMiscBeautiesFolder', e)
+    }
+  }
 
   useEffect(() => { load() }, [])
 
@@ -121,7 +213,11 @@ export default function MediaLibrary() {
     setEditTitle(m.title || '')
     setEditUnlock(m.unlock_method || 'shop')
     setEditCost(String(m.token_cost ?? 0))
-    setEditEdition(String(m.edition_size ?? 100))
+    setEditEdition(String(
+      m.edition_size != null && m.edition_size !== ''
+        ? m.edition_size
+        : (kind === 'misc' || kind === 'draft' ? MISC_EDITION_DEFAULT : 300)
+    ))
     setEditChar(m.character_name || '')
     setEditSort(String(m.sort_index ?? 1))
     setEditOverlayName(m.overlay_name || m.character_name || '')
@@ -219,6 +315,7 @@ export default function MediaLibrary() {
       }
       const publicId = await nextPublicId(prefix)
       const overlayName = editOverlayName.trim() || null
+      const editionSize = parseInt(editEdition, 10) || MISC_EDITION_DEFAULT
       const { data, error } = await supabase.from('misc_items').insert([{
         set_id: setId,
         type: draft.type === 'video' ? 'video' : 'image',
@@ -226,12 +323,15 @@ export default function MediaLibrary() {
         title: (editTitle.trim() || draft.title) || null,
         public_id: publicId,
         sort_index: Math.max(1, parseInt(editSort) || sortIndex),
+        edition_size: editionSize,
         published: true,
         overlay_name: overlayName,
         overlay_font: overlayName ? editOverlayFont : null,
         overlay_position: overlayName ? editOverlayPos : null,
       }]).select('*, misc_sets(id, name, code_prefix)').single()
       if (error) throw new Error(error.message)
+      // Auto-file into Gallery → Misc Beauties folder
+      await ensureInMiscBeautiesFolder(draft.url)
       setFolderDrafts(prev => prev.filter(x => x.id !== draft.id))
       setMiscItems(prev => [data, ...prev])
       setSelected(data)
@@ -274,6 +374,7 @@ export default function MediaLibrary() {
           title: editTitle.trim() || null,
           sort_index: sortN,
           set_id: setId,
+          edition_size: parseInt(editEdition, 10) || MISC_EDITION_DEFAULT,
           overlay_name: overlayName,
           overlay_font: overlayName ? editOverlayFont : null,
           overlay_position: overlayName ? editOverlayPos : null,
@@ -299,7 +400,7 @@ export default function MediaLibrary() {
           title: editTitle.trim() || null,
           unlock_method: editUnlock,
           token_cost: parseInt(editCost) || 0,
-          edition_size: parseInt(editEdition) || 100,
+          edition_size: parseInt(editEdition, 10) || 300,
           character_name: editChar.trim() || selected.character_name,
           overlay_name: overlayName,
           overlay_font: overlayName ? editOverlayFont : null,
@@ -621,11 +722,62 @@ export default function MediaLibrary() {
               <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-white text-lg px-1">✕</button>
             </div>
 
-            <div className="relative rounded-xl overflow-hidden bg-black mb-4">
+            <p className="text-[10px] text-gray-500 mb-1">Live preview (game overlays)</p>
+            <div className="relative rounded-xl overflow-hidden bg-black mb-4 aspect-[3/4] max-h-[55vh] mx-auto w-full">
               {selected.type === 'video' ? (
-                <video src={selected.url} controls className="w-full max-h-[50vh]" playsInline />
+                <video src={selected.url} controls className="absolute inset-0 w-full h-full object-cover object-top" playsInline />
               ) : (
-                <img src={selected.url} alt="" className="w-full max-h-[50vh] object-contain" />
+                <img src={selected.url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
+              )}
+              {/* Name overlay — uses live edit fields */}
+              {(editOverlayName || selected.overlay_name) && (
+                <span style={nameOverlayStyle(editOverlayFont || selected.overlay_font, editOverlayPos || selected.overlay_position)}>
+                  {editOverlayName || selected.overlay_name}
+                </span>
+              )}
+              {/* Misc: public ID + set */}
+              {(selectedKind === 'misc' || selectedKind === 'draft') && (
+                <div className="absolute top-2 left-2 bg-black/80 rounded-lg px-2 py-1.5 max-w-[70%] z-[5]">
+                  <p className="text-[10px] font-mono text-pink-300">
+                    {selected.public_id || (selectedKind === 'draft' ? 'ID on publish' : '—')}
+                  </p>
+                  <p className="text-[9px] text-white truncate">
+                    {selected.misc_sets?.name
+                      || (editSetMode === 'existing' && miscSets.find(s => s.id === editSetId)?.name)
+                      || (editSetMode === 'new' && editSetName.trim())
+                      || 'Standalone'}
+                  </p>
+                  {selectedKind === 'misc' && selected.sort_index != null && (
+                    <p className="text-[9px] text-gray-300 mt-0.5">
+                      {selected.sort_index} of {setSize(selected) || '—'} in set
+                    </p>
+                  )}
+                </div>
+              )}
+              {/* Character +media label */}
+              {selectedKind === 'character' && (selected.character_name || editChar) && (
+                <div className="absolute top-2 left-2 bg-black/75 rounded-lg px-2 py-1 z-[5] max-w-[65%]">
+                  <p className="text-[10px] text-pink-200 truncate">{editChar || selected.character_name}</p>
+                  <p className="text-[9px] text-gray-400 truncate">{editTitle || selected.title || selected.type}</p>
+                </div>
+              )}
+              {/* Edition badge */}
+              <div className="absolute bottom-2 left-2 z-[5] bg-black/75 rounded-md px-2 py-1">
+                <p className="text-[10px] text-amber-300 font-semibold">
+                  1 of {editEdition || (selectedKind === 'character' ? 300 : MISC_EDITION_DEFAULT)}
+                </p>
+              </div>
+              {/* COMP-GA logo */}
+              <img
+                src="/ga-mark.png"
+                alt=""
+                className="absolute top-2 right-2 object-contain drop-shadow-lg pointer-events-none z-[5]"
+                style={{ height: '3.75rem', width: '3.75rem' }}
+              />
+              {selected.published && (
+                <span className="absolute bottom-2 right-2 z-[5] text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500 text-black">
+                  Live
+                </span>
               )}
             </div>
 
@@ -739,39 +891,65 @@ export default function MediaLibrary() {
                 <p className="text-[10px] text-gray-600 mb-3 -mt-2">
                   Shown as “{editSort || 1} of …” on the tile when in a set.
                 </p>
+                <label className="block text-xs text-gray-500 mb-1">How many available (edition size)</label>
+                <select
+                  value={String(
+                    EDITION_QTY_OPTIONS.includes(Number(editEdition))
+                      ? Number(editEdition)
+                      : MISC_EDITION_DEFAULT
+                  )}
+                  onChange={e => setEditEdition(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-pink-500"
+                >
+                  {EDITION_QTY_OPTIONS.map(n => (
+                    <option key={n} value={n}>{editionOptionLabel(n)}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-600 mb-3">
+                  Default for Misc Beauties: <span className="text-pink-300 font-semibold">{MISC_EDITION_DEFAULT}</span>.
+                  {' '}Same list as card creation (labels show rarity defaults).
+                </p>
               </>
             )}
 
             {selectedKind === 'character' && (
-              <div className="grid grid-cols-3 gap-2 mb-3">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Unlock</label>
-                  <select value={editUnlock} onChange={e => setEditUnlock(e.target.value)}
-                    className="w-full bg-black border border-gray-700 rounded-lg px-2 py-2 text-xs outline-none">
-                    <option value="shop">Shop</option>
-                    <option value="pack">Pack</option>
-                    <option value="mine">Mine</option>
-                    <option value="trade">Trade</option>
-                    <option value="battle">Battle</option>
-                  </select>
+              <>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Unlock</label>
+                    <select value={editUnlock} onChange={e => setEditUnlock(e.target.value)}
+                      className="w-full bg-black border border-gray-700 rounded-lg px-2 py-2 text-xs outline-none">
+                      <option value="shop">Shop</option>
+                      <option value="pack">Pack</option>
+                      <option value="mine">Mine</option>
+                      <option value="trade">Trade</option>
+                      <option value="battle">Battle</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Cost</label>
+                    <input value={editCost} onChange={e => setEditCost(e.target.value)}
+                      className="w-full bg-black border border-gray-700 rounded-lg px-2 py-2 text-xs outline-none" />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Cost</label>
-                  <input value={editCost} onChange={e => setEditCost(e.target.value)}
-                    className="w-full bg-black border border-gray-700 rounded-lg px-2 py-2 text-xs outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Available (edition)</label>
-                  <input value={editEdition} onChange={e => setEditEdition(e.target.value)}
-                    className="w-full bg-black border border-gray-700 rounded-lg px-2 py-2 text-xs outline-none" />
-                </div>
-              </div>
-            )}
-
-            {selectedKind === 'character' && (
-              <p className="text-[10px] text-gray-500 mb-3">
-                Players get numbered copies like “3 of {editEdition || 100}”.
-              </p>
+                <label className="block text-xs text-gray-500 mb-1">How many available (edition size)</label>
+                <select
+                  value={String(
+                    EDITION_QTY_OPTIONS.includes(Number(editEdition))
+                      ? Number(editEdition)
+                      : 300
+                  )}
+                  onChange={e => setEditEdition(e.target.value)}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-pink-500"
+                >
+                  {EDITION_QTY_OPTIONS.map(n => (
+                    <option key={n} value={n}>{editionOptionLabel(n)}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-500 mb-3">
+                  Players get numbered copies like “3 of {editEdition || 300}”. Same labeled list as card creation.
+                </p>
+              </>
             )}
 
             <div className="flex gap-2 mb-2">
