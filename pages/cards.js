@@ -365,7 +365,19 @@ export default function Cards() {
   }
 
   const deleteCharMedia = async (row) => {
-    if (!confirm('Remove this media from the character? Edition slot opens again for new copies.')) return
+    const who = row.character_name || selected?.name || 'this character'
+    const title = row.title || row.type || 'this media'
+    const live = !!row.published
+    const ok = confirm(
+      '⚠️ Delete card +media?\n\n' +
+      `"${title}" is linked to ${who}.\n` +
+      (live
+        ? 'Status: LIVE in the game — players may already own or draw this item.\n\n'
+        : 'Status: Off (not published) — still tied to the card character.\n\n') +
+      'Removing it frees the edition slot. The file may remain in Gallery/+media until deleted there.\n\n' +
+      'Delete this link anyway?'
+    )
+    if (!ok) return
     const { error } = await supabase.from('character_media').delete().eq('id', row.id)
     if (error) { alert(error.message); return }
     setCharMedia(prev => prev.filter(m => m.id !== row.id))

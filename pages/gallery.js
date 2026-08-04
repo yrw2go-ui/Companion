@@ -809,9 +809,18 @@ export default function Gallery() {
       addPub(c.video_url, label + ' (video)')
       addPub(c.poster_url, label + ' (poster)')
     }
+    // All character/+media links (published or not) — warn on delete
+    const charMediaByUrl = {}
     for (const m of charMediaRows || []) {
-      if (!m.published) continue
-      addPub(m.url, `Media · ${m.character_name || m.title || 'character'}`)
+      if (!m.url) continue
+      if (!charMediaByUrl[m.url]) charMediaByUrl[m.url] = []
+      charMediaByUrl[m.url].push(m)
+      const who = m.character_name || m.title || 'character'
+      if (m.published) {
+        addPub(m.url, `Media · ${who} (LIVE)`)
+      } else {
+        addPub(m.url, `Card +media · ${who}`)
+      }
     }
     for (const m of miscItemRows || []) {
       if (m.published === false) continue
@@ -851,10 +860,13 @@ export default function Gallery() {
       const links = publishedLinkMap[item.url] || []
       const miscRows = miscByUrl[item.url] || []
       const fbRows = freebieByUrl[item.url] || []
-      if (!links.length && !miscRows.length && !fbRows.length) return item
+      const charRows = charMediaByUrl[item.url] || []
+      if (!links.length && !miscRows.length && !fbRows.length && !charRows.length) return item
+      const liveChar = charRows.some(r => r.published)
       return {
         ...item,
-        linkedPublished: links.length > 0,
+        linkedPublished: links.length > 0 || liveChar,
+        linkedCardMedia: charRows.length > 0,
         publishedLinks: links,
         protected: true,
         miscItems: miscRows,
@@ -862,6 +874,7 @@ export default function Gallery() {
         freebies: fbRows,
         inFreebies: fbRows.length > 0,
         freebieId: fbRows[0]?.id || null,
+        characterMediaLinks: charRows,
       }
     }
 
@@ -2142,7 +2155,20 @@ export default function Gallery() {
       alert('This is card art. Delete or replace it from the Cards page.')
       return
     }
-    if (item.linkedPublished) {
+    if (item.linkedCardMedia || (item.characterMediaLinks || []).length > 0) {
+      const rows = item.characterMediaLinks || []
+      const names = [...new Set(rows.map(r => r.character_name || r.title || 'character'))].join(', ')
+      const live = rows.some(r => r.published)
+      const ok = confirm(
+        '⚠️ This file is linked as card +media' +
+        (names ? ` for: ${names}` : '') + '.\n\n' +
+        (live
+          ? 'It is LIVE in the game. Deleting removes it from character media draws and can break owned copies.\n\n'
+          : 'It is tied to a card character (not necessarily published yet).\n\n') +
+        'Delete anyway? This cannot be undone.'
+      )
+      if (!ok) return
+    } else if (item.linkedPublished) {
       const links = (item.publishedLinks || []).join('\n• ')
       const hasMisc = (item.publishedLinks || []).some(l => String(l).startsWith('Misc Beauties'))
       const ok = confirm(
