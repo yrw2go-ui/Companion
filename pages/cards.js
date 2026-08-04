@@ -182,6 +182,13 @@ export default function Cards() {
   const [mediaUnlock, setMediaUnlock] = useState('shop')
   const [mediaCost, setMediaCost] = useState('100')
   const [mediaEdition, setMediaEdition] = useState('300')
+  // inline edit for an existing character_media row
+  const [editingMediaId, setEditingMediaId] = useState(null)
+  const [editMediaTitle, setEditMediaTitle] = useState('')
+  const [editMediaUnlock, setEditMediaUnlock] = useState('shop')
+  const [editMediaEdition, setEditMediaEdition] = useState('300')
+  const [editMediaType, setEditMediaType] = useState('image')
+  const [editMediaBusy, setEditMediaBusy] = useState(false)
   const [mediaBusy, setMediaBusy] = useState(false)
   const [showCreateMedia, setShowCreateMedia] = useState(false)
   const [cmMode, setCmMode] = useState('t2i') // t2i | i2i_front | i2i_back | i2v_front | i2v_back
@@ -336,8 +343,38 @@ export default function Cards() {
     const { error } = await supabase.from('character_media').delete().eq('id', row.id)
     if (error) { alert(error.message); return }
     setCharMedia(prev => prev.filter(m => m.id !== row.id))
+    if (editingMediaId === row.id) setEditingMediaId(null)
     const key = String(selected?.name || row.character_name || '').trim().toLowerCase()
     if (key) setMediaCounts(prev => ({ ...prev, [key]: Math.max(0, (prev[key] || 1) - 1) }))
+  }
+
+  const startEditCharMedia = (row) => {
+    setEditingMediaId(row.id)
+    setEditMediaTitle(row.title || '')
+    setEditMediaUnlock(row.unlock_method || 'shop')
+    setEditMediaEdition(String(row.edition_size || 300))
+    setEditMediaType(row.type === 'video' ? 'video' : 'image')
+  }
+
+  const cancelEditCharMedia = () => {
+    setEditingMediaId(null)
+    setEditMediaTitle('')
+  }
+
+  const saveEditCharMedia = async () => {
+    if (!editingMediaId || editMediaBusy) return
+    setEditMediaBusy(true)
+    const patch = {
+      title: editMediaTitle.trim() || null,
+      unlock_method: editMediaUnlock || 'shop',
+      edition_size: parseInt(editMediaEdition, 10) || 300,
+      type: editMediaType === 'video' ? 'video' : 'image',
+    }
+    const { error } = await supabase.from('character_media').update(patch).eq('id', editingMediaId)
+    setEditMediaBusy(false)
+    if (error) { alert(error.message); return }
+    setCharMedia(prev => prev.map(m => m.id === editingMediaId ? { ...m, ...patch } : m))
+    setEditingMediaId(null)
   }
 
   const openCreateMedia = () => {
@@ -2470,31 +2507,96 @@ export default function Cards() {
               {charMedia.length > 0 && (
                 <div className="space-y-2 mb-3">
                   {charMedia.map(m => (
-                    <div key={m.id} className="flex gap-2 items-center bg-black/40 rounded-lg p-2">
-                      {m.type === 'video' ? (
-                        <video src={m.url} className="w-12 h-12 rounded object-cover" muted playsInline />
-                      ) : (
-                        <img src={m.url} alt="" className="w-12 h-12 rounded object-cover" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs truncate">{m.title || m.type}</p>
-                        <p className="text-[10px] text-gray-500">{m.unlock_method} · ed. {m.edition_size || 300}</p>
-                        {m.type === 'video' && (
-                          <button
-                            type="button"
-                            disabled={attachBusy}
-                            onClick={() => attachFrontAnimation(m.url)}
-                            className="text-[10px] text-pink-300 hover:text-pink-200 mt-0.5 font-semibold"
-                          >
-                            Set as front animation
-                          </button>
+                    <div key={m.id} className="bg-black/40 rounded-lg p-2">
+                      <div className="flex gap-2 items-center">
+                        {m.type === 'video' ? (
+                          <video src={m.url} className="w-12 h-12 rounded object-cover shrink-0" muted playsInline />
+                        ) : (
+                          <img src={m.url} alt="" className="w-12 h-12 rounded object-cover shrink-0" />
                         )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs truncate">{m.title || m.type || 'Untitled'}</p>
+                          <p className="text-[10px] text-gray-500">{m.unlock_method} · ed. {m.edition_size || 300}</p>
+                          {m.type === 'video' && (
+                            <button
+                              type="button"
+                              disabled={attachBusy}
+                              onClick={() => attachFrontAnimation(m.url)}
+                              className="text-[10px] text-pink-300 hover:text-pink-200 mt-0.5 font-semibold"
+                            >
+                              Set as front animation
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => editingMediaId === m.id ? cancelEditCharMedia() : startEditCharMedia(m)}
+                          className="text-[10px] px-2 py-1 rounded font-semibold bg-gray-800 hover:bg-gray-700 text-gray-200"
+                          title="Edit title / settings"
+                        >
+                          {editingMediaId === m.id ? 'Close' : 'Edit'}
+                        </button>
+                        <button onClick={() => toggleMediaPublish(m)}
+                          className={`text-[10px] px-2 py-1 rounded font-semibold ${m.published ? 'bg-emerald-700' : 'bg-gray-700'}`}>
+                          {m.published ? 'Live' : 'Off'}
+                        </button>
+                        <button onClick={() => deleteCharMedia(m)} className="text-red-400 text-xs px-1">✕</button>
                       </div>
-                      <button onClick={() => toggleMediaPublish(m)}
-                        className={`text-[10px] px-2 py-1 rounded font-semibold ${m.published ? 'bg-emerald-700' : 'bg-gray-700'}`}>
-                        {m.published ? 'Live' : 'Off'}
-                      </button>
-                      <button onClick={() => deleteCharMedia(m)} className="text-red-400 text-xs px-1">✕</button>
+                      {editingMediaId === m.id && (
+                        <div className="mt-2 pt-2 border-t border-gray-800 space-y-2">
+                          <input
+                            value={editMediaTitle}
+                            onChange={e => setEditMediaTitle(e.target.value)}
+                            placeholder="Title"
+                            className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+                          />
+                          <div className="flex gap-2">
+                            <select
+                              value={editMediaType}
+                              onChange={e => setEditMediaType(e.target.value)}
+                              className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none"
+                            >
+                              <option value="image">Image</option>
+                              <option value="video">Video</option>
+                            </select>
+                            <select
+                              value={editMediaUnlock}
+                              onChange={e => setEditMediaUnlock(e.target.value)}
+                              className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none"
+                            >
+                              <option value="shop">Shop</option>
+                              <option value="mine">Mine</option>
+                              <option value="both">Both</option>
+                            </select>
+                            <select
+                              value={String(editMediaEdition)}
+                              onChange={e => setEditMediaEdition(e.target.value)}
+                              className="w-20 bg-black border border-gray-700 rounded-lg px-1 py-1.5 text-xs outline-none"
+                            >
+                              {EDITION_QTY_OPTIONS.map(n => (
+                                <option key={n} value={n}>{n}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={cancelEditCharMedia}
+                              className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-1.5 text-xs font-semibold"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              disabled={editMediaBusy}
+                              onClick={saveEditCharMedia}
+                              className="flex-1 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 rounded-lg py-1.5 text-xs font-semibold"
+                            >
+                              {editMediaBusy ? 'Saving…' : 'Save'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
