@@ -108,11 +108,27 @@ const STANDARD_LABELS = ['Star Power', 'Physique', 'Allure', 'Charisma']
 
 const EDITION_QTY_OPTIONS = [1, 5, 10, 25, 50, 100, 150, 200, 250, 300, 350, 500, 700, 1000, 2000]
 
+// Default print run by rarity (dropdown still shows numbers only)
+const RARITY_EDITION_DEFAULTS = {
+  common: 2000,
+  uncommon: 1000,
+  rare: 500,
+  epic: 350,
+  legendary: 250,
+  'ultra elite': 150,
+  'after hours': 50,
+  mint: 1,
+}
+const editionDefaultFor = (rarity) => {
+  const key = String(rarity || 'common').toLowerCase()
+  return RARITY_EDITION_DEFAULTS[key] ?? 300
+}
+
 const emptyDraft = () => ({
   name: '', title: '', description: '', flavor_text: '', rarity: 'common',
   stats: rollStats(STANDARD_LABELS, 'common'),
   image_prompt: '', back_image_prompt: '',
-  edition_size: 300,
+  edition_size: editionDefaultFor('common'),
   series_name: '',
 })
 
@@ -608,7 +624,12 @@ export default function Cards() {
         const labels = Array.isArray(data.card.stats) && data.card.stats.length
           ? data.card.stats.map(s => s.label)
           : ['Star Power', 'Physique', 'Allure', 'Charisma']
-        setDraft({ ...data.card, rarity, stats: rollStats(labels, rarity) })
+        setDraft({
+          ...data.card,
+          rarity,
+          stats: rollStats(labels, rarity),
+          edition_size: editionDefaultFor(rarity),
+        })
       }
       else alert('Error: ' + (data.error || 'could not draft card'))
     } catch (err) { alert('Error: ' + err.message) }
@@ -975,7 +996,26 @@ export default function Cards() {
       return
     }
     if (target === 'attach-video') {
-      await attachFrontAnimation(url, item?.poster_url || null)
+      // Optional: front animation vs extra character media only
+      const asFront = window.confirm(
+        'Use this video as the card FRONT animation?\n\n' +
+        'OK = Front animation (replaces current front video)\n' +
+        'Cancel = Extra character media only (not the front)'
+      )
+      if (asFront) {
+        await attachFrontAnimation(url, item?.poster_url || null)
+      } else if (selected) {
+        const title = (item?.prompt || item?.title || '').toString().slice(0, 80) || 'Character video'
+        setMediaType('video')
+        setMediaUrl(url)
+        setMediaTitle(title)
+        try {
+          await saveLinkedMedia({ url, type: 'video', title })
+          alert('Saved as extra character media (not front animation).')
+        } catch (err) {
+          alert('Could not link media: ' + (err?.message || err))
+        }
+      }
       return
     }
     if (target === 'char-media') {
@@ -1128,8 +1168,10 @@ export default function Cards() {
       setProgress('Saving...')
       const rarity = (draft.rarity || 'common').toLowerCase()
       const cardNumber = await makeCardNumber(rarity)
-      // Mint = always 1 of 1 available
-      const editionSize = rarity === 'mint' ? 1 : (parseInt(draft.edition_size, 10) || 300)
+      // Mint = always 1 of 1; otherwise draft value or rarity default
+      const editionSize = rarity === 'mint'
+        ? 1
+        : (parseInt(draft.edition_size, 10) || editionDefaultFor(rarity))
 
       const { error } = await supabase.from('cards').insert([{
         name: draft.name || 'Unnamed',
@@ -1342,7 +1384,7 @@ export default function Cards() {
       stats: rollStats(baseLabels, nextRarity),
       image_prompt: card.image_prompt || '',
       back_image_prompt: card.back_image_prompt || '',
-      edition_size: card.edition_size || 500,
+      edition_size: editionDefaultFor(nextRarity),
       series_name: card.series_name || '',
     })
     setNegative(card.negative_prompt || DEFAULT_NEGATIVE)
@@ -1735,6 +1777,129 @@ export default function Cards() {
 
   return (
     <div className="min-h-screen bg-black text-white p-5 w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto">
+      {/* Card foil / holo / rarity edges — includes Mint shimmer */}
+      <style>{`
+        .card-shell {
+          border-radius: 14px;
+          padding: 2px;
+          position: relative;
+        }
+        .card-inner {
+          border-radius: 12px;
+          overflow: hidden;
+          position: relative;
+          background: #111;
+        }
+        .card-inner.foil::before,
+        .card-inner.foil-strong::before,
+        .card-inner.foil-ultra::before,
+        .card-inner.foil-pearl::before {
+          content: '';
+          pointer-events: none;
+          position: absolute;
+          inset: 0;
+          z-index: 3;
+          opacity: 0.35;
+          mix-blend-mode: color-dodge;
+          background: linear-gradient(
+            115deg,
+            transparent 20%,
+            rgba(255,255,255,0.15) 35%,
+            rgba(180,220,255,0.35) 42%,
+            rgba(255,180,255,0.3) 48%,
+            rgba(255,255,200,0.25) 55%,
+            transparent 70%
+          );
+          background-size: 220% 220%;
+          animation: ga-foil-shift 5s ease-in-out infinite;
+        }
+        .card-inner.foil-strong::before { opacity: 0.45; }
+        .card-inner.foil-ultra::before { opacity: 0.55; }
+        .card-inner.holo::after {
+          content: '';
+          pointer-events: none;
+          position: absolute;
+          inset: -20%;
+          z-index: 4;
+          background: linear-gradient(
+            125deg,
+            transparent 30%,
+            rgba(255,255,255,0.0) 40%,
+            rgba(120,220,255,0.45) 46%,
+            rgba(255,120,220,0.4) 50%,
+            rgba(255,230,120,0.35) 54%,
+            rgba(255,255,255,0.0) 60%,
+            transparent 70%
+          );
+          background-size: 200% 200%;
+          animation: ga-holo-sweep 3.2s linear infinite;
+          mix-blend-mode: soft-light;
+        }
+        @keyframes ga-foil-shift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        @keyframes ga-holo-sweep {
+          0% { transform: translateX(-30%) rotate(8deg); opacity: 0.35; }
+          50% { transform: translateX(30%) rotate(8deg); opacity: 0.7; }
+          100% { transform: translateX(-30%) rotate(8deg); opacity: 0.35; }
+        }
+        .edge-common { background: linear-gradient(135deg, #555, #333); }
+        .edge-uncommon { background: linear-gradient(135deg, #3d8b5a, #1e4d32); }
+        .edge-rare { background: linear-gradient(135deg, #3b82f6, #1e3a8a); }
+        .edge-epic { background: linear-gradient(135deg, #a855f7, #6b21a8); }
+        .edge-legendary { background: linear-gradient(135deg, #f59e0b, #b45309, #fbbf24); }
+        .edge-ultra { background: linear-gradient(135deg, #f0abfc, #e879f9, #a21caf, #fbbf24); }
+        .edge-afterhours { background: linear-gradient(135deg, #64748b, #1e293b, #94a3b8); }
+        .edge-mint {
+          background: linear-gradient(135deg, #fef3c7, #fbbf24, #f472b6, #a78bfa, #34d399, #fef3c7);
+          background-size: 300% 300%;
+          animation: ga-mint-edge 4s ease infinite;
+        }
+        @keyframes ga-mint-edge {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        .glow-rare { box-shadow: 0 0 18px rgba(59,130,246,0.35); }
+        .glow-epic { box-shadow: 0 0 22px rgba(168,85,247,0.45); }
+        .glow-legendary { box-shadow: 0 0 26px rgba(245,158,11,0.5); }
+        .glow-ultra { box-shadow: 0 0 28px rgba(232,121,249,0.55); }
+        .glow-mint { box-shadow: 0 0 30px rgba(251,191,36,0.55), 0 0 50px rgba(244,114,182,0.35); }
+        .badge {
+          position: absolute;
+          top: 8px;
+          right: 8px;
+          z-index: 10;
+          font-size: 9px;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          padding: 3px 8px;
+          border-radius: 999px;
+          background: rgba(0,0,0,0.65);
+          border: 1px solid rgba(255,255,255,0.2);
+          color: #fff;
+        }
+        .badge-mint {
+          background: linear-gradient(135deg, rgba(251,191,36,0.9), rgba(244,114,182,0.85));
+          color: #111;
+          border-color: rgba(255,255,255,0.5);
+          box-shadow: 0 0 12px rgba(251,191,36,0.6);
+        }
+        .badge-legendary { background: rgba(180,83,9,0.85); }
+        .badge-ultra { background: rgba(162,28,175,0.85); }
+        .badge-epic { background: rgba(107,33,168,0.85); }
+        .nameplate {
+          position: absolute;
+          left: 0; right: 0; bottom: 0;
+          padding: 28px 12px 10px;
+          background: linear-gradient(to top, rgba(0,0,0,0.85), transparent);
+          z-index: 8;
+        }
+      `}</style>
+{/* end card effect styles */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
@@ -2006,12 +2171,13 @@ export default function Cards() {
                       ...draft,
                       rarity: r,
                       stats: labels.length ? rollStats(labels, r) : draft.stats,
+                      edition_size: editionDefaultFor(r),
                     })
                   }}
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500">
                   {RARITIES.map(r => <option key={r} value={r}>{rarityLabel(r)}</option>)}
                 </select>
-                <p className="text-[10px] text-gray-600 mb-3">Changing rarity re-rolls the stat values to suit that tier.</p>
+                <p className="text-[10px] text-gray-600 mb-3">Changing rarity re-rolls stats and sets the default edition size for that tier.</p>
 
                 {inputRow('Description', draft.description, v => setDraft({ ...draft, description: v }), true, 2)}
                 {inputRow('Flavor Text', draft.flavor_text, v => setDraft({ ...draft, flavor_text: v }))}
@@ -2051,15 +2217,29 @@ export default function Cards() {
                 </p>
                 <label className="block text-xs text-gray-400 mb-1">Edition size (print run)</label>
                 <select
-                  value={String(EDITION_QTY_OPTIONS.includes(Number(draft.edition_size)) ? draft.edition_size : 300)}
+                  value={String(
+                    EDITION_QTY_OPTIONS.includes(Number(draft.edition_size))
+                      ? draft.edition_size
+                      : editionDefaultFor(draft.rarity)
+                  )}
                   onChange={e => setDraft({ ...draft, edition_size: e.target.value })}
-                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
+                  disabled={String(draft.rarity || '').toLowerCase() === 'mint'}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500 disabled:opacity-60"
                 >
                   {EDITION_QTY_OPTIONS.map(n => (
                     <option key={n} value={n}>{n}</option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-600 mb-3 -mt-2">Players get &quot;3 of {draft.edition_size || 300}&quot; style numbers. Default 300. Price is set in the Shop.</p>
+                <p className="text-[10px] text-gray-600 mb-3">
+                  {String(draft.rarity || '').toLowerCase() === 'mint'
+                    ? 'Mint is always 1 of 1.'
+                    : (
+                      <>
+                        Default for <span className="text-gray-400 capitalize">{draft.rarity || 'common'}</span>: {editionDefaultFor(draft.rarity)}.
+                        {' '}Players get &quot;3 of {draft.edition_size || editionDefaultFor(draft.rarity)}&quot; style numbers. Price is set in the Shop.
+                      </>
+                    )}
+                </p>
 
                 {isStatless(draft.rarity) ? (
                   <p className="text-[11px] text-gray-500 mb-3">
@@ -2492,8 +2672,11 @@ export default function Cards() {
               disabled={attachBusy}
               className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-2 text-sm font-semibold mt-2"
             >
-              {attachBusy ? 'Attaching…' : '🎞 Attach gallery video as front animation'}
+              {attachBusy ? 'Working…' : '🎞 Add gallery video…'}
             </button>
+            <p className="text-[10px] text-gray-500 text-center mt-1">
+              You’ll choose: front animation or extra character media
+            </p>
             {selected.video_url && (
               <button
                 type="button"
@@ -2868,14 +3051,14 @@ export default function Cards() {
               <div>
                 <p className="font-bold text-sm">
                   {galleryPicker === 'attach-video'
-                    ? 'Pick video for front animation'
+                    ? 'Pick a gallery video'
                     : galleryPicker === 'char-media'
                       ? `Pick ${mediaType} for character media`
                       : 'Pick from gallery'}
                 </p>
                 <p className="text-[10px] text-gray-500">
                   {galleryPicker === 'attach-video'
-                    ? 'Any gallery video → becomes this card’s animated front'
+                    ? 'After you pick, choose front animation or extra character media'
                     : galleryPicker === 'char-media'
                       ? 'Fills the URL field — add a title, then save'
                       : galleryPicker.includes('front')
