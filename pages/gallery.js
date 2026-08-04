@@ -32,15 +32,18 @@ const T2V_PRICE = null
 const VIDEO_EDIT_MODEL = 'kwaivgi/kling-video-o3-pro/video-edit'
 
 const IMAGE_MODELS = [
-  { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux', price: null, maxRefs: 0 },
-  { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux', price: null, maxRefs: 0 },
-  { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell', price: null, maxRefs: 0 },
+  // maxRefs = optional reference images (capped at 4 in UI / payload)
+  { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux', price: null, maxRefs: 4 },
+  { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux', price: null, maxRefs: 4 },
+  { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell', price: null, maxRefs: 4 },
   { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream', price: null, maxRefs: 4 },
   { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok', price: { '1k': 0.05, '2k': 0.07 }, maxRefs: 1 },
 ]
 const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
-const createMaxRefs = (modelId) =>
-  (IMAGE_MODELS.find(m => m.id === modelId) || IMAGE_MODELS[0]).maxRefs || 0
+const createMaxRefs = (modelId) => {
+  const n = (IMAGE_MODELS.find(m => m.id === modelId) || IMAGE_MODELS[0]).maxRefs || 0
+  return Math.max(0, Math.min(4, n))
+}
 
 // Same style list as cards — appended to the end of the prompt on create
 const ART_STYLES = [
@@ -1016,6 +1019,7 @@ export default function Gallery() {
         payload.size = size; payload.seed = seed || undefined
         payload.negativePrompt = useNeg; payload.guidance = guidance; payload.steps = steps
       }
+      // Up to 4 reference images (model maxRefs may be lower, e.g. Grok = 1)
       if (refUrls.length) {
         payload.referenceImageUrl = refUrls[0]
         payload.referenceImageUrls = refUrls
