@@ -316,6 +316,10 @@ export default function Cards() {
   // prompt extras: categoryId -> optionId (or null)
   const [promptExtraCategories, setPromptExtraCategories] = useState(PROMPT_EXTRA_CATEGORIES)
   const [promptExtras, setPromptExtras] = useState({})
+  const [customChipCat, setCustomChipCat] = useState('hair_color')
+  const [customChipLabel, setCustomChipLabel] = useState('')
+  const [customChipText, setCustomChipText] = useState('')
+  const [customChipSaving, setCustomChipSaving] = useState(false)
   const [cardTextOn, setCardTextOn] = useState(false)
   const [cardTextContent, setCardTextContent] = useState('')
   const [cardTextSize, setCardTextSize] = useState('medium')
@@ -854,6 +858,35 @@ export default function Cards() {
     setCardTextOn(false)
     setCardTextContent('')
   }
+
+  const saveCustomChipToCategory = async () => {
+    const label = customChipLabel.trim()
+    const text = customChipText.trim()
+    const catId = customChipCat
+    if (!label || !text) { alert('Need chip label and prompt text'); return }
+    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `custom_${Date.now()}`
+    const nextCats = promptExtraCategories.map(c =>
+      c.id === catId
+        ? { ...c, options: [...(c.options || []), { id, label, text }] }
+        : c
+    )
+    setCustomChipSaving(true)
+    try {
+      const { error } = await supabase.from('user_settings').upsert({
+        id: 1,
+        prompt_extra_categories: nextCats,
+      })
+      if (error) throw new Error(error.message)
+      setPromptExtraCategories(nextCats)
+      setCustomChipLabel('')
+      setCustomChipText('')
+      alert('Saved chip to ' + (nextCats.find(c => c.id === catId)?.label || catId) + '. It will stay on next opens.')
+    } catch (e) {
+      alert('Could not save chip: ' + e.message + '\n\nRun in Supabase if needed:\nalter table user_settings add column if not exists prompt_extra_categories jsonb;')
+    }
+    setCustomChipSaving(false)
+  }
+
 
   const buildCardTextFragment = () => {
     if (!cardTextOn || !cardTextContent.trim()) return ''
@@ -2610,12 +2643,13 @@ export default function Cards() {
                         </button>
                       </div>
                       <p className="text-[10px] text-gray-600 mb-3">
-                        Tap a chip to add it; tap again to remove. Order is fixed: looks → body → card design → text.
+                        Tap a chip to use it. Pink <span className="text-pink-400 font-bold">+</span> adds a permanent option to that category.
                       </p>
+
                       {promptExtraCategories.map(cat => (
                         <div key={cat.id} className="mb-3">
                           <p className="text-[10px] text-gray-500 mb-1.5 uppercase tracking-wide">{cat.label}</p>
-                          <div className="flex flex-wrap gap-1.5">
+                          <div className="flex flex-wrap gap-1.5 items-center">
                             {(cat.options || []).map(opt => {
                               const on = promptExtras[cat.id] === opt.id
                               return (
@@ -2633,7 +2667,53 @@ export default function Cards() {
                                 </button>
                               )
                             })}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCustomChipCat(cat.id)
+                                setCustomChipLabel('')
+                                setCustomChipText('')
+                              }}
+                              className="text-[14px] leading-none w-7 h-7 rounded-full bg-pink-600 border border-pink-400 text-white font-bold hover:bg-pink-500"
+                              title={`Add to ${cat.label}`}
+                            >
+                              +
+                            </button>
                           </div>
+                          {customChipCat === cat.id && (
+                            <div className="mt-2 p-2 rounded-lg border border-pink-700 bg-pink-950/30 space-y-1.5">
+                              <p className="text-[10px] text-pink-300 font-semibold">New {cat.label} chip</p>
+                              <input
+                                value={customChipLabel}
+                                onChange={e => setCustomChipLabel(e.target.value)}
+                                placeholder="Button label"
+                                className="w-full bg-black border border-gray-700 rounded px-2 py-1.5 text-[11px] outline-none focus:border-pink-500"
+                              />
+                              <input
+                                value={customChipText}
+                                onChange={e => setCustomChipText(e.target.value)}
+                                placeholder="Prompt text to append"
+                                className="w-full bg-black border border-gray-700 rounded px-2 py-1.5 text-[11px] outline-none focus:border-pink-500"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomChipCat('')}
+                                  className="flex-1 bg-gray-800 rounded py-1.5 text-[11px]"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={customChipSaving}
+                                  onClick={saveCustomChipToCategory}
+                                  className="flex-1 bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded py-1.5 text-[11px] font-semibold"
+                                >
+                                  {customChipSaving ? 'Saving…' : 'Save'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
 
