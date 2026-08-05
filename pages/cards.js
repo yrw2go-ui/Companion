@@ -14,10 +14,10 @@ const SIZES = [
 ]
 
 const IMAGE_MODELS = [
+  { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream' },
   { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux' },
   { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux' },
   { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell' },
-  { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream' },
   { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok' },
 ]
 
@@ -321,7 +321,8 @@ export default function Cards() {
   const [cardTextPos, setCardTextPos] = useState('bottom')
   const [cardTextFont, setCardTextFont] = useState('sans')
   const [cardTextColor, setCardTextColor] = useState('white')
-  const [imageModel, setImageModel] = useState(IMAGE_MODELS[0].id)
+  const SEEDREAM_DEFAULT = (IMAGE_MODELS.find(m => m.family === 'seedream') || IMAGE_MODELS[0]).id
+  const [imageModel, setImageModel] = useState(SEEDREAM_DEFAULT)
   const [seedInput, setSeedInput] = useState('')
   const [guidance, setGuidance] = useState(3.5)
   const [steps, setSteps] = useState(28)
@@ -371,7 +372,9 @@ export default function Cards() {
   const [cmBusy, setCmBusy] = useState(false)
   const [cmDuration, setCmDuration] = useState(5)
   const [cmModel, setCmModel] = useState(VIDEO_MODELS[0].id)
-  const [cmImageModel, setCmImageModel] = useState(IMAGE_MODELS[0].id)
+  const [cmImageModel, setCmImageModel] = useState(
+    (IMAGE_MODELS.find(m => m.family === 'seedream') || IMAGE_MODELS[0]).id
+  )
   const [cmEditModel, setCmEditModel] = useState(EDIT_IMAGE_MODELS[0].id)
 
   useEffect(() => {
@@ -591,7 +594,7 @@ export default function Cards() {
     setCmNeg(selected.negative_prompt || DEFAULT_NEGATIVE)
     setCmTitle('')
     setCmProgress('')
-    setCmImageModel(selected.image_model || IMAGE_MODELS[0].id)
+    setCmImageModel(selected.image_model || SEEDREAM_DEFAULT)
     setCmModel(VIDEO_MODELS[0].id)
     setCmDuration(5)
     setShowCreateMedia(true)
@@ -1644,7 +1647,7 @@ export default function Cards() {
     setNegative(card.negative_prompt || DEFAULT_NEGATIVE)
     setSeedInput(card.seed != null ? String(card.seed) : '')
     setArtStyle('')
-    setImageModel(card.image_model || IMAGE_MODELS[0].id)
+    setImageModel(card.image_model || SEEDREAM_DEFAULT)
     setSelected(null)
     setShowCreate(true)
   }
