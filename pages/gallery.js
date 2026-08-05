@@ -734,6 +734,27 @@ export default function Gallery() {
     writePending(list)
   }
 
+  // Server register first (service role / API) so prompt+url land even if the tab dies next.
+  const registerGalleryOnServer = async (row) => {
+    if (!row?.url) return null
+    try {
+      const res = await fetch('/api/register-gallery-media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(row),
+        keepalive: true,
+      })
+      const data = await res.json().catch(() => ({}))
+      const hit = data?.results?.find?.(r => r.ok && r.row) || null
+      if (hit?.row) return hit.row
+      if (data?.results?.[0]?.row) return data.results[0].row
+      return null
+    } catch (e) {
+      console.warn('register-gallery-media failed', e)
+      return null
+    }
+  }
+
   // saves a completed generation to gallery_media with up to 10 retries.
   // Atlas already uploaded the file; this only writes the DB row so it appears in Gallery.
   // On total failure, queues to localStorage and retries on next load/refresh.
@@ -742,6 +763,26 @@ export default function Gallery() {
     if (!row?.url) {
       if (!quiet) alert(`${label || 'File'} has no URL — nothing to save`)
       return null
+    }
+
+    // Queue immediately so a mid-save app switch still has prompt/url for resume flush
+    enqueuePendingGallery(row, label)
+
+    // Prefer server insert (keeps prompt/model/seed; survives background better)
+    const serverRow = await registerGalleryOnServer(row)
+    if (serverRow?.id) {
+      const entry = {
+        ...serverRow,
+        key: 'gal_' + serverRow.id,
+        source: 'gallery_media',
+        created_at: serverRow.created_at || new Date().toISOString(),
+      }
+      setMedia(prev => {
+        const rest = (prev || []).filter(x => x.url !== serverRow.url && x.id !== serverRow.id)
+        return [entry, ...rest]
+      })
+      writePending(readPending().filter(p => !(p.table === 'gallery_media' && p.row?.url === row.url)))
+      return serverRow
     }
 
     // If this URL is already in gallery_media, don't insert a duplicate (return existing)
@@ -883,7 +924,10 @@ export default function Gallery() {
     let remaining = readPending().filter(p => p.table !== 'gallery_media')
     let rescued = 0
     for (const item of list) {
-      if ((item.attempts || 0) >= 10) continue
+      if ((item.attempts || 0) >= 15) {
+        remaining.push(item)
+        continue
+      }
       try {
         const saved = await saveWithRetry(item.row, item.label || 'Queued media', true)
         if (saved) rescued++
@@ -895,6 +939,47 @@ export default function Gallery() {
     writePending(remaining)
     if (rescued > 0) await load()
   }
+
+  // Leave app → beacon pending rows to server. Return → flush + reload.
+  useEffect(() => {
+    const onHide = () => {
+      const list = readPending().filter(p => p.table === 'gallery_media' && p.row?.url)
+      if (!list.length) return
+      try {
+        const payload = JSON.stringify({ items: list.map(p => p.row) })
+        if (navigator.sendBeacon) {
+          const blob = new Blob([payload], { type: 'application/json' })
+          navigator.sendBeacon('/api/register-gallery-media', blob)
+        } else {
+          fetch('/api/register-gallery-media', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+            keepalive: true,
+          }).catch(() => {})
+        }
+      } catch (e) {
+        console.warn('beacon pending failed', e)
+      }
+    }
+    const onShow = () => {
+      flushPendingGallerySaves()
+        .then(() => load())
+        .catch(() => {})
+    }
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') onHide()
+      else onShow()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('pageshow', onShow)
+    window.addEventListener('focus', onShow)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('pageshow', onShow)
+      window.removeEventListener('focus', onShow)
+    }
+  }, [])
 
   // generic pager for any table read that could exceed Supabase's 1000-row cap
   const fetchAllRows = async (table, selectCols, applyFilters) => {
