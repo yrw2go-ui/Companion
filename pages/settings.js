@@ -147,9 +147,10 @@ export default function Settings() {
   const [editingStyleIdx, setEditingStyleIdx] = useState(null)
   const [promptExtraCats, setPromptExtraCats] = useState(DEFAULT_PROMPT_EXTRA_CATEGORIES)
   const [extrasSaving, setExtrasSaving] = useState(false)
-  const [expandedExtraCat, setExpandedExtraCat] = useState(null)
+  const [expandedExtraCat, setExpandedExtraCat] = useState('hair_color') // open one by default
   const [newOptLabel, setNewOptLabel] = useState('')
   const [newOptText, setNewOptText] = useState('')
+  const [quickAddCatId, setQuickAddCatId] = useState('hair_color')
   const [tabBanners, setTabBanners] = useState({
     home: { image: '', video: '' },
     packs: { image: '', video: '' },
@@ -1004,8 +1005,55 @@ export default function Settings() {
       <div className="mt-10 border-t border-gray-800 pt-6">
         <h2 className="font-semibold mb-1">Prompt extras (chips)</h2>
         <p className="text-xs text-gray-600 mb-3">
-          Permanent lists used in Cards & Gallery create. Add your own chips anytime — label is the button, prompt text is what gets appended.
+          Used in Cards & Gallery create. Scroll here after Art styles. Add chips below, then save.
         </p>
+
+        {/* Always-visible quick add — no expand required */}
+        <div className="mb-4 border-2 border-pink-700/60 rounded-xl p-4 bg-pink-950/20">
+          <p className="text-sm font-semibold text-pink-300 mb-2">＋ Add a chip to a category</p>
+          <label className="block text-[10px] text-gray-500 mb-1">Category</label>
+          <select
+            value={quickAddCatId}
+            onChange={e => {
+              setQuickAddCatId(e.target.value)
+              setExpandedExtraCat(e.target.value)
+            }}
+            className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-pink-500"
+          >
+            {promptExtraCats.map(c => (
+              <option key={c.id} value={c.id}>{c.label}</option>
+            ))}
+          </select>
+          <label className="block text-[10px] text-gray-500 mb-1">Chip label (what you see on the button)</label>
+          <input
+            value={newOptLabel}
+            onChange={e => setNewOptLabel(e.target.value)}
+            placeholder="e.g. Honey blonde"
+            className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-pink-500"
+          />
+          <label className="block text-[10px] text-gray-500 mb-1">Prompt text (what gets added to the prompt)</label>
+          <input
+            value={newOptText}
+            onChange={e => setNewOptText(e.target.value)}
+            placeholder="e.g. honey blonde hair with soft waves"
+            className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-pink-500"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              addCustomOption(quickAddCatId)
+              setExpandedExtraCat(quickAddCatId)
+            }}
+            className="w-full bg-pink-600 hover:bg-pink-500 rounded-lg py-3 text-sm font-semibold"
+          >
+            + Add chip to {promptExtraCats.find(c => c.id === quickAddCatId)?.label || 'category'}
+          </button>
+          <p className="text-[10px] text-gray-500 mt-2">
+            After adding, tap <span className="text-pink-300">Save prompt extras</span> at the bottom so it sticks.
+          </p>
+        </div>
+
+        <p className="text-[10px] text-gray-500 mb-2">Tap a category to edit or delete existing chips:</p>
         {promptExtraCats.map((cat) => (
           <div key={cat.id} className="mb-3 border border-gray-800 rounded-xl overflow-hidden">
             <button
@@ -1015,7 +1063,7 @@ export default function Settings() {
             >
               <span className="text-sm font-semibold">{cat.label}</span>
               <span className="text-[10px] text-gray-500">
-                {(cat.options || []).length} options · {expandedExtraCat === cat.id ? 'Hide' : 'Edit'}
+                {(cat.options || []).length} options · {expandedExtraCat === cat.id ? '▲ Hide' : '▼ Edit list'}
               </span>
             </button>
             {expandedExtraCat === cat.id && (
@@ -1082,28 +1130,9 @@ export default function Settings() {
                     />
                   </div>
                 ))}
-                <div className="pt-2 border-t border-gray-800 space-y-2">
-                  <p className="text-[10px] text-gray-500">Add custom option to {cat.label}</p>
-                  <input
-                    value={newOptLabel}
-                    onChange={e => setNewOptLabel(e.target.value)}
-                    placeholder="Chip label (e.g. Honey blonde)"
-                    className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-pink-500"
-                  />
-                  <input
-                    value={newOptText}
-                    onChange={e => setNewOptText(e.target.value)}
-                    placeholder='Prompt text (e.g. honey blonde hair with soft waves)'
-                    className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-pink-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => addCustomOption(cat.id)}
-                    className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold"
-                  >
-                    + Add to {cat.label}
-                  </button>
-                </div>
+                {(cat.options || []).length === 0 && (
+                  <p className="text-[11px] text-gray-500">No chips yet — use the pink box above to add one.</p>
+                )}
               </div>
             )}
           </div>
@@ -1114,7 +1143,7 @@ export default function Settings() {
             onClick={() => {
               if (!confirm('Reset all prompt extras to built-in defaults?')) return
               setPromptExtraCats(DEFAULT_PROMPT_EXTRA_CATEGORIES)
-              setExpandedExtraCat(null)
+              setExpandedExtraCat('hair_color')
             }}
             className="flex-1 bg-gray-900 border border-gray-700 rounded-lg py-2.5 text-sm font-semibold"
           >
