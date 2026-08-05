@@ -61,6 +61,140 @@ const ART_STYLES = [
   { value: 'high fashion runway photography, backstage energy, motion, professional lighting', label: 'Runway' },
 ]
 
+// Click-to-add prompt extras. Single-select per category; order is fixed for natural prompts.
+const PROMPT_EXTRA_CATEGORIES = [
+  {
+    id: 'skin',
+    label: 'Skin',
+    options: [
+      { id: 'fair', label: 'Fair', text: 'fair light skin' },
+      { id: 'porcelain', label: 'Porcelain', text: 'porcelain pale skin' },
+      { id: 'light_tan', label: 'Light tan', text: 'light tan skin' },
+      { id: 'olive', label: 'Olive', text: 'olive skin tone' },
+      { id: 'golden', label: 'Golden', text: 'golden sun-kissed skin' },
+      { id: 'medium_brown', label: 'Medium brown', text: 'medium brown skin' },
+      { id: 'deep_brown', label: 'Deep brown', text: 'deep rich brown skin' },
+      { id: 'ebony', label: 'Ebony', text: 'ebony dark skin' },
+    ],
+  },
+  {
+    id: 'hair_color',
+    label: 'Hair color',
+    options: [
+      { id: 'blonde', label: 'Blonde', text: 'blonde hair' },
+      { id: 'platinum', label: 'Platinum', text: 'platinum blonde hair' },
+      { id: 'brunette', label: 'Brunette', text: 'brunette brown hair' },
+      { id: 'black', label: 'Black', text: 'jet black hair' },
+      { id: 'red', label: 'Red', text: 'red hair' },
+      { id: 'auburn', label: 'Auburn', text: 'auburn hair' },
+      { id: 'pink', label: 'Pink', text: 'pink hair' },
+      { id: 'silver', label: 'Silver', text: 'silver white hair' },
+      { id: 'blue', label: 'Blue', text: 'blue hair' },
+    ],
+  },
+  {
+    id: 'hair_style',
+    label: 'Hair style',
+    options: [
+      { id: 'long_straight', label: 'Long straight', text: 'long straight hair' },
+      { id: 'long_wavy', label: 'Long wavy', text: 'long wavy hair' },
+      { id: 'long_curly', label: 'Long curly', text: 'long curly hair' },
+      { id: 'shoulder', label: 'Shoulder length', text: 'shoulder-length hair' },
+      { id: 'bob', label: 'Bob', text: 'short bob haircut' },
+      { id: 'ponytail', label: 'Ponytail', text: 'high ponytail' },
+      { id: 'bun', label: 'Bun', text: 'elegant bun hairstyle' },
+      { id: 'braids', label: 'Braids', text: 'braided hair' },
+      { id: 'messy', label: 'Messy', text: 'messy tousled hair' },
+    ],
+  },
+  {
+    id: 'eye_color',
+    label: 'Eye color',
+    options: [
+      { id: 'brown', label: 'Brown', text: 'brown eyes' },
+      { id: 'hazel', label: 'Hazel', text: 'hazel eyes' },
+      { id: 'green', label: 'Green', text: 'green eyes' },
+      { id: 'blue', label: 'Blue', text: 'blue eyes' },
+      { id: 'gray', label: 'Gray', text: 'gray eyes' },
+      { id: 'amber', label: 'Amber', text: 'amber eyes' },
+      { id: 'violet', label: 'Violet', text: 'violet eyes' },
+    ],
+  },
+  {
+    id: 'body_type',
+    label: 'Body type',
+    options: [
+      { id: 'slim', label: 'Slim', text: 'slim athletic build' },
+      { id: 'athletic', label: 'Athletic', text: 'athletic toned physique' },
+      { id: 'curvy', label: 'Curvy', text: 'curvy hourglass figure' },
+      { id: 'voluptuous', label: 'Voluptuous', text: 'voluptuous full figure' },
+      { id: 'petite', label: 'Petite', text: 'petite frame' },
+      { id: 'tall', label: 'Tall', text: 'tall elegant stature' },
+    ],
+  },
+  {
+    id: 'breast_size',
+    label: 'Breast size',
+    options: [
+      { id: 'small', label: 'Small', text: 'small breasts' },
+      { id: 'medium', label: 'Medium', text: 'medium breasts' },
+      { id: 'large', label: 'Large', text: 'large breasts' },
+      { id: 'very_large', label: 'Very large', text: 'very large full breasts' },
+    ],
+  },
+  {
+    id: 'hips',
+    label: 'Hips',
+    options: [
+      { id: 'narrow', label: 'Narrow', text: 'narrow hips' },
+      { id: 'balanced', label: 'Balanced', text: 'balanced hips' },
+      { id: 'wide', label: 'Wide', text: 'wide hips' },
+      { id: 'very_wide', label: 'Very wide', text: 'very wide hips and thick thighs' },
+    ],
+  },
+  {
+    id: 'card_design',
+    label: 'Card design',
+    options: [
+      { id: 'gold_foil', label: 'Gold foil', text: 'modern gold foil trading card design, fancy gold foil edges, premium collectible card border' },
+      { id: 'holographic', label: 'Holographic', text: 'holographic trading card design, iridescent rainbow foil edges, premium collectible border' },
+      { id: 'black_luxury', label: 'Black luxury', text: 'black luxury trading card design, matte black frame with silver trim, elegant collectible border' },
+      { id: 'neon', label: 'Neon', text: 'neon cyber trading card design, glowing neon edge accents, futuristic collectible border' },
+      { id: 'rose_gold', label: 'Rose gold', text: 'rose gold trading card design, soft metallic rose-gold foil edges, glamorous collectible border' },
+      { id: 'minimal_white', label: 'Minimal white', text: 'clean minimal white trading card design, thin elegant border, modern collectible layout' },
+      { id: 'ornate', label: 'Ornate', text: 'ornate baroque trading card design, intricate decorative gold frame, classic collectible border' },
+    ],
+  },
+]
+
+const PROMPT_EXTRA_ORDER = [
+  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'card_design',
+]
+
+const CARD_TEXT_SIZES = [
+  { id: 'small', label: 'Small', text: 'small text' },
+  { id: 'medium', label: 'Medium', text: 'medium-sized text' },
+  { id: 'large', label: 'Large', text: 'large bold text' },
+]
+const CARD_TEXT_POS = [
+  { id: 'top', label: 'Top', text: 'at the top of the card' },
+  { id: 'bottom', label: 'Bottom', text: 'at the bottom of the card' },
+  { id: 'center', label: 'Center', text: 'centered on the card' },
+]
+const CARD_TEXT_FONTS = [
+  { id: 'sans', label: 'Clean sans', text: 'clean sans-serif lettering' },
+  { id: 'serif', label: 'Elegant serif', text: 'elegant serif lettering' },
+  { id: 'script', label: 'Script', text: 'cursive script lettering' },
+  { id: 'block', label: 'Bold block', text: 'bold block lettering' },
+]
+const CARD_TEXT_COLORS = [
+  { id: 'white', label: 'White', text: 'white' },
+  { id: 'gold', label: 'Gold', text: 'gold' },
+  { id: 'black', label: 'Black', text: 'black' },
+  { id: 'pink', label: 'Pink', text: 'hot pink' },
+  { id: 'silver', label: 'Silver', text: 'silver' },
+]
+
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'ultra elite', 'after hours', 'mint']
 
 // stat value ranges per rarity, used when creating a variant
@@ -179,6 +313,14 @@ export default function Cards() {
   const [artStyle, setArtStyle] = useState(
     (ART_STYLES.find(s => /fortnite/i.test(s.label)) || ART_STYLES[1]).value
   )
+  // prompt extras: categoryId -> optionId (or null)
+  const [promptExtras, setPromptExtras] = useState({})
+  const [cardTextOn, setCardTextOn] = useState(false)
+  const [cardTextContent, setCardTextContent] = useState('')
+  const [cardTextSize, setCardTextSize] = useState('medium')
+  const [cardTextPos, setCardTextPos] = useState('bottom')
+  const [cardTextFont, setCardTextFont] = useState('sans')
+  const [cardTextColor, setCardTextColor] = useState('white')
   const [imageModel, setImageModel] = useState(IMAGE_MODELS[0].id)
   const [seedInput, setSeedInput] = useState('')
   const [guidance, setGuidance] = useState(3.5)
@@ -690,6 +832,47 @@ export default function Cards() {
   const withStyle = (base, style) => (!style ? base : `${base}, ${style}`)
   const BACK_FRAMING = 'subject in the upper two-thirds of the frame, head near the top, open empty space in the bottom third for text, do not place important details in the lower third'
   const withBackFraming = (base) => `${base}, ${BACK_FRAMING}`
+
+  const togglePromptExtra = (catId, optId) => {
+    setPromptExtras(prev => {
+      const next = { ...prev }
+      if (next[catId] === optId) delete next[catId]
+      else next[catId] = optId
+      return next
+    })
+  }
+
+  const clearPromptExtras = () => {
+    setPromptExtras({})
+    setCardTextOn(false)
+    setCardTextContent('')
+  }
+
+  const buildCardTextFragment = () => {
+    if (!cardTextOn || !cardTextContent.trim()) return ''
+    const size = CARD_TEXT_SIZES.find(s => s.id === cardTextSize)?.text || 'medium-sized text'
+    const pos = CARD_TEXT_POS.find(s => s.id === cardTextPos)?.text || 'at the bottom of the card'
+    const font = CARD_TEXT_FONTS.find(s => s.id === cardTextFont)?.text || 'clean sans-serif lettering'
+    const color = CARD_TEXT_COLORS.find(s => s.id === cardTextColor)?.text || 'white'
+    return `${size} reading "${cardTextContent.trim()}" in ${color} ${font} ${pos}`
+  }
+
+  // base prompt + physical attrs + card design + optional text → logical order
+  const composePromptWithExtras = (base) => {
+    const parts = []
+    const baseTrim = String(base || '').trim()
+    if (baseTrim) parts.push(baseTrim)
+    for (const catId of PROMPT_EXTRA_ORDER) {
+      const optId = promptExtras[catId]
+      if (!optId) continue
+      const cat = PROMPT_EXTRA_CATEGORIES.find(c => c.id === catId)
+      const opt = cat?.options?.find(o => o.id === optId)
+      if (opt?.text) parts.push(opt.text)
+    }
+    const textFrag = buildCardTextFragment()
+    if (textFrag) parts.push(textFrag)
+    return parts.join(', ')
+  }
 
   // When using stylized / game styles, push the model away from photorealism
   const STYLIZED_NEG =
@@ -1210,20 +1393,25 @@ export default function Cards() {
       let backUrl = null
       let backSeed = null
 
+      const frontComposed = composePromptWithExtras(draft.image_prompt)
+      const backComposed = draft.back_image_prompt?.trim()
+        ? composePromptWithExtras(draft.back_image_prompt)
+        : ''
+
       if (fromGallery) {
         setProgress('Using gallery images...')
         frontUrl = draftFrontUrl
         backUrl = draftBackUrl || null
       } else {
         setProgress('Generating front art...')
-        const front = await genImage(draft.image_prompt, seedInput, negative, size, artStyle)
+        const front = await genImage(frontComposed || draft.image_prompt, seedInput, negative, size, artStyle)
         if (!front.imageUrl) { alert('Front image error: ' + (front.error || 'failed')); setGenerating(false); setProgress(''); return }
         frontUrl = front.imageUrl
         frontSeed = front.seed
 
-        if (draft.back_image_prompt?.trim()) {
+        if (backComposed) {
           setProgress('Generating back art...')
-          const back = await genImage(withBackFraming(draft.back_image_prompt), '', negative, size, artStyle)
+          const back = await genImage(withBackFraming(backComposed), '', negative, size, artStyle)
           if (!back.imageUrl) { alert('Back image error: ' + (back.error || 'failed')); setGenerating(false); setProgress(''); return }
           backUrl = back.imageUrl
           backSeed = back.seed
@@ -1247,10 +1435,10 @@ export default function Cards() {
         card_number: cardNumber,
         stats: draft.stats || [],
         image_url: frontUrl,
-        image_prompt: draft.image_prompt ? withStyle(draft.image_prompt, artStyle) : (draft.image_prompt || null),
+        image_prompt: frontComposed ? withStyle(frontComposed, artStyle) : (draft.image_prompt || null),
         seed: frontSeed,
         back_image_url: backUrl,
-        back_image_prompt: draft.back_image_prompt ? withStyle(draft.back_image_prompt, artStyle) : null,
+        back_image_prompt: backComposed ? withStyle(backComposed, artStyle) : null,
         back_seed: backSeed,
         negative_prompt: fromGallery ? null : negative,
         image_model: fromGallery ? 'gallery' : imageModel,
@@ -1274,6 +1462,7 @@ export default function Cards() {
       setCreateArtSource('generate')
       setDraftFrontUrl('')
       setDraftBackUrl('')
+      clearPromptExtras()
       loadCards()
     } catch (err) { alert('Error: ' + err.message) }
     setGenerating(false); setProgress('')
@@ -1976,6 +2165,7 @@ export default function Cards() {
           setCreateArtSource('generate')
           setDraftFrontUrl('')
           setDraftBackUrl('')
+          clearPromptExtras()
           setShowCreate(true)
         }} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">+ New</button>
       </div>
@@ -2399,6 +2589,100 @@ export default function Cards() {
                   <>
                     {inputRow('Front Art Prompt', draft.image_prompt, v => setDraft({ ...draft, image_prompt: v }), true, 4)}
                     {inputRow('Back Art Prompt (optional)', draft.back_image_prompt, v => setDraft({ ...draft, back_image_prompt: v }), true, 4)}
+
+                    {/* Prompt extras — click chips to add/remove in logical order */}
+                    <div className="mb-4 border border-gray-800 rounded-xl p-3 bg-black/40">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-semibold text-pink-300">Prompt extras</p>
+                        <button
+                          type="button"
+                          onClick={clearPromptExtras}
+                          className="text-[10px] text-gray-500 hover:text-white"
+                        >
+                          Clear all
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-gray-600 mb-3">
+                        Tap a chip to add it; tap again to remove. Order is fixed: looks → body → card design → text.
+                      </p>
+                      {PROMPT_EXTRA_CATEGORIES.map(cat => (
+                        <div key={cat.id} className="mb-3">
+                          <p className="text-[10px] text-gray-500 mb-1.5 uppercase tracking-wide">{cat.label}</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {cat.options.map(opt => {
+                              const on = promptExtras[cat.id] === opt.id
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  onClick={() => togglePromptExtra(cat.id, opt.id)}
+                                  className={`text-[11px] px-2.5 py-1 rounded-full border font-medium transition ${
+                                    on
+                                      ? 'bg-pink-600 border-pink-400 text-white'
+                                      : 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500'
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+
+                      <div className="pt-2 border-t border-gray-800">
+                        <button
+                          type="button"
+                          onClick={() => setCardTextOn(v => !v)}
+                          className={`text-[11px] px-2.5 py-1 rounded-full border font-medium mb-2 ${
+                            cardTextOn
+                              ? 'bg-pink-600 border-pink-400 text-white'
+                              : 'bg-gray-900 border-gray-700 text-gray-400'
+                          }`}
+                        >
+                          {cardTextOn ? '✓ Card text on' : 'Card text overlay'}
+                        </button>
+                        {cardTextOn && (
+                          <div className="space-y-2 mt-1">
+                            <input
+                              value={cardTextContent}
+                              onChange={e => setCardTextContent(e.target.value)}
+                              placeholder='Text on card (e.g. character name)'
+                              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-pink-500"
+                            />
+                            <div className="grid grid-cols-2 gap-2">
+                              <select value={cardTextSize} onChange={e => setCardTextSize(e.target.value)}
+                                className="bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none">
+                                {CARD_TEXT_SIZES.map(s => <option key={s.id} value={s.id}>{s.label} size</option>)}
+                              </select>
+                              <select value={cardTextPos} onChange={e => setCardTextPos(e.target.value)}
+                                className="bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none">
+                                {CARD_TEXT_POS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                              </select>
+                              <select value={cardTextFont} onChange={e => setCardTextFont(e.target.value)}
+                                className="bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none">
+                                {CARD_TEXT_FONTS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                              </select>
+                              <select value={cardTextColor} onChange={e => setCardTextColor(e.target.value)}
+                                className="bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none">
+                                {CARD_TEXT_COLORS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {(Object.keys(promptExtras).length > 0 || (cardTextOn && cardTextContent.trim())) && (
+                        <div className="mt-3 p-2 rounded-lg bg-gray-950 border border-gray-800">
+                          <p className="text-[9px] text-gray-500 mb-1">Final front prompt preview</p>
+                          <p className="text-[11px] text-gray-300 leading-relaxed break-words">
+                            {composePromptWithExtras(draft.image_prompt) || '(add a base prompt)'}
+                            {artStyle ? <span className="text-purple-400">, [art style]</span> : null}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
                     {inputRow('Negative Prompt', negative, setNegative, true, 3)}
 
                     <label className="block text-xs text-gray-400 mb-1">Aspect Ratio</label>
