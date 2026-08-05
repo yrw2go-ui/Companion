@@ -4,6 +4,28 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 import { makePoster } from '../lib/posterFrame'
 
+// Built-in list (also used as reset). Fortnite is the intended default.
+export const DEFAULT_ART_STYLES = [
+  { value: '', label: 'None (use prompt as-is)' },
+  { value: 'Fortnite style 3D character render, Epic Games Fortnite aesthetic, stylized cartoony proportions, clean cel-shaded look, bold outlines, vibrant saturated colors, simplified facial features, game character art, not photorealistic, not realistic skin, Unreal Engine game render style', label: 'Fortnite Style (non-realistic)' },
+  { value: 'stylized 3D game character, anime-influenced proportions, smooth plastic skin shader, bright saturated palette, clean game-ready render, not photorealistic', label: 'Stylized 3D Game Character' },
+  { value: 'anime illustration, clean line art, cel shading, vibrant colors, detailed eyes, not photorealistic, 2D anime style', label: 'Anime Illustration' },
+  { value: 'comic book illustration, bold ink outlines, flat color fills, dynamic pose, graphic novel style, not photorealistic', label: 'Comic Book' },
+  { value: 'editorial fashion photography, professional studio lighting, sharp focus, natural skin texture, high end magazine quality', label: 'Editorial Fashion' },
+  { value: 'natural light portrait photography, soft window light, shallow depth of field, candid feel, realistic skin', label: 'Natural Light Portrait' },
+  { value: 'sports photography, fast shutter, dynamic action, stadium or track setting, crisp detail, athletic', label: 'Sports Action' },
+  { value: 'black and white photography, high contrast monochrome, dramatic shadows, classic film grain', label: 'Black & White' },
+  { value: 'golden hour photography, warm backlight, sun flare, glowing rim light, outdoor', label: 'Golden Hour' },
+  { value: 'street style photography, urban backdrop, candid stride, city environment, documentary feel', label: 'Street Style' },
+  { value: 'studio beauty photography, clean seamless backdrop, soft even lighting, crisp detail, minimal', label: 'Studio Beauty' },
+  { value: 'cinematic film still, anamorphic look, moody colour grade, shallow focus, narrative feel', label: 'Cinematic' },
+  { value: 'analog film photography, 35mm grain, muted colour, slight halation, nostalgic tone', label: 'Film Photography' },
+  { value: 'high fashion runway photography, backstage energy, motion, professional lighting', label: 'Runway' },
+]
+
+const fortniteDefaultValue = () =>
+  (DEFAULT_ART_STYLES.find(s => /fortnite/i.test(s.label)) || DEFAULT_ART_STYLES[1]).value
+
 export default function Settings() {
   const router = useRouter()
   const [description, setDescription] = useState('')
@@ -13,6 +35,10 @@ export default function Settings() {
   const [savedValue, setSavedValue] = useState('')
   const [appMode, setAppMode] = useState('creator')  // 'creator' | 'public'
   const [modeSaving, setModeSaving] = useState(false)
+  const [artStyles, setArtStyles] = useState(DEFAULT_ART_STYLES)
+  const [defaultArtStyle, setDefaultArtStyle] = useState(fortniteDefaultValue())
+  const [artStylesSaving, setArtStylesSaving] = useState(false)
+  const [editingStyleIdx, setEditingStyleIdx] = useState(null)
   const [tabBanners, setTabBanners] = useState({
     home: { image: '', video: '' },
     packs: { image: '', video: '' },
@@ -70,7 +96,7 @@ export default function Settings() {
   const load = async () => {
     const { data } = await supabase
       .from('user_settings')
-      .select('my_description, app_mode, tab_banners, tab_titles, shop_intro_url')
+      .select('my_description, app_mode, tab_banners, tab_titles, shop_intro_url, art_styles, default_art_style')
       .eq('id', 1)
       .maybeSingle()
     const loaded = data?.my_description || ''
@@ -99,7 +125,50 @@ export default function Settings() {
       collection: tt.collection || 'My Collection',
       duel: tt.duel || 'Duel',
     })
+    const styles = Array.isArray(data?.art_styles) && data.art_styles.length
+      ? data.art_styles.map(s => ({ label: String(s.label || ''), value: String(s.value ?? '') }))
+      : DEFAULT_ART_STYLES
+    setArtStyles(styles)
+    const def = data?.default_art_style
+    if (def != null && styles.some(s => s.value === def)) setDefaultArtStyle(def)
+    else {
+      const ft = styles.find(s => /fortnite/i.test(s.label))
+      setDefaultArtStyle(ft ? ft.value : (styles[1]?.value ?? ''))
+    }
     setLoading(false)
+  }
+
+  const saveArtStyles = async () => {
+    if (artStylesSaving) return
+    const cleaned = artStyles
+      .map(s => ({ label: String(s.label || '').trim(), value: String(s.value ?? '').trim() }))
+      .filter(s => s.label)
+    if (!cleaned.length) {
+      alert('Keep at least one style (or reset to defaults).')
+      return
+    }
+    let def = defaultArtStyle
+    if (!cleaned.some(s => s.value === def)) def = cleaned.find(s => /fortnite/i.test(s.label))?.value ?? cleaned[0].value
+    setArtStylesSaving(true)
+    const { error } = await supabase.from('user_settings').upsert({
+      id: 1,
+      art_styles: cleaned,
+      default_art_style: def,
+    })
+    setArtStylesSaving(false)
+    if (error) {
+      alert(
+        'Could not save art styles: ' + error.message +
+        '\n\nIf the column is missing, run in Supabase:\n' +
+        'alter table user_settings add column if not exists art_styles jsonb;\n' +
+        'alter table user_settings add column if not exists default_art_style text;'
+      )
+      return
+    }
+    setArtStyles(cleaned)
+    setDefaultArtStyle(def)
+    setEditingStyleIdx(null)
+    alert('Art styles saved. Cards & Gallery will use these on next open/refresh.')
   }
 
   const saveBanners = async () => {
@@ -640,6 +709,117 @@ export default function Settings() {
       >
         {saving ? 'Saving...' : description === savedValue ? 'Saved' : 'Save'}
       </button>
+
+      <div className="mt-10 border-t border-gray-800 pt-6">
+        <h2 className="font-semibold mb-1">Art styles</h2>
+        <p className="text-xs text-gray-600 mb-3">
+          Used in Cards & Gallery create/edit. The style prompt is appended to the image prompt.
+          Default is applied when you open those screens.
+        </p>
+
+        <label className="block text-xs text-gray-500 mb-1">Default style</label>
+        <select
+          value={defaultArtStyle}
+          onChange={e => setDefaultArtStyle(e.target.value)}
+          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500"
+        >
+          {artStyles.map((s, i) => (
+            <option key={i} value={s.value}>{s.label || '(unnamed)'}</option>
+          ))}
+        </select>
+
+        <div className="space-y-2 mb-3">
+          {artStyles.map((s, i) => (
+            <div key={i} className="border border-gray-800 rounded-xl p-3 bg-gray-950/80">
+              <div className="flex items-center gap-2 mb-1">
+                <input
+                  value={s.label}
+                  onChange={e => {
+                    const next = [...artStyles]
+                    next[i] = { ...next[i], label: e.target.value }
+                    setArtStyles(next)
+                  }}
+                  placeholder="Label (shown in dropdown)"
+                  className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setEditingStyleIdx(editingStyleIdx === i ? null : i)}
+                  className="text-[11px] text-pink-400 px-2 py-1"
+                >
+                  {editingStyleIdx === i ? 'Hide' : 'Edit prompt'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (artStyles.length <= 1) return
+                    const next = artStyles.filter((_, j) => j !== i)
+                    setArtStyles(next)
+                    if (defaultArtStyle === s.value) {
+                      const ft = next.find(x => /fortnite/i.test(x.label))
+                      setDefaultArtStyle(ft?.value ?? next[0]?.value ?? '')
+                    }
+                    if (editingStyleIdx === i) setEditingStyleIdx(null)
+                  }}
+                  className="text-red-400 text-sm px-1"
+                  title="Remove"
+                >
+                  ✕
+                </button>
+              </div>
+              {editingStyleIdx === i && (
+                <textarea
+                  value={s.value}
+                  onChange={e => {
+                    const next = [...artStyles]
+                    next[i] = { ...next[i], value: e.target.value }
+                    setArtStyles(next)
+                  }}
+                  rows={4}
+                  placeholder="Prompt text appended to generations (leave empty for None)"
+                  className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-purple-500 font-mono"
+                />
+              )}
+              {defaultArtStyle === s.value && (
+                <p className="text-[10px] text-emerald-400 mt-1">Default</p>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2 mb-2">
+          <button
+            type="button"
+            onClick={() => {
+              setArtStyles([...artStyles, { label: 'New style', value: '' }])
+              setEditingStyleIdx(artStyles.length)
+            }}
+            className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-2.5 text-sm font-semibold"
+          >
+            + Add style
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!confirm('Reset to built-in list (Fortnite default)?')) return
+              setArtStyles(DEFAULT_ART_STYLES)
+              setDefaultArtStyle(fortniteDefaultValue())
+              setEditingStyleIdx(null)
+            }}
+            className="flex-1 bg-gray-900 border border-gray-700 hover:border-gray-500 rounded-lg py-2.5 text-sm font-semibold"
+          >
+            Reset defaults
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={saveArtStyles}
+          disabled={artStylesSaving}
+          className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded-lg py-3 font-semibold"
+        >
+          {artStylesSaving ? 'Saving…' : 'Save art styles'}
+        </button>
+      </div>
 
       <div className="mt-10 border-t border-gray-800 pt-6">
         <h2 className="font-semibold mb-1">App Mode</h2>

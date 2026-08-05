@@ -200,8 +200,9 @@ export default function Gallery() {
   const [lowNoiseLoras, setLowNoiseLoras] = useState('')
 
   const [createModel, setCreateModel] = useState('z-image/turbo')
+  const [artStylesList, setArtStylesList] = useState(ART_STYLES)
   const [createArtStyle, setCreateArtStyle] = useState(
-    (ART_STYLES.find(s => s.label === 'Studio Beauty') || ART_STYLES[0]).value
+    (ART_STYLES.find(s => /fortnite/i.test(s.label)) || ART_STYLES[1]).value
   )
 
   const [showTransform, setShowTransform] = useState(false)
@@ -303,6 +304,27 @@ export default function Gallery() {
 
   useEffect(() => {
     load().then(() => flushPendingGallerySaves().catch(() => {}))
+    ;(async () => {
+      try {
+        const { data } = await supabase
+          .from('user_settings')
+          .select('art_styles, default_art_style')
+          .eq('id', 1)
+          .maybeSingle()
+        const styles = Array.isArray(data?.art_styles) && data.art_styles.length
+          ? data.art_styles.map(s => ({ label: String(s.label || ''), value: String(s.value ?? '') }))
+          : ART_STYLES
+        setArtStylesList(styles)
+        const def = data?.default_art_style
+        if (def != null && styles.some(s => s.value === def)) setCreateArtStyle(def)
+        else {
+          const ft = styles.find(s => /fortnite/i.test(s.label))
+          if (ft) setCreateArtStyle(ft.value)
+        }
+      } catch (e) {
+        console.warn('art styles load', e)
+      }
+    })()
   }, [])
 
   // Keep editPrompt in sync when opening a detail item
@@ -2879,12 +2901,12 @@ export default function Gallery() {
               onChange={e => setCreateArtStyle(e.target.value)}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500"
             >
-              {ART_STYLES.map(s => (
-                <option key={s.label} value={s.value}>{s.label}</option>
+              {artStylesList.map(s => (
+                <option key={s.label + s.value.slice(0, 12)} value={s.value}>{s.label}</option>
               ))}
             </select>
             <p className="text-[10px] text-gray-600 mb-3">
-              Appended to the end of your prompt on generate. Same list as card creation.
+              Appended to the end of your prompt on generate. Editable in Settings · default is Fortnite Style.
             </p>
 
             {(imgFamilyOf(createModel) === 'flux' || imgFamilyOf(createModel) === 'schnell') && (

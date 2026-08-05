@@ -175,7 +175,10 @@ export default function Cards() {
   const [attachBusy, setAttachBusy] = useState(false)
   const [negative, setNegative] = useState(DEFAULT_NEGATIVE)
   const [size, setSize] = useState('768*1024')
-  const [artStyle, setArtStyle] = useState((ART_STYLES.find(s => s.label === 'Studio Beauty') || ART_STYLES[1]).value)
+  const [artStylesList, setArtStylesList] = useState(ART_STYLES)
+  const [artStyle, setArtStyle] = useState(
+    (ART_STYLES.find(s => /fortnite/i.test(s.label)) || ART_STYLES[1]).value
+  )
   const [imageModel, setImageModel] = useState(IMAGE_MODELS[0].id)
   const [seedInput, setSeedInput] = useState('')
   const [guidance, setGuidance] = useState(3.5)
@@ -229,7 +232,30 @@ export default function Cards() {
   const [cmImageModel, setCmImageModel] = useState(IMAGE_MODELS[0].id)
   const [cmEditModel, setCmEditModel] = useState(EDIT_IMAGE_MODELS[0].id)
 
-  useEffect(() => { loadCards() }, [])
+  useEffect(() => {
+    loadCards()
+    ;(async () => {
+      try {
+        const { data } = await supabase
+          .from('user_settings')
+          .select('art_styles, default_art_style')
+          .eq('id', 1)
+          .maybeSingle()
+        const styles = Array.isArray(data?.art_styles) && data.art_styles.length
+          ? data.art_styles.map(s => ({ label: String(s.label || ''), value: String(s.value ?? '') }))
+          : ART_STYLES
+        setArtStylesList(styles)
+        const def = data?.default_art_style
+        if (def != null && styles.some(s => s.value === def)) setArtStyle(def)
+        else {
+          const ft = styles.find(s => /fortnite/i.test(s.label))
+          if (ft) setArtStyle(ft.value)
+        }
+      } catch (e) {
+        console.warn('art styles load', e)
+      }
+    })()
+  }, [])
 
   // Keep card detail / edit open across refresh via ?card=&edit=
   useEffect(() => {
@@ -2311,7 +2337,7 @@ export default function Cards() {
                 <label className="block text-xs text-gray-400 mb-1">Art Style</label>
                 <select value={artStyle} onChange={e => setArtStyle(e.target.value)}
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
-                  {ART_STYLES.map(s => <option key={s.label} value={s.value}>{s.label}</option>)}
+                  {artStylesList.map(s => <option key={s.label + s.value.slice(0, 12)} value={s.value}>{s.label}</option>)}
                 </select>
 
                 <div className="flex gap-2 mb-3">
@@ -2524,7 +2550,7 @@ export default function Cards() {
               <label className="block text-xs text-gray-400 mb-1">Add Art Style</label>
               <select value={editStyle} onChange={e => setEditStyle(e.target.value)}
                 className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
-                {ART_STYLES.map(s => <option key={s.label} value={s.value}>{s.label}</option>)}
+                {artStylesList.map(s => <option key={s.label + s.value.slice(0, 12)} value={s.value}>{s.label}</option>)}
               </select>
 
               <label className="block text-xs text-gray-400 mb-1">Aspect Ratio</label>
