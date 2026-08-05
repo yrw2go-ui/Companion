@@ -26,6 +26,112 @@ export const DEFAULT_ART_STYLES = [
 const fortniteDefaultValue = () =>
   (DEFAULT_ART_STYLES.find(s => /fortnite/i.test(s.label)) || DEFAULT_ART_STYLES[1]).value
 
+// Built-in prompt extra chips (Cards + Gallery). Editable; saved as prompt_extra_categories.
+export const DEFAULT_PROMPT_EXTRA_CATEGORIES = [
+  {
+    id: 'skin',
+    label: 'Skin',
+    options: [
+      { id: 'fair', label: 'Fair', text: 'fair light skin' },
+      { id: 'porcelain', label: 'Porcelain', text: 'porcelain pale skin' },
+      { id: 'light_tan', label: 'Light tan', text: 'light tan skin' },
+      { id: 'olive', label: 'Olive', text: 'olive skin tone' },
+      { id: 'golden', label: 'Golden', text: 'golden sun-kissed skin' },
+      { id: 'medium_brown', label: 'Medium brown', text: 'medium brown skin' },
+      { id: 'deep_brown', label: 'Deep brown', text: 'deep rich brown skin' },
+      { id: 'ebony', label: 'Ebony', text: 'ebony dark skin' },
+    ],
+  },
+  {
+    id: 'hair_color',
+    label: 'Hair color',
+    options: [
+      { id: 'blonde', label: 'Blonde', text: 'blonde hair' },
+      { id: 'platinum', label: 'Platinum', text: 'platinum blonde hair' },
+      { id: 'brunette', label: 'Brunette', text: 'brunette brown hair' },
+      { id: 'black', label: 'Black', text: 'jet black hair' },
+      { id: 'red', label: 'Red', text: 'red hair' },
+      { id: 'auburn', label: 'Auburn', text: 'auburn hair' },
+      { id: 'pink', label: 'Pink', text: 'pink hair' },
+      { id: 'silver', label: 'Silver', text: 'silver white hair' },
+      { id: 'blue', label: 'Blue', text: 'blue hair' },
+    ],
+  },
+  {
+    id: 'hair_style',
+    label: 'Hair style',
+    options: [
+      { id: 'long_straight', label: 'Long straight', text: 'long straight hair' },
+      { id: 'long_wavy', label: 'Long wavy', text: 'long wavy hair' },
+      { id: 'long_curly', label: 'Long curly', text: 'long curly hair' },
+      { id: 'shoulder', label: 'Shoulder length', text: 'shoulder-length hair' },
+      { id: 'bob', label: 'Bob', text: 'short bob haircut' },
+      { id: 'ponytail', label: 'Ponytail', text: 'high ponytail' },
+      { id: 'bun', label: 'Bun', text: 'elegant bun hairstyle' },
+      { id: 'braids', label: 'Braids', text: 'braided hair' },
+      { id: 'messy', label: 'Messy', text: 'messy tousled hair' },
+    ],
+  },
+  {
+    id: 'eye_color',
+    label: 'Eye color',
+    options: [
+      { id: 'brown', label: 'Brown', text: 'brown eyes' },
+      { id: 'hazel', label: 'Hazel', text: 'hazel eyes' },
+      { id: 'green', label: 'Green', text: 'green eyes' },
+      { id: 'blue', label: 'Blue', text: 'blue eyes' },
+      { id: 'gray', label: 'Gray', text: 'gray eyes' },
+      { id: 'amber', label: 'Amber', text: 'amber eyes' },
+      { id: 'violet', label: 'Violet', text: 'violet eyes' },
+    ],
+  },
+  {
+    id: 'body_type',
+    label: 'Body type',
+    options: [
+      { id: 'slim', label: 'Slim', text: 'slim athletic build' },
+      { id: 'athletic', label: 'Athletic', text: 'athletic toned physique' },
+      { id: 'curvy', label: 'Curvy', text: 'curvy hourglass figure' },
+      { id: 'voluptuous', label: 'Voluptuous', text: 'voluptuous full figure' },
+      { id: 'petite', label: 'Petite', text: 'petite frame' },
+      { id: 'tall', label: 'Tall', text: 'tall elegant stature' },
+    ],
+  },
+  {
+    id: 'breast_size',
+    label: 'Breast size',
+    options: [
+      { id: 'small', label: 'Small', text: 'small breasts' },
+      { id: 'medium', label: 'Medium', text: 'medium breasts' },
+      { id: 'large', label: 'Large', text: 'large breasts' },
+      { id: 'very_large', label: 'Very large', text: 'very large full breasts' },
+    ],
+  },
+  {
+    id: 'hips',
+    label: 'Hips',
+    options: [
+      { id: 'narrow', label: 'Narrow', text: 'narrow hips' },
+      { id: 'balanced', label: 'Balanced', text: 'balanced hips' },
+      { id: 'wide', label: 'Wide', text: 'wide hips' },
+      { id: 'very_wide', label: 'Very wide', text: 'very wide hips and thick thighs' },
+    ],
+  },
+  {
+    id: 'card_design',
+    label: 'Card design',
+    options: [
+      { id: 'gold_foil', label: 'Gold foil', text: 'modern gold foil trading card design, fancy gold foil edges, premium collectible card border' },
+      { id: 'holographic', label: 'Holographic', text: 'holographic trading card design, iridescent rainbow foil edges, premium collectible border' },
+      { id: 'black_luxury', label: 'Black luxury', text: 'black luxury trading card design, matte black frame with silver trim, elegant collectible border' },
+      { id: 'neon', label: 'Neon', text: 'neon cyber trading card design, glowing neon edge accents, futuristic collectible border' },
+      { id: 'rose_gold', label: 'Rose gold', text: 'rose gold trading card design, soft metallic rose-gold foil edges, glamorous collectible border' },
+      { id: 'minimal_white', label: 'Minimal white', text: 'clean minimal white trading card design, thin elegant border, modern collectible layout' },
+      { id: 'ornate', label: 'Ornate', text: 'ornate baroque trading card design, intricate decorative gold frame, classic collectible border' },
+    ],
+  },
+]
+
 export default function Settings() {
   const router = useRouter()
   const [description, setDescription] = useState('')
@@ -39,6 +145,11 @@ export default function Settings() {
   const [defaultArtStyle, setDefaultArtStyle] = useState(fortniteDefaultValue())
   const [artStylesSaving, setArtStylesSaving] = useState(false)
   const [editingStyleIdx, setEditingStyleIdx] = useState(null)
+  const [promptExtraCats, setPromptExtraCats] = useState(DEFAULT_PROMPT_EXTRA_CATEGORIES)
+  const [extrasSaving, setExtrasSaving] = useState(false)
+  const [expandedExtraCat, setExpandedExtraCat] = useState(null)
+  const [newOptLabel, setNewOptLabel] = useState('')
+  const [newOptText, setNewOptText] = useState('')
   const [tabBanners, setTabBanners] = useState({
     home: { image: '', video: '' },
     packs: { image: '', video: '' },
@@ -96,7 +207,7 @@ export default function Settings() {
   const load = async () => {
     const { data } = await supabase
       .from('user_settings')
-      .select('my_description, app_mode, tab_banners, tab_titles, shop_intro_url, art_styles, default_art_style')
+      .select('my_description, app_mode, tab_banners, tab_titles, shop_intro_url, art_styles, default_art_style, prompt_extra_categories')
       .eq('id', 1)
       .maybeSingle()
     const loaded = data?.my_description || ''
@@ -135,7 +246,76 @@ export default function Settings() {
       const ft = styles.find(s => /fortnite/i.test(s.label))
       setDefaultArtStyle(ft ? ft.value : (styles[1]?.value ?? ''))
     }
+    if (Array.isArray(data?.prompt_extra_categories) && data.prompt_extra_categories.length) {
+      setPromptExtraCats(
+        data.prompt_extra_categories.map(c => ({
+          id: String(c.id || ''),
+          label: String(c.label || ''),
+          options: Array.isArray(c.options)
+            ? c.options.map(o => ({
+                id: String(o.id || ''),
+                label: String(o.label || ''),
+                text: String(o.text || ''),
+              }))
+            : [],
+        }))
+      )
+    } else {
+      setPromptExtraCats(DEFAULT_PROMPT_EXTRA_CATEGORIES)
+    }
     setLoading(false)
+  }
+
+  const savePromptExtras = async () => {
+    if (extrasSaving) return
+    const cleaned = promptExtraCats
+      .map(c => ({
+        id: String(c.id || '').trim() || String(c.label || '').toLowerCase().replace(/\s+/g, '_'),
+        label: String(c.label || '').trim(),
+        options: (c.options || [])
+          .map(o => ({
+            id: String(o.id || '').trim() || String(o.label || '').toLowerCase().replace(/\s+/g, '_'),
+            label: String(o.label || '').trim(),
+            text: String(o.text || '').trim(),
+          }))
+          .filter(o => o.label && o.text),
+      }))
+      .filter(c => c.label)
+    setExtrasSaving(true)
+    const { error } = await supabase.from('user_settings').upsert({
+      id: 1,
+      prompt_extra_categories: cleaned,
+    })
+    setExtrasSaving(false)
+    if (error) {
+      alert(
+        'Could not save prompt extras: ' + error.message +
+        '\n\nIf the column is missing, run in Supabase:\n' +
+        'alter table user_settings add column if not exists prompt_extra_categories jsonb;'
+      )
+      return
+    }
+    setPromptExtraCats(cleaned)
+    alert('Prompt extras saved. Cards & Gallery pick them up on next open/refresh.')
+  }
+
+  const addCustomOption = (catId) => {
+    const label = newOptLabel.trim()
+    const text = newOptText.trim()
+    if (!label || !text) {
+      alert('Need both a chip label and the prompt text that gets added.')
+      return
+    }
+    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `custom_${Date.now()}`
+    setPromptExtraCats(prev =>
+      prev.map(c =>
+        c.id === catId
+          ? { ...c, options: [...(c.options || []), { id, label, text }] }
+          : c
+      )
+    )
+    setNewOptLabel('')
+    setNewOptText('')
   }
 
   const saveArtStyles = async () => {
@@ -819,6 +999,136 @@ export default function Settings() {
         >
           {artStylesSaving ? 'Saving…' : 'Save art styles'}
         </button>
+      </div>
+
+      <div className="mt-10 border-t border-gray-800 pt-6">
+        <h2 className="font-semibold mb-1">Prompt extras (chips)</h2>
+        <p className="text-xs text-gray-600 mb-3">
+          Permanent lists used in Cards & Gallery create. Add your own chips anytime — label is the button, prompt text is what gets appended.
+        </p>
+        {promptExtraCats.map((cat) => (
+          <div key={cat.id} className="mb-3 border border-gray-800 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setExpandedExtraCat(expandedExtraCat === cat.id ? null : cat.id)}
+              className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-950 text-left"
+            >
+              <span className="text-sm font-semibold">{cat.label}</span>
+              <span className="text-[10px] text-gray-500">
+                {(cat.options || []).length} options · {expandedExtraCat === cat.id ? 'Hide' : 'Edit'}
+              </span>
+            </button>
+            {expandedExtraCat === cat.id && (
+              <div className="p-3 border-t border-gray-800 space-y-2">
+                {(cat.options || []).map((opt, oi) => (
+                  <div key={opt.id + oi} className="border border-gray-800 rounded-lg p-2 bg-black/40">
+                    <div className="flex gap-2 mb-1">
+                      <input
+                        value={opt.label}
+                        onChange={e => {
+                          const v = e.target.value
+                          setPromptExtraCats(prev =>
+                            prev.map(c =>
+                              c.id !== cat.id
+                                ? c
+                                : {
+                                    ...c,
+                                    options: c.options.map((o, i) =>
+                                      i === oi ? { ...o, label: v } : o
+                                    ),
+                                  }
+                            )
+                          )
+                        }}
+                        className="flex-1 bg-black border border-gray-700 rounded px-2 py-1 text-xs outline-none focus:border-pink-500"
+                        placeholder="Chip label"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPromptExtraCats(prev =>
+                            prev.map(c =>
+                              c.id !== cat.id
+                                ? c
+                                : { ...c, options: c.options.filter((_, i) => i !== oi) }
+                            )
+                          )
+                        }
+                        className="text-red-400 text-xs px-2"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <textarea
+                      value={opt.text}
+                      onChange={e => {
+                        const v = e.target.value
+                        setPromptExtraCats(prev =>
+                          prev.map(c =>
+                            c.id !== cat.id
+                              ? c
+                              : {
+                                  ...c,
+                                  options: c.options.map((o, i) =>
+                                    i === oi ? { ...o, text: v } : o
+                                  ),
+                                }
+                          )
+                        )
+                      }}
+                      rows={2}
+                      className="w-full bg-black border border-gray-700 rounded px-2 py-1 text-[11px] outline-none focus:border-pink-500 font-mono"
+                      placeholder="Prompt text added when selected"
+                    />
+                  </div>
+                ))}
+                <div className="pt-2 border-t border-gray-800 space-y-2">
+                  <p className="text-[10px] text-gray-500">Add custom option to {cat.label}</p>
+                  <input
+                    value={newOptLabel}
+                    onChange={e => setNewOptLabel(e.target.value)}
+                    placeholder="Chip label (e.g. Honey blonde)"
+                    className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-pink-500"
+                  />
+                  <input
+                    value={newOptText}
+                    onChange={e => setNewOptText(e.target.value)}
+                    placeholder='Prompt text (e.g. honey blonde hair with soft waves)'
+                    className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-pink-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => addCustomOption(cat.id)}
+                    className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-xs font-semibold"
+                  >
+                    + Add to {cat.label}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        <div className="flex gap-2 mt-2 mb-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (!confirm('Reset all prompt extras to built-in defaults?')) return
+              setPromptExtraCats(DEFAULT_PROMPT_EXTRA_CATEGORIES)
+              setExpandedExtraCat(null)
+            }}
+            className="flex-1 bg-gray-900 border border-gray-700 rounded-lg py-2.5 text-sm font-semibold"
+          >
+            Reset defaults
+          </button>
+          <button
+            type="button"
+            onClick={savePromptExtras}
+            disabled={extrasSaving}
+            className="flex-1 bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded-lg py-2.5 text-sm font-semibold"
+          >
+            {extrasSaving ? 'Saving…' : 'Save prompt extras'}
+          </button>
+        </div>
       </div>
 
       <div className="mt-10 border-t border-gray-800 pt-6">

@@ -337,6 +337,7 @@ export default function Gallery() {
   const [createArtStyle, setCreateArtStyle] = useState(
     (ART_STYLES.find(s => /fortnite/i.test(s.label)) || ART_STYLES[1]).value
   )
+  const [promptExtraCategories, setPromptExtraCategories] = useState(PROMPT_EXTRA_CATEGORIES)
   const [promptExtras, setPromptExtras] = useState({})
   const [cardTextOn, setCardTextOn] = useState(false)
   const [cardTextContent, setCardTextContent] = useState('')
@@ -448,7 +449,7 @@ export default function Gallery() {
       try {
         const { data } = await supabase
           .from('user_settings')
-          .select('art_styles, default_art_style')
+          .select('art_styles, default_art_style, prompt_extra_categories')
           .eq('id', 1)
           .maybeSingle()
         const styles = Array.isArray(data?.art_styles) && data.art_styles.length
@@ -460,6 +461,9 @@ export default function Gallery() {
         else {
           const ft = styles.find(s => /fortnite/i.test(s.label))
           if (ft) setCreateArtStyle(ft.value)
+        }
+        if (Array.isArray(data?.prompt_extra_categories) && data.prompt_extra_categories.length) {
+          setPromptExtraCategories(data.prompt_extra_categories)
         }
       } catch (e) {
         console.warn('art styles load', e)
@@ -1183,7 +1187,7 @@ export default function Gallery() {
     for (const catId of PROMPT_EXTRA_ORDER) {
       const optId = promptExtras[catId]
       if (!optId) continue
-      const cat = PROMPT_EXTRA_CATEGORIES.find(c => c.id === catId)
+      const cat = promptExtraCategories.find(c => c.id === catId)
       const opt = cat?.options?.find(o => o.id === optId)
       if (opt?.text) parts.push(opt.text)
     }
@@ -3101,11 +3105,11 @@ export default function Gallery() {
               <p className="text-[10px] text-gray-600 mb-3">
                 Tap a chip to add it; tap again to remove. Order: looks → body → card design → text.
               </p>
-              {PROMPT_EXTRA_CATEGORIES.map(cat => (
+              {promptExtraCategories.map(cat => (
                 <div key={cat.id} className="mb-3">
                   <p className="text-[10px] text-gray-500 mb-1.5 uppercase tracking-wide">{cat.label}</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {cat.options.map(opt => {
+                    {(cat.options || []).map(opt => {
                       const on = promptExtras[cat.id] === opt.id
                       return (
                         <button
