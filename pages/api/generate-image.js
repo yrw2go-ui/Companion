@@ -9,6 +9,68 @@ const supabaseAdmin = createClient(
 const BASE_URL = 'https://api.atlascloud.ai/api/v1'
 const DEFAULT_MODEL = 'z-image/turbo'
 
+async function registerGalleryRow(row) {
+  if (!row?.url) return null
+  try {
+    const { data: existing } = await supabaseAdmin
+      .from('gallery_media')
+      .select('*')
+      .eq('url', row.url)
+      .limit(1)
+      .maybeSingle()
+    if (existing?.id) return existing
+
+    const payloads = [
+      row,
+      {
+        type: row.type || 'image',
+        url: row.url,
+        prompt: row.prompt || null,
+        negative_prompt: row.negative_prompt || null,
+        model: row.model || null,
+        seed: row.seed ?? null,
+        size: row.size || null,
+        source_prompt: row.source_prompt || null,
+        character_id: row.character_id || null,
+      },
+      {
+        type: row.type || 'image',
+        url: row.url,
+        prompt: row.prompt || null,
+        model: row.model || null,
+      },
+      { type: row.type || 'image', url: row.url },
+    ]
+
+    for (const payload of payloads) {
+      const body = {}
+      for (const [k, v] of Object.entries(payload)) {
+        if (v !== undefined && v !== null && v !== '') body[k] = v
+      }
+      body.url = row.url
+      body.type = row.type || 'image'
+      const { data, error } = await supabaseAdmin
+        .from('gallery_media')
+        .insert([body])
+        .select()
+        .single()
+      if (!error && data) return data
+      if (error && /duplicate|unique/i.test(error.message || '')) {
+        const { data: again } = await supabaseAdmin
+          .from('gallery_media')
+          .select('*')
+          .eq('url', row.url)
+          .limit(1)
+          .maybeSingle()
+        if (again) return again
+      }
+    }
+  } catch (e) {
+    console.warn('gallery register failed', e)
+  }
+  return null
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -16,7 +78,12 @@ export default async function handler(req, res) {
 
   const {
     prompt, negativePrompt, seed, size, referenceImageUrl,
+    referenceImageUrls, referenceImageUrl2, referenceImageUrl3, referenceImageUrl4,
     model, aspectRatio, resolution, outputFormat, thinking, guidance, steps,
+    // optional: client can ask us to skip gallery register (e.g. card-only flows)
+    skipGalleryRegister,
+    character_id,
+    source_prompt,
   } = req.body
 
   if (!prompt) {
@@ -31,9 +98,21 @@ export default async function handler(req, res) {
 
   const randSeed = () => Math.floor(Math.random() * 2147483647)
 
+  // Collect optional multi-refs (gallery create can send up to 4)
+  const extraRefs = [
+    ...(Array.isArray(referenceImageUrls) ? referenceImageUrls : []),
+    referenceImageUrl2,
+    referenceImageUrl3,
+    referenceImageUrl4,
+  ].filter(Boolean)
+  const primaryRef = referenceImageUrl || extraRefs[0] || null
+  const allRefs = primaryRef
+    ? [primaryRef, ...extraRefs.filter(u => u !== primaryRef)].slice(0, 4)
+    : []
+
   // A reference image means image-to-image. Use the explicit edit model if
   // one was passed (e.g. Seedream edit), else default to Wan edit.
-  const isEdit = !!referenceImageUrl
+  const isEdit = allRefs.length > 0
   const useModel = isEdit
     ? (model && (model.includes('edit') || model.includes('/edit')) ? model : 'alibaba/wan-2.7-pro/image-edit')
     : (model || DEFAULT_MODEL)
@@ -47,18 +126,18 @@ export default async function handler(req, res) {
     body = {
       model: useModel,
       prompt,
-      images: [referenceImageUrl],
+      images: allRefs,
       size: '1328*1776',
       output_format: 'jpeg',
       thinking: 'disabled',
       enable_base64_output: false,
     }
   } else if (isEdit && useModel.startsWith('xai/grok-imagine')) {
-    // Grok Imagine edit: image_urls[] (note: plural, different from i2v's image_url)
+    // Grok Imagine edit: image_urls[]
     body = {
       model: useModel,
       prompt,
-      image_urls: [referenceImageUrl],
+      image_urls: allRefs.slice(0, 1),
       num_images: 1,
       aspect_ratio: aspectRatio || 'auto',
       resolution: resolution || '1k',
@@ -71,7 +150,7 @@ export default async function handler(req, res) {
     body = {
       model: useModel,
       prompt,
-      images: [referenceImageUrl],
+      images: allRefs,
       size: '2K',
       n: 1,
       thinking_mode: true,
@@ -192,11 +271,33 @@ export default async function handler(req, res) {
       .from('character-images')
       .getPublicUrl(fileName)
 
+    const imageUrl = publicData.publicUrl
+
+    // Server-side gallery row — survives the client switching apps mid-response
+    let galleryId = null
+    if (!skipGalleryRegister) {
+      const gal = await registerGalleryRow({
+        type: 'image',
+        url: imageUrl,
+        prompt: String(prompt || '').trim() || null,
+        negative_prompt: negativePrompt && String(negativePrompt).trim()
+          ? String(negativePrompt).trim()
+          : null,
+        model: useModel,
+        seed: usedSeed,
+        size: usedSize,
+        character_id: character_id || null,
+        source_prompt: source_prompt || null,
+      })
+      galleryId = gal?.id || null
+    }
+
     return res.status(200).json({
-      imageUrl: publicData.publicUrl,
+      imageUrl,
       seed: usedSeed,
       size: usedSize,
       model: useModel,
+      galleryId,
     })
   } catch (err) {
     return res.status(500).json({ error: err.message })
