@@ -48,8 +48,8 @@ Return ONLY a valid JSON object. No markdown. No backticks. No comments. No prea
     { "label": "Allure", "value": 50 },
     { "label": "Charisma", "value": 50 }
   ],
-  "image_prompt": "FRONT art: one concise line — key appearance (age 18+, hair, build, skin, ethnicity cues), sensual pose, revealing or form-fitting modern outfit, modern setting. No photography or lighting style. No brand logos.",
-  "back_image_prompt": "BACK art: one concise line. The SAME person (repeat the key appearance words) in a different sensual pose and setting. Composition: subject in the upper half of the frame, head and shoulders near the top third, open space toward the bottom. No photography or lighting style. No brand logos."
+  "image_prompt": "One concise line. Start with the exact character identity block (name optional, age 18+, ethnicity cues, hair color and style, eye color if known, skin tone, body/build) then a sensual pose, revealing or form-fitting modern outfit, and modern setting. Do NOT prefix with FRONT art or similar. No photography or lighting style. No brand logos.",
+  "back_image_prompt": "One concise line for a different pose/setting. MUST begin by repeating the SAME character identity block word-for-word as image_prompt (hair, skin, build, ethnicity, eyes) so the person is identical, then describe only a new sensual pose and setting. Composition: subject in the upper half of the frame, head near the top third, open space toward the bottom. Do NOT prefix with BACK art or similar. No photography or lighting style. No brand logos."
 }
 
 SENSUAL / NSFW SCALE BY RARITY (apply in both art prompts and description tone):
@@ -86,7 +86,7 @@ STATS RULES:
 APPEARANCE RULES:
 - Completely invented individual. Never based on or resembling any real public figure. Never use a real celebrity's name or likeness.
 - Be specific about features rather than defaulting to generic beauty.
-- Both art prompts must describe the SAME person; copy the physical description verbatim between front and back.`
+- CRITICAL CONSISTENCY: Extract a fixed "identity block" (age, ethnicity, hair color+style, skin tone, build/body, eyes if mentioned). Put that block first in image_prompt. In back_image_prompt, copy that identity block EXACTLY word-for-word before changing only pose and setting. Do not rename features (e.g. do not switch black hair to brown). Do not add "FRONT art:" or "BACK art:" labels.`
 
   try {
     const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
@@ -154,8 +154,12 @@ APPEARANCE RULES:
       card.title = String(card.title || '').trim()
       card.description = String(card.description || '').trim()
       card.flavor_text = String(card.flavor_text || '').trim()
-      card.image_prompt = String(card.image_prompt || '').trim()
-      card.back_image_prompt = String(card.back_image_prompt || '').trim()
+      const stripArtLabel = (s) =>
+        String(s || '')
+          .replace(/^\s*(FRONT|BACK)\s*art\s*:\s*/i, '')
+          .trim()
+      card.image_prompt = stripArtLabel(card.image_prompt)
+      card.back_image_prompt = stripArtLabel(card.back_image_prompt)
       return res.status(200).json({ card })
     }
 
@@ -190,8 +194,12 @@ APPEARANCE RULES:
     card.title = String(card.title || '').trim()
     card.description = String(card.description || '').trim()
     card.flavor_text = String(card.flavor_text || '').trim()
-    card.image_prompt = String(card.image_prompt || '').trim()
-    card.back_image_prompt = String(card.back_image_prompt || '').trim()
+    const stripArtLabel = (s) =>
+      String(s || '')
+        .replace(/^\s*(FRONT|BACK)\s*art\s*:\s*/i, '')
+        .trim()
+    card.image_prompt = stripArtLabel(card.image_prompt)
+    card.back_image_prompt = stripArtLabel(card.back_image_prompt)
 
     return res.status(200).json({ card })
   } catch (err) {
