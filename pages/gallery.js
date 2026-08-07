@@ -17,6 +17,7 @@ const VIDEO_MODELS = [
   { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy', price: null },
   { id: 'atlascloud/wan-2.7-spicy/image-to-video', label: 'Wan 2.7 Spicy 🔊', price: null },
   { id: 'bytedance/seedance-v1.5-pro/image-to-video-spicy', label: 'Seedance Spicy I2V 🔊', price: null },
+  { id: 'bytedance/seedance-2.5/image-to-video', label: 'Seedance 2.5 I2V (4-30s, audio) 🔊', price: null },
 ]
 
 // text-to-video options
@@ -24,6 +25,7 @@ const T2V_MODELS = [
   { id: 'xai/grok-imagine-video/text-to-video', label: 'Grok Imagine', price: null },
   { id: 'kwaivgi/kling-v3.0-pro/text-to-video', label: 'Kling V3.0 Pro (sound, 3-15s)', price: null },
   { id: 'kwaivgi/kling-video-o3-pro/text-to-video', label: 'Kling O3 Pro (sound, 3-15s)', price: null },
+  { id: 'bytedance/seedance-2.5/text-to-video', label: 'Seedance 2.5 T2V (4-30s, audio) 🔊', price: null },
 ]
 const T2V_MODEL = T2V_MODELS[0].id
 const T2V_PRICE = null
@@ -1435,6 +1437,12 @@ export default function Gallery() {
     setShowVideo(false)
     try {
       const payload = { imageUrl: videoSource, prompt: videoPrompt, duration: videoDuration, resolution: videoRes, model: videoModel }
+      if (String(videoModel || '').includes('seedance-2.5')) {
+        payload.generate_audio = true
+        payload.ratio = 'adaptive'
+        payload.output_format = 'mp4'
+        payload.watermark = false
+      }
       if (videoModel === 'alibaba/wan-2.2-spicy/image-to-video-lora') {
         const high = parseLoras(highNoiseLoras)
         const low = parseLoras(lowNoiseLoras)
@@ -2086,6 +2094,7 @@ export default function Gallery() {
     setAnimating(true)
     try {
       const isKlingT2V = t2vModel.startsWith('kwaivgi/kling')
+      const isSeedance25 = String(t2vModel || '').includes('seedance-2.5')
       const res = await fetch('/api/generate-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2096,6 +2105,14 @@ export default function Gallery() {
           resolution: t2vRes,
           aspectRatio: t2vAspect,
           sound: isKlingT2V ? t2vSound : undefined,
+          ...(isSeedance25 ? {
+            generate_audio: true,
+            ratio: t2vAspect === '9:16' || t2vAspect === '16:9' || t2vAspect === '1:1' || t2vAspect === '3:4' || t2vAspect === '4:3'
+              ? t2vAspect
+              : 'adaptive',
+            output_format: 'mp4',
+            watermark: false,
+          } : {}),
         }),
       })
       const data = await res.json()
@@ -3524,17 +3541,21 @@ export default function Gallery() {
             <label className="block text-xs text-gray-400 mb-1">Length</label>
             <select value={videoDuration} onChange={e => setVideoDuration(parseInt(e.target.value))}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
+              <option value={4}>4 seconds</option>
               <option value={5}>5 seconds</option>
               <option value={8}>8 seconds</option>
-              <option value={10}>10 seconds (2x cost)</option>
-              <option value={15}>15 seconds (3x cost)</option>
+              <option value={10}>10 seconds</option>
+              <option value={15}>15 seconds</option>
+              <option value={20}>20 seconds (Seedance 2.5)</option>
+              <option value={30}>30 seconds (Seedance 2.5)</option>
             </select>
 
             <label className="block text-xs text-gray-400 mb-1">Resolution</label>
             <select value={videoRes} onChange={e => setVideoRes(e.target.value)}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500">
+              <option value="480p">480p</option>
               <option value="720p">720p</option>
-              <option value="1080p">1080p (costs more)</option>
+              <option value="1080p">1080p (where supported)</option>
             </select>
 
             <div className="flex gap-2">
@@ -3870,6 +3891,8 @@ export default function Gallery() {
               <option value="1:1">1:1 (square)</option>
               <option value="3:4">3:4</option>
               <option value="4:3">4:3</option>
+              <option value="21:9">21:9 (ultrawide)</option>
+              <option value="adaptive">adaptive (Seedance 2.5)</option>
             </select>
 
             <label className="block text-xs text-gray-400 mb-1">Length</label>
@@ -3877,6 +3900,10 @@ export default function Gallery() {
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
               {t2vModel.startsWith('kwaivgi/kling')
                 ? Array.from({ length: 13 }, (_, i) => i + 3).map(s => (
+                    <option key={s} value={s}>{s} seconds</option>
+                  ))
+                : String(t2vModel || '').includes('seedance-2.5')
+                ? [4, 5, 6, 8, 10, 12, 15, 20, 25, 30].map(s => (
                     <option key={s} value={s}>{s} seconds</option>
                   ))
                 : (
