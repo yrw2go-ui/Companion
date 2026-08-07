@@ -42,10 +42,22 @@ export default async function handler(req, res) {
 
     const { data: rows } = await supabaseAdmin
       .from('gallery_media')
-      .select('id, url, type, prompt, created_at')
+      .select('id, url, poster_url, thumbnail_url, type, prompt, created_at')
 
+    // rows whose actual content file is gone -- these get removed entirely
     const broken = (rows || []).filter(r => {
       const f = fileNameFromUrl(r.url)
+      return f && !existing.has(f)
+    })
+
+    // rows whose content is fine but the poster/thumbnail file is gone --
+    // these just get their stale poster reference cleared, not deleted,
+    // since the video or model itself is still good
+    const staleThumbs = (rows || []).filter(r => {
+      if (broken.some(b => b.id === r.id)) return false
+      const posterField = r.poster_url || r.thumbnail_url
+      if (!posterField) return false
+      const f = fileNameFromUrl(posterField)
       return f && !existing.has(f)
     })
 
@@ -54,15 +66,27 @@ export default async function handler(req, res) {
         dryRun: true,
         scanned: (rows || []).length,
         brokenCount: broken.length,
+        staleThumbCount: staleThumbs.length,
         sample: broken.slice(0, 10).map(r => ({ id: r.id, type: r.type, prompt: r.prompt })),
+        thumbSample: staleThumbs.slice(0, 10).map(r => ({ id: r.id, type: r.type, prompt: r.prompt })),
       })
     }
 
     if (broken.length) {
       await supabaseAdmin.from('gallery_media').delete().in('id', broken.map(r => r.id))
     }
+    for (const r of staleThumbs) {
+      const clear = {}
+      if (r.poster_url) clear.poster_url = null
+      if (r.thumbnail_url) clear.thumbnail_url = null
+      await supabaseAdmin.from('gallery_media').update(clear).eq('id', r.id)
+    }
 
-    return res.status(200).json({ scanned: (rows || []).length, removed: broken.length })
+    return res.status(200).json({
+      scanned: (rows || []).length,
+      removed: broken.length,
+      thumbsCleared: staleThumbs.length,
+    })
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
