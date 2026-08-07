@@ -41,6 +41,10 @@ export default async function handler(req, res) {
 
       for (const f of data) {
         if (!f.name || f.name === '.emptyFolderPlaceholder') continue
+        // posters/thumbnails are metadata attached to a video or 3D model,
+        // not standalone content -- never flag them as duplicates for
+        // deletion, since two unrelated thumbnails can easily share a size
+        if (f.name.startsWith('poster_') || f.name.startsWith('frame_')) continue
         files.push({
           name: f.name,
           size: f.metadata?.size ?? null,
