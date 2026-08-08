@@ -442,6 +442,7 @@ export default function Gallery() {
   const fileInputRef = useRef(null)
   const [fetchingOrphans, setFetchingOrphans] = useState(false)
   const [fetchOrphanStatus, setFetchOrphanStatus] = useState('')
+  const [cleaningSupport, setCleaningSupport] = useState(false)
   const [editPrompt, setEditPrompt] = useState('')
   const [savingPrompt, setSavingPrompt] = useState(false)
   const [showResetModal, setShowResetModal] = useState(false)
@@ -637,6 +638,58 @@ export default function Gallery() {
       alert('Fetch orphans failed: ' + err.message)
     }
     setFetchingOrphans(false)
+  }
+
+  // Delete unreferenced thumb_* / poster_* files from storage (keeps ones still linked)
+  const cleanUnusedThumbsPosters = async () => {
+    if (cleaningSupport) return
+    setCleaningSupport(true)
+    setFetchOrphanStatus('Scanning thumbs/posters…')
+    try {
+      const scanRes = await fetch('/api/import-orphans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'scan-support', dryRun: true }),
+      })
+      const scan = await scanRes.json()
+      if (scan.error) throw new Error(scan.error)
+      const n = scan.unreferencedCount || 0
+      const used = scan.stillUsed || 0
+      if (!n) {
+        setFetchOrphanStatus(`Nothing to clean (${used} still in use)`)
+        setTimeout(() => setFetchOrphanStatus(''), 3000)
+        setCleaningSupport(false)
+        return
+      }
+      if (!confirm(
+        `Found ${n} unused thumb/poster file(s) in storage.\n` +
+        `(${used} are still linked to videos/banners and will be kept.)\n\n` +
+        `Delete the unused ones?`
+      )) {
+        setFetchOrphanStatus('')
+        setCleaningSupport(false)
+        return
+      }
+      setFetchOrphanStatus(`Deleting ${n} file(s)…`)
+      const delRes = await fetch('/api/import-orphans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'clean-support', dryRun: false }),
+      })
+      const del = await delRes.json()
+      if (del.error) throw new Error(del.error)
+      const msg =
+        `Deleted ${del.deleted ?? n} unused thumb/poster file(s)` +
+        (del.badRowsDeleted ? ` · removed ${del.badRowsDeleted} bad gallery row(s)` : '')
+      setFetchOrphanStatus(msg)
+      await load()
+      alert(msg)
+      setTimeout(() => setFetchOrphanStatus(''), 4000)
+    } catch (err) {
+      setFetchOrphanStatus('Error: ' + err.message)
+      alert('Cleanup failed: ' + err.message)
+    }
+    setCleaningSupport(false)
   }
 
   // Upload local image/video files straight into Gallery (storage + gallery_media row)
@@ -2973,6 +3026,15 @@ export default function Gallery() {
             title="Find storage files missing from Gallery and import them"
           >
             {fetchingOrphans ? '…' : 'Fetch'}
+          </button>
+          <button
+            type="button"
+            disabled={cleaningSupport || fetchingOrphans}
+            onClick={cleanUnusedThumbsPosters}
+            className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 py-2 text-sm font-semibold border border-gray-600"
+            title="Delete unused thumb_* and poster_* files from storage"
+          >
+            {cleaningSupport ? '…' : 'Clean thumbs'}
           </button>
           <input
             ref={fileInputRef}
