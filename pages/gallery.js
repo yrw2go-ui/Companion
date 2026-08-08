@@ -1161,7 +1161,26 @@ export default function Gallery() {
         size: m.size ?? null,
         created_at: m.created_at,
       }))
-    const fromGallery = (galMedia || []).map(g => tagPublished({
+    // Support files (banner thumbs, video posters) live in the same bucket but
+    // must never appear as standalone gallery tiles.
+    const isSupportAssetUrl = (url) => {
+      const path = String(url || '').split('?')[0].split('/').pop() || ''
+      return /^(thumb_|poster_)/i.test(path)
+    }
+
+    // Quietly drop any gallery_media rows that point at support files (bad imports)
+    const supportRows = (galMedia || []).filter(g => isSupportAssetUrl(g.url))
+    if (supportRows.length) {
+      for (const g of supportRows) {
+        try {
+          await supabase.from('gallery_media').delete().eq('id', g.id)
+        } catch {}
+      }
+    }
+
+    const fromGallery = (galMedia || [])
+      .filter(g => !isSupportAssetUrl(g.url))
+      .map(g => tagPublished({
       key: 'gal_' + g.id,
       id: g.id,
       source: 'gallery_media',
