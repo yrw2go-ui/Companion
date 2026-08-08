@@ -1,158 +1,216 @@
 // pages/api/import-orphans.js
-// Finds files in the bucket that no database row references,
-// and adds them to gallery_media so they show up in the gallery.
+// Lists storage objects not linked from app tables.
+// Excludes support files (thumb_*, poster_*) so they never inflate orphan counts
+// or get imported as gallery tiles.
 import { createClient } from '@supabase/supabase-js'
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
 
 const BUCKET = 'character-images'
 
-const fileFromUrl = (url) => {
-  if (!url) return null
-  const parts = String(url).split(`/${BUCKET}/`)
-  return parts[1] || null
+function admin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !key) return null
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
 }
 
-const typeOf = (name) => {
-  const n = name.toLowerCase()
-  if (n.endsWith('.mp4') || n.endsWith('.webm') || n.endsWith('.mov')) return 'video'
-  if (n.endsWith('.mp3') || n.endsWith('.wav') || n.endsWith('.m4a')) return 'audio'
-  return 'image'
+function fileNameOf(pathOrUrl) {
+  const s = String(pathOrUrl || '').split('?')[0]
+  const parts = s.split('/')
+  return parts[parts.length - 1] || ''
+}
+
+function isSupportFile(name) {
+  return /^(thumb_|poster_)/i.test(String(name || ''))
+}
+
+function isMediaFile(name) {
+  return /\.(jpe?g|png|webp|gif|mp4|webm|mov)$/i.test(String(name || ''))
+}
+
+async function listAllFiles(supabase) {
+  const out = []
+  const queue = ['']
+  while (queue.length) {
+    const prefix = queue.shift()
+    let offset = 0
+    for (;;) {
+      const { data, error } = await supabase.storage.from(BUCKET).list(prefix || undefined, {
+        limit: 100,
+        offset,
+        sortBy: { column: 'name', order: 'asc' },
+      })
+      if (error || !data?.length) break
+      for (const item of data) {
+        const path = prefix ? `${prefix}/${item.name}` : item.name
+        // folders often have id null and no metadata.size
+        if (item.id == null && !item.metadata) {
+          queue.push(path)
+          continue
+        }
+        out.push({ path, name: item.name, size: item.metadata?.size || 0 })
+      }
+      if (data.length < 100) break
+      offset += 100
+    }
+  }
+  return out
+}
+
+async function collectReferencedUrls(supabase) {
+  const refs = new Set()
+  const add = (u) => {
+    if (!u) return
+    const s = String(u).split('?')[0]
+    refs.add(s)
+    const name = fileNameOf(s)
+    if (name) refs.add(name)
+    // path after bucket
+    const idx = s.indexOf(`/${BUCKET}/`)
+    if (idx >= 0) refs.add(s.slice(idx + BUCKET.length + 2))
+  }
+
+  const tables = [
+    { table: 'gallery_media', cols: ['url', 'poster_url', 'thumbnail_url'] },
+    { table: 'cards', cols: ['image_url', 'back_image_url', 'video_url', 'poster_url'] },
+    { table: 'character_media', cols: ['url'] },
+    { table: 'misc_items', cols: ['url'] },
+    { table: 'messages', cols: ['content'] },
+  ]
+
+  for (const { table, cols } of tables) {
+    let offset = 0
+    for (;;) {
+      const { data, error } = await supabase
+        .from(table)
+        .select(cols.join(','))
+        .range(offset, offset + 999)
+      if (error || !data?.length) break
+      for (const row of data) {
+        for (const c of cols) add(row[c])
+      }
+      if (data.length < 1000) break
+      offset += 1000
+    }
+  }
+  return refs
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const dryRun = req.body?.dryRun === true
-  const mode = req.body?.mode === 'delete' ? 'delete' : 'import'
+  const supabase = admin()
+  if (!supabase) return res.status(500).json({ error: 'Supabase not configured' })
+
+  const body = typeof req.body === 'string'
+    ? (() => { try { return JSON.parse(req.body) } catch { return {} } })()
+    : (req.body || {})
+
+  const dryRun = body.dryRun !== false && body.mode !== 'import'
+  const mode = body.mode === 'import' ? 'import' : 'scan'
+  const forceUrls = Array.isArray(body.forceUrls) ? body.forceUrls.filter(Boolean) : []
 
   try {
-    // 1. every filename already referenced anywhere
-    const known = new Set()
+    const files = await listAllFiles(supabase)
+    const refs = await collectReferencedUrls(supabase)
 
-    const { data: cards } = await supabaseAdmin
-      .from('cards')
-      .select('image_url, back_image_url, video_url, poster_url')
-    for (const c of cards || []) {
-      for (const u of [c.image_url, c.back_image_url, c.video_url, c.poster_url]) {
-        const f = fileFromUrl(u)
-        if (f) known.add(f)
+    // forceUrls: treat as orphans to import even if heuristics differ
+    const forceNames = new Set(forceUrls.map(fileNameOf))
+
+    const candidates = []
+    let skippedSupport = 0
+    let skippedReferenced = 0
+    let skippedNonMedia = 0
+
+    for (const f of files) {
+      if (!isMediaFile(f.name)) {
+        skippedNonMedia++
+        continue
       }
-    }
-
-    const { data: chars } = await supabaseAdmin.from('characters').select('avatar_url')
-    for (const c of chars || []) {
-      const f = fileFromUrl(c.avatar_url)
-      if (f) known.add(f)
-    }
-
-    const { data: gal } = await supabaseAdmin.from('gallery_media').select('url, poster_url')
-    for (const g of gal || []) {
-      for (const u of [g.url, g.poster_url]) {
-        const f = fileFromUrl(u)
-        if (f) known.add(f)
+      if (isSupportFile(f.name) && !forceNames.has(f.name)) {
+        skippedSupport++
+        continue
       }
-    }
-
-    const { data: msgs } = await supabaseAdmin
-      .from('messages')
-      .select('content')
-      .in('role', ['image', 'video'])
-    for (const m of msgs || []) {
-      const f = fileFromUrl(m.content)
-      if (f) known.add(f)
-    }
-
-    // 2. walk the bucket
-    const orphans = []
-    let scanned = 0
-    let offset = 0
-    const pageSize = 100
-
-    while (true) {
-      const { data: files, error } = await supabaseAdmin.storage
-        .from(BUCKET)
-        .list('', {
-          limit: pageSize,
-          offset,
-          sortBy: { column: 'created_at', order: 'asc' },
-        })
-
-      if (error) {
-        return res.status(500).json({ error: 'List failed: ' + error.message })
+      const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(f.path)
+      const publicUrl = pub?.publicUrl || ''
+      const linked =
+        refs.has(publicUrl.split('?')[0]) ||
+        refs.has(f.path) ||
+        refs.has(f.name)
+      if (linked && !forceNames.has(f.name)) {
+        skippedReferenced++
+        continue
       }
-      if (!files || files.length === 0) break
-
-      for (const f of files) {
-        if (!f.name || f.name === '.emptyFolderPlaceholder') continue
-        scanned++
-        if (known.has(f.name)) continue
-        // skip the temporary frames used for video extension
-        if (f.name.startsWith('frame_')) continue
-        if (f.name.startsWith('poster_')) continue
-        orphans.push(f)
-      }
-
-      if (files.length < pageSize) break
-      offset += pageSize
+      candidates.push({
+        path: f.path,
+        name: f.name,
+        url: publicUrl,
+        size: f.size,
+        type: /\.(mp4|webm|mov)$/i.test(f.name) ? 'video' : 'image',
+      })
     }
 
-    if (dryRun) {
+    // forceUrls that might not appear in list (edge cases)
+    for (const u of forceUrls) {
+      if (candidates.some(c => c.url === u || c.name === fileNameOf(u))) continue
+      candidates.push({
+        path: fileNameOf(u),
+        name: fileNameOf(u),
+        url: u,
+        size: 0,
+        type: /\.(mp4|webm|mov)/i.test(u) ? 'video' : 'image',
+      })
+    }
+
+    if (mode === 'scan' || dryRun) {
       return res.status(200).json({
+        ok: true,
         dryRun: true,
-        scanned,
-        orphanCount: orphans.length,
-        sample: orphans.slice(0, 10).map(o => o.name),
+        orphanCount: candidates.length,
+        skippedSupport,
+        skippedReferenced,
+        skippedNonMedia,
+        sample: candidates.slice(0, 20).map(c => c.name),
       })
     }
-
-    // 3a. delete them instead, if that's what was asked
-    if (mode === 'delete') {
-      const names = orphans.map(o => o.name)
-      let deleted = 0
-      for (let i = 0; i < names.length; i += 100) {
-        const batch = names.slice(i, i + 100)
-        const { error } = await supabaseAdmin.storage.from(BUCKET).remove(batch)
-        if (!error) deleted += batch.length
-      }
-      return res.status(200).json({
-        mode: 'delete',
-        scanned,
-        orphanCount: orphans.length,
-        deleted,
-      })
-    }
-
-    // 3b. insert them into gallery_media
-    const rows = orphans.map(o => {
-      const { data: pub } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(o.name)
-      return {
-        type: typeOf(o.name),
-        url: pub.publicUrl,
-        prompt: 'imported from storage',
-        created_at: o.created_at || new Date().toISOString(),
-      }
-    })
 
     let imported = 0
-    for (let i = 0; i < rows.length; i += 50) {
-      const batch = rows.slice(i, i + 50)
-      const { error } = await supabaseAdmin.from('gallery_media').insert(batch)
-      if (!error) imported += batch.length
+    const errors = []
+    for (const c of candidates) {
+      if (isSupportFile(c.name)) continue
+      try {
+        const { data: existing } = await supabase
+          .from('gallery_media')
+          .select('id')
+          .eq('url', c.url)
+          .limit(1)
+          .maybeSingle()
+        if (existing?.id) continue
+
+        const { error } = await supabase.from('gallery_media').insert([{
+          type: c.type,
+          url: c.url,
+          prompt: c.name,
+          model: 'orphan-import',
+        }])
+        if (error) errors.push({ name: c.name, error: error.message })
+        else imported++
+      } catch (e) {
+        errors.push({ name: c.name, error: e.message })
+      }
     }
 
     return res.status(200).json({
-      mode: 'import',
-      scanned,
-      orphanCount: orphans.length,
+      ok: true,
       imported,
+      orphanCount: candidates.length,
+      skippedSupport,
+      errors: errors.slice(0, 10),
     })
-  } catch (err) {
-    return res.status(500).json({ error: err.message })
+  } catch (e) {
+    return res.status(500).json({ error: e.message || 'import-orphans failed' })
   }
 }
