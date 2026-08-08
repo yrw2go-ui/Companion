@@ -109,13 +109,92 @@ export default async function handler(req, res) {
     ? (() => { try { return JSON.parse(req.body) } catch { return {} } })()
     : (req.body || {})
 
-  const dryRun = body.dryRun !== false && body.mode !== 'import'
-  const mode = body.mode === 'import' ? 'import' : 'scan'
+  const mode =
+    body.mode === 'import'
+      ? 'import'
+      : body.mode === 'clean-support'
+        ? 'clean-support'
+        : body.mode === 'scan-support'
+          ? 'scan-support'
+          : 'scan'
+  const dryRun = body.dryRun !== false && mode !== 'import' && mode !== 'clean-support'
   const forceUrls = Array.isArray(body.forceUrls) ? body.forceUrls.filter(Boolean) : []
 
   try {
     const files = await listAllFiles(supabase)
     const refs = await collectReferencedUrls(supabase)
+
+    // --- Clean unreferenced thumb_* / poster_* support files ---
+    if (mode === 'scan-support' || mode === 'clean-support') {
+      const supportFiles = files.filter(f => isSupportFile(f.name) && isMediaFile(f.name))
+      const unreferenced = []
+      const stillUsed = []
+      for (const f of supportFiles) {
+        const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(f.path)
+        const publicUrl = (pub?.publicUrl || '').split('?')[0]
+        const linked =
+          refs.has(publicUrl) ||
+          refs.has(f.path) ||
+          refs.has(f.name)
+        if (linked) stillUsed.push(f)
+        else unreferenced.push({ path: f.path, name: f.name, size: f.size })
+      }
+
+      if (mode === 'scan-support' || dryRun) {
+        return res.status(200).json({
+          ok: true,
+          dryRun: true,
+          supportTotal: supportFiles.length,
+          stillUsed: stillUsed.length,
+          unreferencedCount: unreferenced.length,
+          sample: unreferenced.slice(0, 30).map(f => f.name),
+        })
+      }
+
+      // Also drop gallery_media rows whose main url is a support file (bad imports)
+      let badRowsDeleted = 0
+      try {
+        let offset = 0
+        for (;;) {
+          const { data: page } = await supabase
+            .from('gallery_media')
+            .select('id, url')
+            .range(offset, offset + 999)
+          if (!page?.length) break
+          for (const row of page) {
+            if (isSupportFile(fileNameOf(row.url))) {
+              const { error } = await supabase.from('gallery_media').delete().eq('id', row.id)
+              if (!error) badRowsDeleted++
+            }
+          }
+          if (page.length < 1000) break
+          offset += 1000
+        }
+      } catch (e) {
+        console.warn('bad row cleanup', e)
+      }
+
+      let deleted = 0
+      const errors = []
+      // Storage remove accepts batches of paths
+      const paths = unreferenced.map(f => f.path)
+      for (let i = 0; i < paths.length; i += 50) {
+        const batch = paths.slice(i, i + 50)
+        const { error } = await supabase.storage.from(BUCKET).remove(batch)
+        if (error) errors.push(error.message)
+        else deleted += batch.length
+      }
+
+      return res.status(200).json({
+        ok: true,
+        deleted,
+        unreferencedCount: unreferenced.length,
+        stillUsed: stillUsed.length,
+        supportTotal: supportFiles.length,
+        badRowsDeleted,
+        errors: errors.slice(0, 5),
+      })
+    }
 
     // forceUrls: treat as orphans to import even if heuristics differ
     const forceNames = new Set(forceUrls.map(fileNameOf))
