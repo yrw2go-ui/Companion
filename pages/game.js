@@ -35,6 +35,7 @@ export default function Game() {
   const [showSplash, setShowSplash] = useState(true)
   const splashRef = useRef(null)
   const [bannerVideoDone, setBannerVideoDone] = useState({}) // tabKey -> true after intro played
+  const [bannerBroken, setBannerBroken] = useState({}) // tabKey -> true if image 404 / failed
   const [ownedCards, setOwnedCards] = useState([]) // player_cards joined with card data
   const [ownedMedia, setOwnedMedia] = useState([]) // player_media joined with character_media
   const [ownedMisc, setOwnedMisc] = useState([])
@@ -429,6 +430,7 @@ export default function Game() {
     setStars(settings?.stars ?? 0)
     setDisplayName(settings?.display_name || 'Player')
     setTabBanners(settings?.tab_banners || {})
+    setBannerBroken({}) // new config → allow images to try loading again
     if (settings?.tab_titles) {
       setTabTitles(prev => ({ ...prev, ...settings.tab_titles }))
     }
@@ -1624,9 +1626,12 @@ export default function Game() {
     const raw = tabBanners?.[tabKey]
     const image = (typeof raw === 'string' ? raw : (raw?.image || '')).trim()
     const video = (typeof raw === 'string' ? '' : (raw?.video || '')).trim()
-    const showVideo = !!(video && !bannerVideoDone[tabKey])
-    // nothing configured, or video finished and no static image → no gap
-    if (!showVideo && !image) return null
+    const videoDone = !!bannerVideoDone[tabKey]
+    const imgBroken = !!bannerBroken[tabKey]
+    const showVideo = !!(video && !videoDone)
+    const showImage = !!(image && !imgBroken && !showVideo)
+    // No usable media → render nothing (no empty box / broken image)
+    if (!showVideo && !showImage) return null
     return (
       <div className="w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto px-4 mb-4">
         <div className="relative w-full aspect-[21/9] rounded-xl overflow-hidden border border-white/10 bg-black">
@@ -1650,7 +1655,12 @@ export default function Game() {
               }}
             />
           ) : (
-            <img src={image} alt="" className="w-full h-full object-cover object-top" />
+            <img
+              src={image}
+              alt=""
+              className="w-full h-full object-cover object-top"
+              onError={() => setBannerBroken(prev => ({ ...prev, [tabKey]: true }))}
+            />
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
         </div>
@@ -1692,25 +1702,31 @@ export default function Game() {
         <>
           <div className="pt-14">
             <TabBanner tabKey="home" />
-            <div className="relative h-56 overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-b from-pink-600/20 via-transparent to-black z-10 pointer-events-none" />
-              {loading ? (
-                <div className="h-full flex items-center justify-center text-gray-600 text-sm">Loading...</div>
-              ) : marquee.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-gray-600 text-sm px-6 text-center">
-                  Add images to the Gallery folder "Main Banner" to fill this strip.
-                </div>
-              ) : (
-                <div className="flex h-full gap-2 animate-marquee" style={{ width: 'max-content' }}>
-                  {strip.map((b, i) => (
-                    <div key={`${b.id}-${i}`} className="relative h-56 w-40 shrink-0 overflow-hidden rounded-xl">
-                      <img src={b.url} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Main Banner strip — only when there are images (no empty/broken placeholder) */}
+            {(loading || marquee.length > 0) && (
+              <div className="relative h-56 overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-b from-pink-600/20 via-transparent to-black z-10 pointer-events-none" />
+                {loading ? (
+                  <div className="h-full flex items-center justify-center text-gray-600 text-sm">Loading...</div>
+                ) : (
+                  <div className="flex h-full gap-2 animate-marquee" style={{ width: 'max-content' }}>
+                    {strip.map((b, i) => (
+                      <div key={`${b.id}-${i}`} className="relative h-56 w-40 shrink-0 overflow-hidden rounded-xl">
+                        <img
+                          src={b.url}
+                          alt=""
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                          onError={(e) => { e.currentTarget.style.display = 'none' }}
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {marquee.length > 0 && (
@@ -1718,7 +1734,14 @@ export default function Game() {
               <div className="flex h-full gap-2 animate-marquee-slow" style={{ width: 'max-content' }}>
                 {[...marquee].reverse().concat([...marquee].reverse()).map((b, i) => (
                   <div key={`r-${b.id}-${i}`} className="relative h-36 w-28 shrink-0 overflow-hidden rounded-lg">
-                    <img src={b.url} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
+                    <img
+                      src={b.url}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                      onError={(e) => { e.currentTarget.style.display = 'none' }}
+                    />
                   </div>
                 ))}
               </div>
