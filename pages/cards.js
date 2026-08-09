@@ -14,18 +14,27 @@ const SIZES = [
 ]
 
 const IMAGE_MODELS = [
+  // —— existing (kept) ——
   { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream' },
   { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux' },
   { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux' },
   { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell' },
-  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok' },
+  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine Quality', family: 'grok' },
+  // —— newer Atlas options ——
+  { id: 'bytedance/seedream-v5.0-lite/text-to-image', label: 'Seedream 5 Lite (faster)', family: 'seedream' },
+  { id: 'black-forest-labs/flux-2-pro/text-to-image', label: 'Flux 2 Pro', family: 'flux' },
+  { id: 'nano-banana/nano-banana-2/text-to-image', label: 'Nano Banana 2', family: 'flux' },
+  { id: 'google/imagen4-ultra/text-to-image', label: 'Imagen 4 Ultra', family: 'flux' },
+  { id: 'ideogram/ideogram-v3/text-to-image', label: 'Ideogram v3 (text/typography)', family: 'flux' },
+  { id: 'qwen/qwen-image-2.0/text-to-image', label: 'Qwen Image 2.0', family: 'flux' },
 ]
 
 // Models that accept referenceImageUrl (I2I / edit)
 const EDIT_IMAGE_MODELS = [
   { id: 'alibaba/wan-2.7-pro/image-edit', label: 'Wan 2.7 Pro Edit (default)' },
   { id: 'bytedance/seedream-v5.0-pro/edit', label: 'Seedream 5 Pro Edit' },
-  { id: 'xai/grok-imagine-image/edit', label: 'Grok Imagine Edit' },
+  { id: 'bytedance/seedream-v5.0-lite/edit', label: 'Seedream 5 Lite Edit' },
+  { id: 'xai/grok-imagine-image-quality/edit', label: 'Grok Imagine Edit' },
 ]
 
 const familyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family

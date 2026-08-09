@@ -35,11 +35,19 @@ const VIDEO_EDIT_MODEL = 'kwaivgi/kling-video-o3-pro/video-edit'
 
 const IMAGE_MODELS = [
   // maxRefs = optional reference images (capped at 4 in UI / payload)
+  // —— existing (kept) ——
   { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream', price: null, maxRefs: 4 },
   { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux', price: null, maxRefs: 4 },
   { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux', price: null, maxRefs: 4 },
   { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell', price: null, maxRefs: 4 },
-  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok', price: { '1k': 0.05, '2k': 0.07 }, maxRefs: 1 },
+  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine Quality', family: 'grok', price: { '1k': 0.05, '2k': 0.07 }, maxRefs: 1 },
+  // —— newer Atlas options ——
+  { id: 'bytedance/seedream-v5.0-lite/text-to-image', label: 'Seedream 5 Lite (faster)', family: 'seedream', price: null, maxRefs: 4 },
+  { id: 'black-forest-labs/flux-2-pro/text-to-image', label: 'Flux 2 Pro', family: 'flux', price: null, maxRefs: 4 },
+  { id: 'nano-banana/nano-banana-2/text-to-image', label: 'Nano Banana 2', family: 'flux', price: null, maxRefs: 4 },
+  { id: 'google/imagen4-ultra/text-to-image', label: 'Imagen 4 Ultra', family: 'flux', price: null, maxRefs: 2 },
+  { id: 'ideogram/ideogram-v3/text-to-image', label: 'Ideogram v3 (text/typography)', family: 'flux', price: null, maxRefs: 2 },
+  { id: 'qwen/qwen-image-2.0/text-to-image', label: 'Qwen Image 2.0', family: 'flux', price: null, maxRefs: 4 },
 ]
 const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
 const createMaxRefs = (modelId) => {
@@ -243,6 +251,15 @@ const I2I_MODELS = [
   {
     id: 'bytedance/seedream-v5.0-pro/edit',
     label: 'Seedream 5 Pro (edit)',
+    price: null,
+    maxRefs: 4,
+    sizeMode: 'pixel',
+    sizes: I2I_SIZES_SEEDREAM,
+    defaultSize: '1328*1776',
+  },
+  {
+    id: 'bytedance/seedream-v5.0-lite/edit',
+    label: 'Seedream 5 Lite (edit)',
     price: null,
     maxRefs: 4,
     sizeMode: 'pixel',
