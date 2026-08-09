@@ -3,11 +3,19 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 const MODELS = [
-  { id: 'z-image/turbo', label: 'Z-Image-Turbo', family: 'flux' },
+  // —— existing (kept) ——
+  { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream' },
+  { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux' },
   { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux' },
   { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell' },
-  { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro', family: 'seedream' },
-  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine', family: 'grok' },
+  { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine Quality', family: 'grok' },
+  // —— newer Atlas options ——
+  { id: 'bytedance/seedream-v5.0-lite/text-to-image', label: 'Seedream 5 Lite (faster)', family: 'seedream' },
+  { id: 'black-forest-labs/flux-2-pro/text-to-image', label: 'Flux 2 Pro', family: 'flux' },
+  { id: 'nano-banana/nano-banana-2/text-to-image', label: 'Nano Banana 2', family: 'flux' },
+  { id: 'google/imagen4-ultra/text-to-image', label: 'Imagen 4 Ultra', family: 'flux' },
+  { id: 'ideogram/ideogram-v3/text-to-image', label: 'Ideogram v3 (text/typography)', family: 'flux' },
+  { id: 'qwen/qwen-image-2.0/text-to-image', label: 'Qwen Image 2.0', family: 'flux' },
 ]
 
 const SEEDREAM_SIZES = [
@@ -28,7 +36,9 @@ const GROK_RATIOS = ['1:1', '3:4', '4:3', '9:16', '16:9', '2:3', '3:2', '1:2', '
 const DEFAULT_NEGATIVE = 'blurry, (Asian), big hips, wide hips, mature woman, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
 
 export default function ImageTest() {
-  const [model, setModel] = useState(MODELS[0].id)
+  const [model, setModel] = useState(
+    (MODELS.find(m => m.family === 'seedream') || MODELS[0]).id
+  )
   const [prompt, setPrompt] = useState('')
   const [negative, setNegative] = useState(DEFAULT_NEGATIVE)
   const [seed, setSeed] = useState('')
@@ -59,17 +69,26 @@ export default function ImageTest() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model, prompt,
+          model,
+          prompt,
           negativePrompt: negative,
-          seed, size, guidance, steps,
-          aspectRatio, resolution,
+          seed,
+          guidance,
+          steps,
+          aspectRatio,
+          resolution,
           size: family === 'seedream' ? seedreamSize : size,
-          outputFormat, thinking,
+          outputFormat,
+          thinking,
         }),
       })
       const data = await res.json()
-      if (data.imageUrl) { setImageUrl(data.imageUrl); setReturnedSeed(data.seed ?? null) }
-      else setResult(JSON.stringify(data, null, 2))
+      if (data.imageUrl) {
+        setImageUrl(data.imageUrl)
+        setReturnedSeed(data.seed ?? null)
+      } else {
+        setResult(JSON.stringify(data, null, 2))
+      }
     } catch (err) {
       setResult('Error: ' + err.message)
     }
@@ -82,9 +101,10 @@ export default function ImageTest() {
       type: 'image',
       url: imageUrl,
       prompt,
-      negative_prompt: family === 'flux' ? negative : null,
+      negative_prompt: (family === 'flux' || family === 'schnell') ? negative : null,
       seed: returnedSeed,
-      size: family === 'flux' ? size : null,
+      size: family === 'seedream' ? seedreamSize : (family === 'grok' ? `${aspectRatio}|${resolution}` : size),
+      model,
     }])
     if (error) { alert('Save failed: ' + error.message); return }
     setSaved(true)
