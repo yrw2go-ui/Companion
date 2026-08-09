@@ -4114,20 +4114,31 @@ export default function Gallery() {
       {selected && (
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
           <div className="w-full max-w-md my-8" onClick={e => e.stopPropagation()}>
-            {selected.type === 'image' ? (
-              <img src={selected.url} alt="" className="w-full rounded-2xl" />
-            ) : selected.type === 'model' ? (
-              /* eslint-disable-next-line react/no-unknown-property */
-              <model-viewer
-                src={selected.url}
-                camera-controls
-                auto-rotate
-                shadow-intensity="1"
-                style={{ width: '100%', height: '360px', borderRadius: '1rem', background: '#111' }}
-              />
-            ) : (
-              <video src={selected.url} controls loop preload="none" playsInline poster={selected.poster_url || undefined} className="w-full rounded-2xl" />
-            )}
+            <div className="relative">
+              {selected.type === 'image' ? (
+                <img src={selected.url} alt="" className="w-full rounded-2xl" />
+              ) : selected.type === 'model' ? (
+                /* eslint-disable-next-line react/no-unknown-property */
+                <model-viewer
+                  src={selected.url}
+                  camera-controls
+                  auto-rotate
+                  shadow-intensity="1"
+                  style={{ width: '100%', height: '360px', borderRadius: '1rem', background: '#111' }}
+                />
+              ) : (
+                <video src={selected.url} controls loop preload="none" playsInline poster={selected.poster_url || undefined} className="w-full rounded-2xl" />
+              )}
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="absolute bottom-3 right-3 z-10 w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 border border-white/30 text-white text-lg font-bold leading-none flex items-center justify-center shadow-lg"
+                title="Close"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
 
             {selected.source === 'gallery_media' && (
               <button onClick={() => toggleFavorite(selected)}
