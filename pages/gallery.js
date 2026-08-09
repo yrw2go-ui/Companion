@@ -359,7 +359,7 @@ export default function Gallery() {
   const [transformPrompt, setTransformPrompt] = useState('')
   const [transformModel, setTransformModel] = useState('bytedance/seedream-v5.0-pro/edit')
   const [transformSize, setTransformSize] = useState(() => i2iDefaultSize('bytedance/seedream-v5.0-pro/edit'))
-  const [transforming, setTransforming] = useState(false)
+  const [transformJobs, setTransformJobs] = useState(0) // allow multiple edits at once
   const [pickRefSlot, setPickRefSlot] = useState(null) // index into transformRefs to fill, or 'next'
 
 
@@ -2097,24 +2097,33 @@ export default function Gallery() {
   }
 
   const runTransform = async () => {
-    if (transforming) return
     if (!transformPrompt.trim()) { alert('Describe the change you want'); return }
+    if (!transformSource?.url) { alert('No source image'); return }
+
+    // Snapshot so another edit can start without overwriting this job's inputs
+    const jobPrompt = transformPrompt.trim()
+    const jobSource = transformSource
+    const jobModel = transformModel
+    const jobSize = transformSize
+    const jobRefs = [...(transformRefs || [])]
+
     setShowTransform(false)
     setPickRefSlot(null)
-    setTransforming(true)
+    setTransformRefs([])
+    setTransformJobs(n => n + 1)
     try {
-      const meta = i2iModelOf(transformModel)
+      const meta = i2iModelOf(jobModel)
       const max = meta.maxRefs || 1
-      const extraUrls = transformRefs
+      const extraUrls = jobRefs
         .map(r => r?.url)
         .filter(Boolean)
         .slice(0, Math.max(0, max - 1))
-      const allUrls = [transformSource.url, ...extraUrls].filter(Boolean)
+      const allUrls = [jobSource.url, ...extraUrls].filter(Boolean)
 
       const payload = {
-        prompt: transformPrompt,
-        referenceImageUrl: transformSource.url,
-        model: transformModel,
+        prompt: jobPrompt,
+        referenceImageUrl: jobSource.url,
+        model: jobModel,
       }
       if (allUrls.length > 1) {
         payload.referenceImageUrls = allUrls
@@ -2122,8 +2131,7 @@ export default function Gallery() {
         if (extraUrls[1]) payload.referenceImageUrl3 = extraUrls[1]
         if (extraUrls[2]) payload.referenceImageUrl4 = extraUrls[2]
       }
-      // Output size / ratio — shape depends on model family
-      const sizeVal = transformSize || meta.defaultSize
+      const sizeVal = jobSize || meta.defaultSize
       if (meta.sizeMode === 'aspect' && sizeVal && sizeVal.includes('|')) {
         const [ar, res] = sizeVal.split('|')
         payload.aspectRatio = ar
@@ -2138,24 +2146,23 @@ export default function Gallery() {
       })
       const data = await res.json()
       if (!data.imageUrl) {
-        alert('Error: ' + (data.error || 'failed'))
-        setTransforming(false)
+        alert('Edit failed: ' + (data.error || 'failed'))
         return
       }
       await saveWithRetry({
         type: 'image',
         url: data.imageUrl,
-        prompt: transformPrompt,
-        source_prompt: transformSource.prompt || null,
-        model: transformModel,
+        prompt: jobPrompt,
+        source_prompt: jobSource.prompt || null,
+        model: jobModel,
         size: data.size || (meta.sizeMode === 'pixel' ? sizeVal : null),
       }, 'Your transformed image')
-      setTransformRefs([])
       load()
     } catch (err) {
-      alert('Error: ' + err.message)
+      alert('Edit error: ' + err.message)
+    } finally {
+      setTransformJobs(n => Math.max(0, n - 1))
     }
-    setTransforming(false)
   }
 
   const runT2V = async () => {
@@ -3166,9 +3173,11 @@ export default function Gallery() {
         </div>
       )}
 
-      {transforming && (
+      {transformJobs > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-sm text-gray-400">
-          Transforming image... (1-2 min)
+          {transformJobs === 1
+            ? 'Transforming image… (1–2 min) — you can start another edit'
+            : `${transformJobs} image edits in progress…`}
         </div>
       )}
 
