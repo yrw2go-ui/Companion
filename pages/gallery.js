@@ -381,6 +381,40 @@ export default function Gallery() {
   const [transformSize, setTransformSize] = useState(() => i2iDefaultSize('bytedance/seedream-v5.0-pro/edit'))
   const [transformJobs, setTransformJobs] = useState(0) // allow multiple edits at once
   const [pickRefSlot, setPickRefSlot] = useState(null) // index into transformRefs to fill, or 'next'
+  // Persist in-flight edits so the banner survives refresh / leaving Gallery
+  const TRANSFORM_JOBS_KEY = 'ga_transform_jobs'
+  const readTransformJobs = () => {
+    try {
+      const raw = localStorage.getItem(TRANSFORM_JOBS_KEY)
+      const list = raw ? JSON.parse(raw) : []
+      return Array.isArray(list) ? list : []
+    } catch { return [] }
+  }
+  const writeTransformJobs = (list) => {
+    try {
+      localStorage.setItem(TRANSFORM_JOBS_KEY, JSON.stringify(list || []))
+    } catch {}
+  }
+  const addTransformJob = (job) => {
+    const list = readTransformJobs()
+    list.push(job)
+    writeTransformJobs(list)
+    setTransformJobs(list.length)
+    return job.id
+  }
+  const finishTransformJob = (jobId) => {
+    const list = readTransformJobs().filter(j => j.id !== jobId)
+    writeTransformJobs(list)
+    setTransformJobs(list.length)
+  }
+  const syncTransformJobsFromStorage = () => {
+    // Drop jobs older than 15 min (stale after kill/refresh mid-request)
+    const cutoff = Date.now() - 15 * 60 * 1000
+    const list = readTransformJobs().filter(j => (j.startedAt || 0) > cutoff)
+    writeTransformJobs(list)
+    setTransformJobs(list.length)
+    return list
+  }
 
 
   const [showT2V, setShowT2V] = useState(false)
@@ -1038,6 +1072,7 @@ export default function Gallery() {
       }
     }
     const onShow = () => {
+      syncTransformJobsFromStorage()
       flushPendingGallerySaves()
         .then(() => load())
         .catch(() => {})
@@ -1046,6 +1081,8 @@ export default function Gallery() {
       if (document.visibilityState === 'hidden') onHide()
       else onShow()
     }
+    // Restore edit banner after refresh / return to Gallery
+    syncTransformJobsFromStorage()
     document.addEventListener('visibilitychange', onVis)
     window.addEventListener('pageshow', onShow)
     window.addEventListener('focus', onShow)
@@ -2140,11 +2177,19 @@ export default function Gallery() {
     const jobModel = transformModel
     const jobSize = transformSize
     const jobRefs = [...(transformRefs || [])]
+    const jobId = `tf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
     setShowTransform(false)
     setPickRefSlot(null)
     setTransformRefs([])
-    setTransformJobs(n => n + 1)
+    addTransformJob({
+      id: jobId,
+      startedAt: Date.now(),
+      prompt: jobPrompt,
+      sourceUrl: jobSource.url,
+      model: jobModel,
+      size: jobSize,
+    })
     try {
       const meta = i2iModelOf(jobModel)
       const max = meta.maxRefs || 1
@@ -2195,7 +2240,7 @@ export default function Gallery() {
     } catch (err) {
       alert('Edit error: ' + err.message)
     } finally {
-      setTransformJobs(n => Math.max(0, n - 1))
+      finishTransformJob(jobId)
     }
   }
 
@@ -3208,10 +3253,23 @@ export default function Gallery() {
       )}
 
       {transformJobs > 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-sm text-gray-400">
-          {transformJobs === 1
-            ? 'Transforming image… (1–2 min) — you can start another edit'
-            : `${transformJobs} image edits in progress…`}
+        <div className="bg-gray-900 border border-pink-800/50 rounded-xl p-3 mb-4 text-sm text-gray-300 flex items-center justify-between gap-3">
+          <span>
+            {transformJobs === 1
+              ? 'Transforming image… (1–2 min) — survives refresh; you can start another edit'
+              : `${transformJobs} image edits in progress… (banner keeps after refresh)`}
+          </span>
+          <button
+            type="button"
+            className="text-[10px] text-gray-500 hover:text-white shrink-0"
+            title="Clear stuck banners if an edit was cancelled by closing the app"
+            onClick={() => {
+              writeTransformJobs([])
+              setTransformJobs(0)
+            }}
+          >
+            Clear
+          </button>
         </div>
       )}
 
