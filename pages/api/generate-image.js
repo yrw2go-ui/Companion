@@ -121,15 +121,61 @@ export default async function handler(req, res) {
   let usedSeed = null
   let usedSize = size || '768*1024'
 
+  // Seedream only accepts its own pixel presets (or close). Flux sizes like
+  // 576*1024 are invalid and the API silently falls back to ~3:4 (1328*1776).
+  const normalizeSeedreamSize = (raw) => {
+    const s = String(raw || '').trim().replace(/x/gi, '*').replace(/\s/g, '')
+    const presets = {
+      // exact official Atlas presets
+      '1152*2048': '1152*2048', // 9:16
+      '2048*1152': '2048*1152', // 16:9
+      '1328*1776': '1328*1776', // ~3:4 1.5K
+      '1776*1328': '1776*1328', // ~4:3 1.5K
+      '1728*2304': '1728*2304', // 3:4 2K
+      '2304*1728': '2304*1728', // 4:3 2K
+      '1024*1024': '1024*1024',
+      '1536*1536': '1536*1536',
+      '2048*2048': '2048*2048',
+      '1664*2496': '1664*2496', // 2:3
+      '2496*1664': '2496*1664', // 3:2
+      '1530*2720': '1530*2720',
+      '2720*1530': '2720*1530',
+      // common Flux / UI sizes → Seedream equivalents
+      '576*1024': '1152*2048',   // tall 9:16
+      '1024*576': '2048*1152',   // wide 16:9
+      '768*1024': '1328*1776',   // 3:4
+      '1024*768': '1776*1328',   // 4:3
+      '1440*2560': '1152*2048',  // over-budget 9:16 → official
+      '2560*1440': '2048*1152',
+    }
+    if (presets[s]) return presets[s]
+    // aspect keywords
+    if (s === '9:16' || s === '9/16') return '1152*2048'
+    if (s === '16:9' || s === '16/9') return '2048*1152'
+    if (s === '3:4' || s === '3/4') return '1328*1776'
+    if (s === '4:3' || s === '4/3') return '1776*1328'
+    if (s === '1:1') return '2048*2048'
+    if (s === '2:3') return '1664*2496'
+    if (s === '3:2') return '2496*1664'
+    // if looks like W*H and within range, pass through
+    if (/^\d+\*\d+$/.test(s)) {
+      const [w, h] = s.split('*').map(Number)
+      const px = w * h
+      if (w >= 512 && h >= 512 && px >= 900000 && px <= 4200000) return s
+    }
+    return '2048*2048'
+  }
+
   if (isEdit && useModel.startsWith('bytedance/seedream')) {
-    // Seedream 5 Pro edit: images[], size enum, output_format, thinking
+    // Seedream edit: respect client size (mapped to valid preset). Default 9:16.
+    usedSize = normalizeSeedreamSize(size || '1152*2048')
     body = {
       model: useModel,
       prompt,
       images: allRefs,
-      size: '1328*1776',
-      output_format: 'jpeg',
-      thinking: 'disabled',
+      size: usedSize,
+      output_format: outputFormat || 'jpeg',
+      thinking: thinking || 'disabled',
       enable_base64_output: false,
     }
   } else if (isEdit && useModel.startsWith('xai/grok-imagine')) {
@@ -167,7 +213,8 @@ export default async function handler(req, res) {
     }
     usedSize = aspectRatio || '2:3'
   } else if (useModel.startsWith('bytedance/seedream')) {
-    usedSize = size || '2048*2048'
+    // Prefer explicit client size; default vertical 9:16 (not square / 3:4)
+    usedSize = normalizeSeedreamSize(size || '1152*2048')
     body = {
       model: useModel,
       prompt,
