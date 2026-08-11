@@ -167,8 +167,8 @@ export default async function handler(req, res) {
   }
 
   if (isEdit && useModel.startsWith('bytedance/seedream')) {
-    // Seedream edit: respect client size (mapped to valid preset). Default 9:16.
-    usedSize = normalizeSeedreamSize(size || '1152*2048')
+    // Seedream edit: respect client size (mapped to valid preset). Default 2:3.
+    usedSize = normalizeSeedreamSize(size || '1664*2496')
     body = {
       model: useModel,
       prompt,
