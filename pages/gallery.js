@@ -222,14 +222,14 @@ const I2I_SIZES_PIXEL = [
   { value: '1024*576', label: 'Wide 16:9' },
 ]
 const I2I_SIZES_SEEDREAM = [
-  { value: '1152*2048', label: 'Tall 9:16 (1152×2048) ← phone / vertical' },
-  { value: '1328*1776', label: 'Portrait ~3:4 (1328×1776)' },
-  { value: '1664*2496', label: 'Portrait 2:3 (1664×2496)' },
-  { value: '1728*2304', label: 'Portrait 3:4 2K (1728×2304)' },
-  { value: '2048*2048', label: 'Square 1:1 (2048×2048)' },
-  { value: '2048*1152', label: 'Wide 16:9 (2048×1152)' },
-  { value: '1776*1328', label: 'Landscape ~4:3 (1776×1328)' },
-  { value: '2496*1664', label: 'Landscape 3:2 (2496×1664)' },
+  { value: '1152*2048', label: '9:16 tall (1152×2048) — phone / vertical' },
+  { value: '1664*2496', label: '2:3 portrait (1664×2496)' },
+  { value: '1328*1776', label: '3:4 portrait (1328×1776)' },
+  { value: '1728*2304', label: '3:4 portrait 2K (1728×2304)' },
+  { value: '2048*2048', label: '1:1 square (2048×2048)' },
+  { value: '2048*1152', label: '16:9 wide (2048×1152)' },
+  { value: '2496*1664', label: '3:2 landscape (2496×1664)' },
+  { value: '1776*1328', label: '4:3 landscape (1776×1328)' },
 ]
 const CREATE_SIZES_SEEDREAM = I2I_SIZES_SEEDREAM
 const I2I_SIZES_GROK = [
@@ -258,7 +258,7 @@ const I2I_MODELS = [
     maxRefs: 4,
     sizeMode: 'pixel',
     sizes: I2I_SIZES_SEEDREAM,
-    defaultSize: '1328*1776',
+    defaultSize: '1152*2048',
   },
   {
     id: 'bytedance/seedream-v5.0-lite/edit',
@@ -267,7 +267,7 @@ const I2I_MODELS = [
     maxRefs: 4,
     sizeMode: 'pixel',
     sizes: I2I_SIZES_SEEDREAM,
-    defaultSize: '1328*1776',
+    defaultSize: '1152*2048',
   },
   {
     id: 'xai/grok-imagine-image-quality/edit',
@@ -1409,14 +1409,16 @@ export default function Gallery() {
   }
 
   const openCreate = () => {
+    const defModel = (IMAGE_MODELS.find(m => m.family === 'seedream') || IMAGE_MODELS[0]).id
     setPrompt('')
     setNegative(DEFAULT_NEGATIVE)
     setSeed('')
-    setSize('768*1024')
+    // Match size list to model family (Seedream ≠ Flux pixel sizes)
+    setSize(imgFamilyOf(defModel) === 'seedream' ? '1152*2048' : '768*1024')
     setCharId('')
     setGuidance(3.5)
     setSteps(28)
-    setCreateModel((IMAGE_MODELS.find(m => m.family === 'seedream') || IMAGE_MODELS[0]).id)
+    setCreateModel(defModel)
     setCreateRefs([])
     setPickCreateRef(null)
     clearPromptExtras()
@@ -1425,14 +1427,21 @@ export default function Gallery() {
 
   // reopen create modal pre-filled from an existing image
   const openRegenerate = (item, keepSeed) => {
+    const defModel = (IMAGE_MODELS.find(m => m.family === 'seedream') || IMAGE_MODELS[0]).id
+    const fam = imgFamilyOf(defModel)
+    const seedreamAllowed = CREATE_SIZES_SEEDREAM.map(s => s.value)
+    const fluxAllowed = SIZES.map(s => s.value)
+    let nextSize = item.size || (fam === 'seedream' ? '1152*2048' : '768*1024')
+    if (fam === 'seedream' && !seedreamAllowed.includes(nextSize)) nextSize = '1152*2048'
+    if (fam !== 'seedream' && !fluxAllowed.includes(nextSize)) nextSize = '768*1024'
     setPrompt(item.prompt || '')
     setNegative(item.negative_prompt || DEFAULT_NEGATIVE)
     setSeed(keepSeed && item.seed ? String(item.seed) : '')
-    setSize(item.size || '768*1024')
+    setSize(nextSize)
     setCharId('')
     setGuidance(3.5)
     setSteps(28)
-    setCreateModel((IMAGE_MODELS.find(m => m.family === 'seedream') || IMAGE_MODELS[0]).id)
+    setCreateModel(defModel)
     setCreateRefs([])
     setPickCreateRef(null)
     clearPromptExtras()
@@ -1456,11 +1465,12 @@ export default function Gallery() {
       if (fam === 'grok') {
         payload.aspectRatio = '2:3'; payload.resolution = '2k'
       } else if (fam === 'seedream') {
-        // Must pass the chosen Seedream preset (e.g. 1152*2048 for 9:16).
-        // Hardcoding 1328*1776 forced every run to ~3:4.
+        // Always send the dropdown value. Official 9:16 = 1152*2048.
         const seedreamAllowed = CREATE_SIZES_SEEDREAM.map(s => s.value)
-        payload.size = seedreamAllowed.includes(size) ? size : '1152*2048'
+        const chosen = String(size || '').trim()
+        payload.size = seedreamAllowed.includes(chosen) ? chosen : '1152*2048'
         payload.thinking = 'disabled'
+        payload.outputFormat = 'jpeg'
       } else if (fam === 'schnell') {
         payload.size = size; payload.seed = seed || undefined; payload.negativePrompt = useNeg
       } else {
