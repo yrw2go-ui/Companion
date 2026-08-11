@@ -222,13 +222,16 @@ const I2I_SIZES_PIXEL = [
   { value: '1024*576', label: 'Wide 16:9' },
 ]
 const I2I_SIZES_SEEDREAM = [
-  { value: '1328*1776', label: 'Portrait ~3:4 hi-res (1328×1776)' },
-  { value: '1776*1328', label: 'Landscape ~4:3 hi-res' },
-  { value: '1024*1024', label: 'Square 1:1' },
-  { value: '1440*2560', label: 'Tall 9:16 hi-res' },
-  { value: '2560*1440', label: 'Wide 16:9 hi-res' },
-  { value: '768*1024', label: 'Portrait 3:4' },
+  { value: '1152*2048', label: 'Tall 9:16 (1152×2048) ← phone / vertical' },
+  { value: '1328*1776', label: 'Portrait ~3:4 (1328×1776)' },
+  { value: '1664*2496', label: 'Portrait 2:3 (1664×2496)' },
+  { value: '1728*2304', label: 'Portrait 3:4 2K (1728×2304)' },
+  { value: '2048*2048', label: 'Square 1:1 (2048×2048)' },
+  { value: '2048*1152', label: 'Wide 16:9 (2048×1152)' },
+  { value: '1776*1328', label: 'Landscape ~4:3 (1776×1328)' },
+  { value: '2496*1664', label: 'Landscape 3:2 (2496×1664)' },
 ]
+const CREATE_SIZES_SEEDREAM = I2I_SIZES_SEEDREAM
 const I2I_SIZES_GROK = [
   { value: '2:3|2k', label: 'Portrait 2:3 · 2K' },
   { value: '3:2|2k', label: 'Landscape 3:2 · 2K' },
@@ -333,7 +336,7 @@ export default function Gallery() {
   const [prompt, setPrompt] = useState('')
   const [negative, setNegative] = useState(DEFAULT_NEGATIVE)
   const [seed, setSeed] = useState('')
-  const [size, setSize] = useState('768*1024')
+  const [size, setSize] = useState('1152*2048') // Seedream default = true 9:16 (not Flux 576*1024)
   const [charId, setCharId] = useState('')
   const [guidance, setGuidance] = useState(3.5)
   const [steps, setSteps] = useState(28)
@@ -1453,7 +1456,11 @@ export default function Gallery() {
       if (fam === 'grok') {
         payload.aspectRatio = '2:3'; payload.resolution = '2k'
       } else if (fam === 'seedream') {
-        payload.size = '1328*1776'; payload.thinking = 'disabled'
+        // Must pass the chosen Seedream preset (e.g. 1152*2048 for 9:16).
+        // Hardcoding 1328*1776 forced every run to ~3:4.
+        const seedreamAllowed = CREATE_SIZES_SEEDREAM.map(s => s.value)
+        payload.size = seedreamAllowed.includes(size) ? size : '1152*2048'
+        payload.thinking = 'disabled'
       } else if (fam === 'schnell') {
         payload.size = size; payload.seed = seed || undefined; payload.negativePrompt = useNeg
       } else {
@@ -3272,6 +3279,15 @@ export default function Gallery() {
                 const next = e.target.value
                 setCreateModel(next)
                 setCreateRefs(prev => prev.slice(0, createMaxRefs(next)))
+                // Seedream needs its own pixel presets — Flux sizes like 576*1024
+                // are invalid and the API falls back to ~3:4
+                if (imgFamilyOf(next) === 'seedream') {
+                  const allowed = CREATE_SIZES_SEEDREAM.map(s => s.value)
+                  setSize(prev => (allowed.includes(prev) ? prev : '1152*2048'))
+                } else {
+                  const allowed = SIZES.map(s => s.value)
+                  setSize(prev => (allowed.includes(prev) ? prev : '768*1024'))
+                }
               }}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500"
             >
@@ -3478,11 +3494,20 @@ export default function Gallery() {
               </>
             )}
 
-            <label className="block text-xs text-gray-400 mb-1">Aspect Ratio</label>
+            <label className="block text-xs text-gray-400 mb-1">
+              {imgFamilyOf(createModel) === 'seedream' ? 'Size (Seedream presets)' : 'Aspect Ratio'}
+            </label>
             <select value={size} onChange={e => setSize(e.target.value)}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500">
-              {SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              {(imgFamilyOf(createModel) === 'seedream' ? CREATE_SIZES_SEEDREAM : SIZES).map(s => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
             </select>
+            {imgFamilyOf(createModel) === 'seedream' && (
+              <p className="text-[10px] text-gray-600 -mt-2 mb-3">
+                Seedream needs its own pixel sizes. For phone/vertical use <span className="text-pink-400">1152×2048 (9:16)</span> — not the Flux 576×1024 option.
+              </p>
+            )}
 
             {(imgFamilyOf(createModel) === 'flux' || imgFamilyOf(createModel) === 'schnell') && (
               <>
