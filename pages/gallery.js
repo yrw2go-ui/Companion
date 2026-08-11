@@ -222,8 +222,8 @@ const I2I_SIZES_PIXEL = [
   { value: '1024*576', label: 'Wide 16:9' },
 ]
 const I2I_SIZES_SEEDREAM = [
+  { value: '1664*2496', label: '2:3 portrait (1664×2496) — default' },
   { value: '1152*2048', label: '9:16 tall (1152×2048) — phone / vertical' },
-  { value: '1664*2496', label: '2:3 portrait (1664×2496)' },
   { value: '1328*1776', label: '3:4 portrait (1328×1776)' },
   { value: '1728*2304', label: '3:4 portrait 2K (1728×2304)' },
   { value: '2048*2048', label: '1:1 square (2048×2048)' },
@@ -258,7 +258,7 @@ const I2I_MODELS = [
     maxRefs: 4,
     sizeMode: 'pixel',
     sizes: I2I_SIZES_SEEDREAM,
-    defaultSize: '1152*2048',
+    defaultSize: '1664*2496', // 2:3 portrait
   },
   {
     id: 'bytedance/seedream-v5.0-lite/edit',
@@ -267,7 +267,7 @@ const I2I_MODELS = [
     maxRefs: 4,
     sizeMode: 'pixel',
     sizes: I2I_SIZES_SEEDREAM,
-    defaultSize: '1152*2048',
+    defaultSize: '1664*2496', // 2:3 portrait
   },
   {
     id: 'xai/grok-imagine-image-quality/edit',
