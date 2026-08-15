@@ -6,183 +6,198 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+const BASE_URL = 'https://api.atlascloud.ai/api/v1'
+
+const safeJson = async (response) => {
+  const text = await response.text()
+  try {
+    return { ok: true, data: JSON.parse(text), raw: text }
+  } catch {
+    return { ok: false, raw: text }
+  }
+}
+
+/** Atlas resolution strings vary by model family */
+function normalizeResolution(model, resolution) {
+  const r = String(resolution || '720p').trim()
+  const upper = r.toUpperCase().replace(/\s/g, '')
+  // Wan 2.7 Spicy docs: 720P | 1080P | 1080P-SR | 1440P-SR
+  if (String(model || '').includes('wan-2.7-spicy') || String(model || '').includes('wan-2.6-spicy')) {
+    if (upper === '720P' || upper === '720') return '720P'
+    if (upper === '1080P' || upper === '1080') return '1080P'
+    if (upper.includes('1080') && upper.includes('SR')) return '1080P-SR'
+    if (upper.includes('1440')) return '1440P-SR'
+    return '720P'
+  }
+  // Most other models accept lowercase 720p / 1080p
+  if (upper === '1080P' || upper === '1080') return '1080p'
+  if (upper === '480P' || upper === '480') return '480p'
+  return '720p'
+}
+
+function extractPredictionId(parsed) {
+  if (!parsed || typeof parsed !== 'object') return null
+  const d = parsed.data !== undefined ? parsed.data : parsed
+  return (
+    d?.id ||
+    d?.prediction_id ||
+    d?.predictionId ||
+    d?.request_id ||
+    d?.task_id ||
+    parsed?.id ||
+    null
+  )
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
   const {
-    imageUrl, prompt, duration, resolution, model, aspectRatio, negativePrompt,
-    lastImageUrl, sourceVideoUrl, audioUrl,
-    sound, referenceImages, keepOriginalSound, highNoiseLoras, lowNoiseLoras,
-  } = req.body
+    imageUrl,
+    image,
+    prompt,
+    model,
+    duration,
+    resolution,
+    negativePrompt,
+    negative_prompt,
+    seed,
+    // seedance / extras
+    generate_audio,
+    ratio,
+    output_format,
+    watermark,
+    last_image,
+    lastImage,
+    // lora
+    highNoiseLoras,
+    lowNoiseLoras,
+    // t2v / aspect
+    aspectRatio,
+    sound,
+    // extend / continue
+    videoUrl,
+    first_clip,
+  } = req.body || {}
 
-  const BASE_URL = 'https://api.atlascloud.ai/api/v1'
   const useModel = model || 'alibaba/wan-2.6/image-to-video'
+  const useImage = (image || imageUrl || '').trim()
+  const usePrompt = String(prompt || '').trim()
+  const useDuration = Math.max(2, Math.min(30, parseInt(duration, 10) || 5))
+  const useRes = normalizeResolution(useModel, resolution)
+  const useNeg = (negative_prompt || negativePrompt || '').trim()
 
-  // text-to-video models don't need a source image; everything else does.
-  // Wan 2.7 has its own flexible input rules (image, video, or both), so it
-  // is excluded from this generic image-required check.
-  const KLING_T2V_MODELS = ['kwaivgi/kling-v3.0-pro/text-to-video', 'kwaivgi/kling-video-o3-pro/text-to-video']
-  const KLING_EDIT_MODEL = 'kwaivgi/kling-video-o3-pro/video-edit'
-
-  const isT2V = useModel === 'xai/grok-imagine-video/text-to-video' || KLING_T2V_MODELS.includes(useModel)
-  const isWan27 = useModel === 'alibaba/wan-2.7/image-to-video'
-  const isKlingEdit = useModel === KLING_EDIT_MODEL
-  const isWanLora = useModel === 'alibaba/wan-2.2-spicy/image-to-video-lora'
-
-  if (isKlingEdit) {
-    if (!sourceVideoUrl) return res.status(400).json({ error: 'A source video is required to edit' })
-    if (!prompt || !prompt.trim()) return res.status(400).json({ error: 'A prompt is required to edit' })
-  } else if (!isT2V && !isWan27 && !imageUrl) {
-    return res.status(400).json({ error: 'No source image provided' })
+  if (!usePrompt && !useModel.includes('text-to-video')) {
+    // most I2V still want a prompt
   }
-  if (isWan27 && !imageUrl && !sourceVideoUrl) {
-    return res.status(400).json({ error: 'Wan 2.7 needs a source image or a video to continue' })
+  if (!usePrompt) {
+    return res.status(400).json({ error: 'Prompt is required' })
   }
 
-  let dur = parseInt(duration) || 5
-  if (dur < 5) dur = 5
-  if (dur > 15) dur = 15
+  // Build Atlas body per model family
+  let body = { model: useModel, prompt: usePrompt }
 
-  const motionPrompt = prompt || 'smooth natural motion, eyes blinking naturally'
+  const isSpicy27 = useModel.includes('wan-2.7-spicy') && useModel.includes('image-to-video')
+  const isSpicy26 = useModel.includes('wan-2.6-spicy')
+  const isWan27 = useModel === 'alibaba/wan-2.7/image-to-video' || useModel === 'atlascloud/wan-2.7/image-to-video'
+  const isSeedance25 = useModel.includes('seedance-2.5')
+  const isSeedance = useModel.includes('seedance')
+  const isGrok = useModel.includes('grok-imagine')
+  const isLora = useModel.includes('image-to-video-lora')
+  const isT2V = useModel.includes('text-to-video') && !useImage
 
-  const safeJson = async (response) => {
-    const t = await response.text()
-    try {
-      return { ok: true, data: JSON.parse(t) }
-    } catch {
-      return { ok: false, raw: t }
+  if (isT2V) {
+    body.duration = useDuration
+    body.resolution = useRes
+    if (aspectRatio || ratio) body.ratio = aspectRatio || ratio
+    if (generate_audio != null) body.generate_audio = !!generate_audio
+    else if (sound != null) body.generate_audio = !!sound
+    if (output_format) body.output_format = output_format
+    if (watermark != null) body.watermark = !!watermark
+  } else if (isSpicy27) {
+    // atlascloud/wan-2.7-spicy/image-to-video
+    // REQUIRED: model, image, prompt
+    // resolution: 720P | 1080P | 1080P-SR | 1440P-SR
+    // duration: 2–15
+    if (!useImage) {
+      return res.status(400).json({ error: 'Wan 2.7 Spicy requires a first-frame image URL' })
     }
+    body.image = useImage
+    body.duration = Math.max(2, Math.min(15, useDuration))
+    body.resolution = useRes // already uppercase for spicy
+    if (useNeg) body.negative_prompt = useNeg
+    if (seed !== undefined && seed !== null && seed !== '') {
+      body.seed = parseInt(seed, 10)
+    }
+  } else if (isSpicy26) {
+    if (!useImage) {
+      return res.status(400).json({ error: 'Wan 2.6 Spicy requires a first-frame image URL' })
+    }
+    body.image = useImage
+    body.duration = [5, 10, 15].includes(useDuration) ? useDuration : 5
+    body.resolution = String(useRes).toLowerCase()
+    if (useNeg) body.negative_prompt = useNeg
+    if (generate_audio != null) body.generate_audio = !!generate_audio
+  } else if (isSeedance25 || isSeedance) {
+    if (useImage) body.image = useImage
+    if (last_image || lastImage) body.last_image = last_image || lastImage
+    body.duration = Math.max(4, Math.min(30, useDuration))
+    body.resolution = useRes === '1080p' ? '720p' : (useRes || '720p') // seedance 2.5: 480p|720p
+    if (['480p', '720p'].includes(String(body.resolution).toLowerCase()) === false) {
+      body.resolution = '720p'
+    }
+    body.ratio = ratio || aspectRatio || (useImage ? 'adaptive' : '9:16')
+    body.generate_audio = generate_audio != null ? !!generate_audio : true
+    body.watermark = watermark != null ? !!watermark : false
+    body.output_format = output_format || 'mp4'
+  } else if (isGrok) {
+    if (useImage) body.image_url = useImage
+    body.duration = useDuration
+    // grok uses various fields
+  } else if (isLora) {
+    if (!useImage) {
+      return res.status(400).json({ error: 'Image required for LoRA I2V' })
+    }
+    body.image = useImage
+    body.duration = useDuration
+    body.resolution = useRes
+    if (Array.isArray(highNoiseLoras) && highNoiseLoras.length) {
+      body.high_noise_loras = highNoiseLoras
+    }
+    if (Array.isArray(lowNoiseLoras) && lowNoiseLoras.length) {
+      body.low_noise_loras = lowNoiseLoras
+    }
+  } else if (isWan27) {
+    // alibaba/wan-2.7 — start / end / continue
+    if (videoUrl || first_clip) {
+      body.first_clip = videoUrl || first_clip
+    } else if (useImage) {
+      body.image = useImage
+    }
+    if (last_image || lastImage) body.last_image = last_image || lastImage
+    body.duration = Math.max(2, Math.min(15, useDuration))
+    body.resolution = useRes
+    if (useNeg) body.negative_prompt = useNeg
+  } else {
+    // Generic Wan / turbo / others
+    if (useImage) {
+      // Prefer `image` (Atlas standard); some older models also accept image_url
+      body.image = useImage
+    }
+    body.duration = useDuration
+    body.resolution = useRes
+    if (useNeg) body.negative_prompt = useNeg
+    if (last_image || lastImage) body.last_image = last_image || lastImage
+    if (videoUrl) body.first_clip = videoUrl
   }
 
   try {
-  // build the request per model family
-  let body
-  let resValue = resolution === '1080p' ? '1080p' : '720p'
-
-  if (useModel === 'atlascloud/wan-2.2-turbo/image-to-video') {
-    // Wan 2.2 Turbo: image, prompt, negative_prompt, resolution, duration=5 only
-    body = {
-      model: useModel,
-      image: imageUrl,
-      prompt: motionPrompt,
-      resolution: resValue,
-      duration: 5,
-      seed: -1,
-    }
-    if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
-    dur = 5
-  } else if (useModel === 'xai/grok-imagine-video-v1.5/image-to-video') {
-    // Grok i2v: uses image_url (not image), aspect_ratio, duration default 8
-    body = {
-      model: useModel,
-      image_url: imageUrl,
-      prompt: motionPrompt,
-      duration: dur,
-      resolution: resValue,
-      aspect_ratio: aspectRatio || '3:4',
-    }
-  } else if (useModel === 'xai/grok-imagine-video/text-to-video') {
-    // Grok t2v: no image, 480p/720p only
-    if (resValue === '1080p') resValue = '720p'
-    body = {
-      model: useModel,
-      prompt: motionPrompt,
-      duration: dur,
-      resolution: resValue,
-      aspect_ratio: aspectRatio || '9:16',
-    }
-  } else if (isWan27) {
-    // Wan 2.7: flexible input modes -- start image, start+end transition,
-    // or continuing an existing video clip. Resolution is 720P/1080P
-    // (capitalized, unlike the other Wan models), and the aspect ratio
-    // always follows whatever input media was given.
-    const wanRes = (resolution || '').toUpperCase() === '1080P' ? '1080P' : '720P'
-    body = {
-      model: useModel,
-      prompt: motionPrompt,
-      resolution: wanRes,
-      duration: dur,
-      seed: -1,
-      prompt_extend: true,
-    }
-    if (imageUrl) body.image = imageUrl
-    if (lastImageUrl) body.last_image = lastImageUrl
-    if (sourceVideoUrl) body.video = sourceVideoUrl
-    if (audioUrl) body.audio = audioUrl
-    if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
-  } else if (KLING_T2V_MODELS.includes(useModel)) {
-    // Kling t2v (both variants): single-prompt mode only here (no
-    // multi_shot / elements). Duration 3-15s, native sound toggle.
-    let klingDur = parseInt(duration) || 5
-    if (klingDur < 3) klingDur = 3
-    if (klingDur > 15) klingDur = 15
-    dur = klingDur
-    body = {
-      model: useModel,
-      prompt: motionPrompt,
-      duration: klingDur,
-      aspect_ratio: aspectRatio || '16:9',
-      sound: sound !== false,
-    }
-    if (useModel === 'kwaivgi/kling-v3.0-pro/text-to-video') {
-      if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
-      body.cfg_scale = 0.5
-    }
-  } else if (isKlingEdit) {
-    // Kling O3 Pro video-edit: edits an EXISTING video, not a new
-    // generation. Video capped at 10s per the schema.
-    body = {
-      model: useModel,
-      prompt: motionPrompt,
-      video: sourceVideoUrl,
-      keep_original_sound: keepOriginalSound !== false,
-    }
-    if (Array.isArray(referenceImages) && referenceImages.length) {
-      body.images = referenceImages.slice(0, 4)
-    }
-  } else if (isWanLora) {
-    // Wan 2.2 i2v with optional LoRA slots (max 3 each). LoRA item shape
-    // isn't specified beyond "list", so pass through whatever was given.
-    let loraDur = parseInt(duration) === 8 ? 8 : 5
-    dur = loraDur
-    body = {
-      model: useModel,
-      image: imageUrl,
-      prompt: motionPrompt,
-      resolution: resValue === '1080p' ? '720p' : resValue, // only 480p/720p supported
-      duration: loraDur,
-      seed: -1,
-    }
-    if (Array.isArray(highNoiseLoras) && highNoiseLoras.length) body.high_noise_loras = highNoiseLoras.slice(0, 3)
-    if (Array.isArray(lowNoiseLoras) && lowNoiseLoras.length) body.low_noise_loras = lowNoiseLoras.slice(0, 3)
-  } else {
-    // default: Wan 2.6 i2v (unchanged behavior)
-    body = {
-      model: useModel,
-      image: imageUrl,
-      prompt: motionPrompt,
-      resolution: resValue,
-      duration: dur,
-      seed: -1,
-    }
-  }
-
-    // Wan 2.7's schema specifies the generateImage endpoint (unlike every
-    // other video model here, which use generateVideo) -- honoring that
-    // exactly as documented rather than assuming it's a typo.
-    const submitEndpoint = isWan27 ? 'generateImage' : 'generateVideo'
-
-    // Kling and Wan 2.7's schemas poll via /model/result/{id}; the earlier
-    // video models here poll via /model/prediction/{id}. Honoring each
-    // schema exactly rather than assuming they're interchangeable.
-    const isKlingFamily = KLING_T2V_MODELS.includes(useModel) || isKlingEdit
-    const pollPath = (isWan27 || isKlingFamily) ? 'result' : 'prediction'
-    const submitRes = await fetch(`${BASE_URL}/model/${submitEndpoint}`, {
+    const submitRes = await fetch(`${BASE_URL}/model/generateVideo`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.ATLAS_API_KEY}`,
+        Authorization: `Bearer ${process.env.ATLAS_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
@@ -192,31 +207,40 @@ export default async function handler(req, res) {
     if (!submitParsed.ok) {
       return res.status(500).json({
         error: 'Atlas returned non-JSON',
-        httpStatus: submitRes.status,
         raw: submitParsed.raw?.slice(0, 400),
-        sentBody: body,
+        sent: { model: useModel, hasImage: !!useImage, resolution: useRes, duration: useDuration },
       })
     }
 
-    const predictionId = submitParsed.data.data?.id
+    const predictionId = extractPredictionId(submitParsed.data)
     if (!predictionId) {
-      // surface exactly what Atlas said and what we sent
+      // Surface Atlas error message when present
+      const detail = submitParsed.data
+      const atlasErr =
+        detail?.error ||
+        detail?.message ||
+        detail?.data?.error ||
+        detail?.data?.message ||
+        null
       return res.status(500).json({
-        error: 'No prediction ID',
-        httpStatus: submitRes.status,
-        atlasResponse: submitParsed.data,
-        sentBody: body,
+        error: atlasErr || 'No prediction ID',
+        detail,
+        sent: {
+          model: useModel,
+          hasImage: !!useImage,
+          resolution: body.resolution,
+          duration: body.duration,
+          keys: Object.keys(body),
+        },
       })
     }
-
-    const maxPolls = 80 + dur * 8
 
     let atlasUrl = null
-    for (let i = 0; i < maxPolls; i++) {
+    for (let i = 0; i < 90; i++) {
       await new Promise(r => setTimeout(r, 2000))
 
-      const pollRes = await fetch(`${BASE_URL}/model/${pollPath}/${predictionId}`, {
-        headers: { 'Authorization': `Bearer ${process.env.ATLAS_API_KEY}` },
+      const pollRes = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
+        headers: { Authorization: `Bearer ${process.env.ATLAS_API_KEY}` },
       })
       const pollParsed = await safeJson(pollRes)
       if (!pollParsed.ok) continue
@@ -225,28 +249,45 @@ export default async function handler(req, res) {
       const status = pollBody.status
 
       if (status === 'completed' || status === 'succeeded') {
-        atlasUrl = pollBody.outputs?.[0]
+        atlasUrl = pollBody.outputs?.[0] || pollBody.output || pollBody.video_url
+        if (Array.isArray(atlasUrl)) atlasUrl = atlasUrl[0]
         break
       }
       if (status === 'failed' || status === 'error') {
-        return res.status(500).json({ error: pollBody.error || 'Generation failed', detail: pollBody })
+        return res.status(500).json({
+          error: pollBody.error || pollBody.message || 'Video generation failed',
+          detail: pollBody,
+        })
       }
     }
 
     if (!atlasUrl) {
-      return res.status(500).json({ error: 'Timed out waiting for video' })
+      return res.status(500).json({ error: 'Timed out waiting for video', predictionId })
     }
 
+    // Download + re-upload to our storage so URLs stay stable
     const vidRes = await fetch(atlasUrl)
+    if (!vidRes.ok) {
+      // Fall back to Atlas URL if download fails
+      return res.status(200).json({ videoUrl: atlasUrl, model: useModel, predictionId })
+    }
     const vidBuffer = Buffer.from(await vidRes.arrayBuffer())
-
-    const fileName = `video_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`
+    const fileName = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`
     const { error: uploadError } = await supabaseAdmin.storage
       .from('character-images')
-      .upload(fileName, vidBuffer, { contentType: 'video/mp4', upsert: false })
+      .upload(fileName, vidBuffer, {
+        contentType: 'video/mp4',
+        upsert: false,
+      })
 
     if (uploadError) {
-      return res.status(500).json({ error: 'Upload failed: ' + uploadError.message })
+      // Still return Atlas URL so the client isn't blocked
+      return res.status(200).json({
+        videoUrl: atlasUrl,
+        model: useModel,
+        predictionId,
+        uploadWarning: uploadError.message,
+      })
     }
 
     const { data: publicData } = supabaseAdmin.storage
@@ -255,11 +296,12 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       videoUrl: publicData.publicUrl,
-      duration: dur,
-      resolution: resValue,
       model: useModel,
+      predictionId,
+      duration: body.duration,
+      resolution: body.resolution,
     })
   } catch (err) {
-    return res.status(500).json({ error: err.message })
+    return res.status(500).json({ error: err.message || 'generate-video failed' })
   }
 }
