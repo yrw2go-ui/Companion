@@ -80,6 +80,7 @@ export default async function handler(req, res) {
     prompt, negativePrompt, seed, size, referenceImageUrl,
     referenceImageUrls, referenceImageUrl2, referenceImageUrl3, referenceImageUrl4,
     model, aspectRatio, resolution, outputFormat, thinking, guidance, steps,
+    max_images, maxImages, // Seedream sequential: 1-15
     // optional: client can ask us to skip gallery register (e.g. card-only flows)
     skipGalleryRegister,
     character_id,
@@ -98,7 +99,7 @@ export default async function handler(req, res) {
 
   const randSeed = () => Math.floor(Math.random() * 2147483647)
 
-  // Collect optional multi-refs (gallery create can send up to 4)
+  // Collect optional multi-refs (Seedream Lite edit allows up to 14)
   const extraRefs = [
     ...(Array.isArray(referenceImageUrls) ? referenceImageUrls : []),
     referenceImageUrl2,
@@ -106,8 +107,11 @@ export default async function handler(req, res) {
     referenceImageUrl4,
   ].filter(Boolean)
   const primaryRef = referenceImageUrl || extraRefs[0] || null
+  const refCap = (model && String(model).includes('seedream') && String(model).includes('edit'))
+    ? 14
+    : 4
   const allRefs = primaryRef
-    ? [primaryRef, ...extraRefs.filter(u => u !== primaryRef)].slice(0, 4)
+    ? [primaryRef, ...extraRefs.filter(u => u !== primaryRef)].slice(0, refCap)
     : []
 
   // A reference image means image-to-image. Use the explicit edit model if
@@ -123,61 +127,76 @@ export default async function handler(req, res) {
 
   // Seedream only accepts its own pixel presets (or close). Flux sizes like
   // 576*1024 are invalid and the API silently falls back to ~3:4 (1328*1776).
-  const normalizeSeedreamSize = (raw) => {
+  const normalizeSeedreamSize = (raw, isLite = false) => {
     const s = String(raw || '').trim().replace(/x/gi, '*').replace(/\s/g, '')
     const presets = {
-      // exact official Atlas presets
-      '1152*2048': '1152*2048', // 9:16
-      '2048*1152': '2048*1152', // 16:9
-      '1328*1776': '1328*1776', // ~3:4 1.5K
-      '1776*1328': '1776*1328', // ~4:3 1.5K
-      '1728*2304': '1728*2304', // 3:4 2K
-      '2304*1728': '2304*1728', // 4:3 2K
+      // Pro + shared
+      '1152*2048': '1152*2048',
+      '2048*1152': '2048*1152',
+      '1328*1776': '1328*1776',
+      '1776*1328': '1776*1328',
+      '1728*2304': '1728*2304',
+      '2304*1728': '2304*1728',
       '1024*1024': '1024*1024',
       '1536*1536': '1536*1536',
       '2048*2048': '2048*2048',
-      '1664*2496': '1664*2496', // 2:3
-      '2496*1664': '2496*1664', // 3:2
+      '1664*2496': '1664*2496',
+      '2496*1664': '2496*1664',
       '1530*2720': '1530*2720',
       '2720*1530': '2720*1530',
-      // common Flux / UI sizes → Seedream equivalents
-      '576*1024': '1152*2048',   // tall 9:16
-      '1024*576': '2048*1152',   // wide 16:9
-      '768*1024': '1328*1776',   // 3:4
-      '1024*768': '1776*1328',   // 4:3
-      '1440*2560': '1152*2048',  // over-budget 9:16 → official
-      '2560*1440': '2048*1152',
+      // Seedream 5.0 Lite official 2K/3K presets
+      '2848*1600': '2848*1600',
+      '1600*2848': '1600*2848',
+      '3136*1344': '3136*1344',
+      '3072*3072': '3072*3072',
+      '3456*2592': '3456*2592',
+      '2592*3456': '2592*3456',
+      '4096*2304': '4096*2304',
+      '2304*4096': '2304*4096',
+      '2496*3744': '2496*3744',
+      '3744*2496': '3744*2496',
+      '4704*2016': '4704*2016',
+      // Flux / UI aliases
+      '576*1024': '1152*2048',
+      '1024*576': '2048*1152',
+      '768*1024': '1328*1776',
+      '1024*768': '1776*1328',
+      '1440*2560': '1600*2848',
+      '2560*1440': '2848*1600',
     }
     if (presets[s]) return presets[s]
-    // aspect keywords
-    if (s === '9:16' || s === '9/16') return '1152*2048'
-    if (s === '16:9' || s === '16/9') return '2048*1152'
-    if (s === '3:4' || s === '3/4') return '1328*1776'
-    if (s === '4:3' || s === '4/3') return '1776*1328'
+    if (s === '9:16' || s === '9/16') return isLite ? '1600*2848' : '1152*2048'
+    if (s === '16:9' || s === '16/9') return isLite ? '2848*1600' : '2048*1152'
+    if (s === '3:4' || s === '3/4') return isLite ? '1728*2304' : '1328*1776'
+    if (s === '4:3' || s === '4/3') return isLite ? '2304*1728' : '1776*1328'
     if (s === '1:1') return '2048*2048'
     if (s === '2:3') return '1664*2496'
     if (s === '3:2') return '2496*1664'
-    // if looks like W*H and within range, pass through
     if (/^\d+\*\d+$/.test(s)) {
       const [w, h] = s.split('*').map(Number)
       const px = w * h
-      if (w >= 512 && h >= 512 && px >= 900000 && px <= 4200000) return s
+      const maxPx = isLite ? 11000000 : 4200000
+      if (w >= 512 && h >= 512 && px >= 900000 && px <= maxPx) return s
     }
     return '2048*2048'
   }
 
+  const isSeedreamLite = /seedream-v5\.0-lite/.test(useModel)
+  const isSeedreamSeq = useModel.includes('/sequential')
+
   if (isEdit && useModel.startsWith('bytedance/seedream')) {
-    // Seedream edit: respect client size (mapped to valid preset). Default 2:3.
-    usedSize = normalizeSeedreamSize(size || '1664*2496')
+    // Seedream edit (Pro or Lite). Lite: up to 14 images, no thinking param.
+    usedSize = normalizeSeedreamSize(size || '1664*2496', isSeedreamLite)
     body = {
       model: useModel,
       prompt,
       images: allRefs,
       size: usedSize,
       output_format: outputFormat || 'jpeg',
-      thinking: thinking || 'disabled',
       enable_base64_output: false,
     }
+    // Pro edit supports thinking; Lite schema does not list it
+    if (!isSeedreamLite) body.thinking = thinking || 'disabled'
   } else if (isEdit && useModel.startsWith('xai/grok-imagine')) {
     // Grok Imagine edit: image_urls[]
     body = {
@@ -213,15 +232,23 @@ export default async function handler(req, res) {
     }
     usedSize = aspectRatio || '2:3'
   } else if (useModel.startsWith('bytedance/seedream')) {
-    // Prefer explicit client size; default vertical 9:16 (not square / 3:4)
-    usedSize = normalizeSeedreamSize(size || '1152*2048')
+    // Seedream T2I / sequential. Lite sizes go higher; sequential adds max_images.
+    usedSize = normalizeSeedreamSize(size || (isSeedreamLite ? '2048*2048' : '1152*2048'), isSeedreamLite)
     body = {
       model: useModel,
       prompt,
       size: usedSize,
       output_format: outputFormat || 'jpeg',
-      thinking: thinking || 'disabled',
       enable_base64_output: false,
+    }
+    if (isSeedreamSeq) {
+      let n = parseInt(max_images ?? maxImages ?? 1, 10)
+      if (isNaN(n)) n = 1
+      body.max_images = Math.max(1, Math.min(15, n))
+    }
+    // Pro text-to-image supports thinking; Lite / sequential schemas do not
+    if (!isSeedreamLite && !isSeedreamSeq && useModel.includes('pro')) {
+      body.thinking = thinking || 'disabled'
     }
   } else if (useModel === 'black-forest-labs/flux-schnell') {
     usedSeed = (seed !== undefined && seed !== null && seed !== '') ? parseInt(seed) : randSeed()
@@ -286,7 +313,10 @@ export default async function handler(req, res) {
       const status = pollBody.status
 
       if (status === 'completed' || status === 'succeeded') {
-        atlasUrl = pollBody.outputs?.[0]
+        const outs = Array.isArray(pollBody.outputs) ? pollBody.outputs.filter(Boolean) : []
+        atlasUrl = outs[0] || null
+        // stash all outputs on the poll body for multi-image sequential
+        pollBody._allOutputs = outs
         break
       }
       if (status === 'failed' || status === 'error') {
@@ -298,53 +328,84 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Timed out' })
     }
 
-    const imgRes = await fetch(atlasUrl)
-    const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
+    // Re-fetch last completed poll data for multi outputs (store on closure)
+    // We re-poll once to get full outputs array reliably
+    let allAtlasUrls = [atlasUrl]
+    try {
+      const finalPoll = await fetch(`${BASE_URL}/model/prediction/${predictionId}`, {
+        headers: { 'Authorization': `Bearer ${process.env.ATLAS_API_KEY}` },
+      })
+      const finalParsed = await safeJson(finalPoll)
+      if (finalParsed.ok) {
+        const fb = finalParsed.data.data || finalParsed.data
+        if (Array.isArray(fb.outputs) && fb.outputs.length) {
+          allAtlasUrls = fb.outputs.filter(Boolean)
+        }
+      }
+    } catch (_) {}
 
     const ext = outputFormat === 'png' ? 'png' : 'jpeg'
-    const fileName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from('character-images')
-      .upload(fileName, imgBuffer, {
-        contentType: `image/${ext}`,
-        upsert: false,
-      })
+    const uploadedUrls = []
+    const galleryIds = []
 
-    if (uploadError) {
-      return res.status(500).json({ error: 'Upload failed: ' + uploadError.message })
+    for (let oi = 0; oi < allAtlasUrls.length; oi++) {
+      const src = allAtlasUrls[oi]
+      try {
+        const imgRes = await fetch(src)
+        if (!imgRes.ok) continue
+        const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
+        const fileName = `img_${Date.now()}_${oi}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from('character-images')
+          .upload(fileName, imgBuffer, {
+            contentType: `image/${ext}`,
+            upsert: false,
+          })
+        if (uploadError) {
+          // fall back to Atlas URL so client still gets something
+          uploadedUrls.push(src)
+          continue
+        }
+        const { data: publicData } = supabaseAdmin.storage
+          .from('character-images')
+          .getPublicUrl(fileName)
+        const imageUrl = publicData.publicUrl
+        uploadedUrls.push(imageUrl)
+
+        if (!skipGalleryRegister) {
+          const gal = await registerGalleryRow({
+            type: 'image',
+            url: imageUrl,
+            prompt: String(prompt || '').trim() || null,
+            negative_prompt: negativePrompt && String(negativePrompt).trim()
+              ? String(negativePrompt).trim()
+              : null,
+            model: useModel,
+            seed: usedSeed,
+            size: usedSize,
+            character_id: character_id || null,
+            source_prompt: source_prompt || null,
+          })
+          if (gal?.id) galleryIds.push(gal.id)
+        }
+      } catch (e) {
+        console.warn('multi upload fail', e)
+      }
     }
 
-    const { data: publicData } = supabaseAdmin.storage
-      .from('character-images')
-      .getPublicUrl(fileName)
-
-    const imageUrl = publicData.publicUrl
-
-    // Server-side gallery row — survives the client switching apps mid-response
-    let galleryId = null
-    if (!skipGalleryRegister) {
-      const gal = await registerGalleryRow({
-        type: 'image',
-        url: imageUrl,
-        prompt: String(prompt || '').trim() || null,
-        negative_prompt: negativePrompt && String(negativePrompt).trim()
-          ? String(negativePrompt).trim()
-          : null,
-        model: useModel,
-        seed: usedSeed,
-        size: usedSize,
-        character_id: character_id || null,
-        source_prompt: source_prompt || null,
-      })
-      galleryId = gal?.id || null
+    if (!uploadedUrls.length) {
+      return res.status(500).json({ error: 'Upload failed for all outputs' })
     }
 
     return res.status(200).json({
-      imageUrl,
+      imageUrl: uploadedUrls[0],
+      imageUrls: uploadedUrls,
       seed: usedSeed,
       size: usedSize,
       model: useModel,
-      galleryId,
+      galleryId: galleryIds[0] || null,
+      galleryIds,
+      count: uploadedUrls.length,
     })
   } catch (err) {
     return res.status(500).json({ error: err.message })
