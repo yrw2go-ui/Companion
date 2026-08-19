@@ -34,15 +34,16 @@ const T2V_PRICE = null
 const VIDEO_EDIT_MODEL = 'kwaivgi/kling-video-o3-pro/video-edit'
 
 const IMAGE_MODELS = [
-  // maxRefs = optional reference images (capped at 4 in UI / payload)
-  // —— existing (kept) ——
+  // Seedream
   { id: 'bytedance/seedream-v5.0-pro/text-to-image', label: 'Seedream 5 Pro (hi-res)', family: 'seedream', price: null, maxRefs: 4 },
+  { id: 'bytedance/seedream-v5.0-lite', label: 'Seedream 5 Lite (faster, 2K–3K)', family: 'seedream', price: null, maxRefs: 0 },
+  { id: 'bytedance/seedream-v5.0-lite/sequential', label: 'Seedream 5 Lite Sequential (1–15 images)', family: 'seedream', price: null, maxRefs: 0, sequential: true, maxImages: 15 },
+  { id: 'bytedance/seedream-v5.0-lite/text-to-image', label: 'Seedream 5 Lite (legacy id)', family: 'seedream', price: null, maxRefs: 0 },
+  // Other
   { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux', price: null, maxRefs: 4 },
   { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux', price: null, maxRefs: 4 },
   { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell', price: null, maxRefs: 4 },
   { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine Quality', family: 'grok', price: { '1k': 0.05, '2k': 0.07 }, maxRefs: 1 },
-  // —— newer Atlas options ——
-  { id: 'bytedance/seedream-v5.0-lite/text-to-image', label: 'Seedream 5 Lite (faster)', family: 'seedream', price: null, maxRefs: 4 },
   { id: 'black-forest-labs/flux-2-pro/text-to-image', label: 'Flux 2 Pro', family: 'flux', price: null, maxRefs: 4 },
   { id: 'nano-banana/nano-banana-2/text-to-image', label: 'Nano Banana 2', family: 'flux', price: null, maxRefs: 4 },
   { id: 'google/imagen4-ultra/text-to-image', label: 'Imagen 4 Ultra', family: 'flux', price: null, maxRefs: 2 },
@@ -50,6 +51,8 @@ const IMAGE_MODELS = [
   { id: 'qwen/qwen-image-2.0/text-to-image', label: 'Qwen Image 2.0', family: 'flux', price: null, maxRefs: 4 },
 ]
 const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
+const imgModelOf = (id) => IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]
+const isSequentialModel = (id) => !!(imgModelOf(id).sequential)
 const createMaxRefs = (modelId) => {
   const n = (IMAGE_MODELS.find(m => m.id === modelId) || IMAGE_MODELS[0]).maxRefs || 0
   return Math.max(0, Math.min(4, n))
@@ -223,13 +226,19 @@ const I2I_SIZES_PIXEL = [
 ]
 const I2I_SIZES_SEEDREAM = [
   { value: '1664*2496', label: '2:3 portrait (1664×2496) — default' },
-  { value: '1152*2048', label: '9:16 tall (1152×2048) — phone / vertical' },
+  { value: '1152*2048', label: '9:16 tall (1152×2048)' },
+  { value: '1600*2848', label: '9:16 tall Lite 2K (1600×2848)' },
   { value: '1328*1776', label: '3:4 portrait (1328×1776)' },
   { value: '1728*2304', label: '3:4 portrait 2K (1728×2304)' },
+  { value: '2592*3456', label: '3:4 portrait Lite 3K (2592×3456)' },
   { value: '2048*2048', label: '1:1 square (2048×2048)' },
+  { value: '3072*3072', label: '1:1 square Lite 3K (3072×3072)' },
   { value: '2048*1152', label: '16:9 wide (2048×1152)' },
+  { value: '2848*1600', label: '16:9 wide Lite 2K (2848×1600)' },
   { value: '2496*1664', label: '3:2 landscape (2496×1664)' },
   { value: '1776*1328', label: '4:3 landscape (1776×1328)' },
+  { value: '2304*4096', label: '9:16 Lite 3K (2304×4096)' },
+  { value: '4096*2304', label: '16:9 Lite 3K (4096×2304)' },
 ]
 const CREATE_SIZES_SEEDREAM = I2I_SIZES_SEEDREAM
 const I2I_SIZES_GROK = [
@@ -262,9 +271,9 @@ const I2I_MODELS = [
   },
   {
     id: 'bytedance/seedream-v5.0-lite/edit',
-    label: 'Seedream 5 Lite (edit)',
+    label: 'Seedream 5 Lite (edit · up to 14 refs)',
     price: null,
-    maxRefs: 4,
+    maxRefs: 14,
     sizeMode: 'pixel',
     sizes: I2I_SIZES_SEEDREAM,
     defaultSize: '1664*2496', // 2:3 portrait
@@ -355,6 +364,7 @@ export default function Gallery() {
 
   const SEEDREAM_DEFAULT = (IMAGE_MODELS.find(m => m.family === 'seedream') || IMAGE_MODELS[0]).id
   const [createModel, setCreateModel] = useState(SEEDREAM_DEFAULT)
+  const [createMaxImages, setCreateMaxImages] = useState(4)
   const [artStylesList, setArtStylesList] = useState(ART_STYLES)
   const [createArtStyle, setCreateArtStyle] = useState(
     (ART_STYLES.find(s => /fortnite/i.test(s.label)) || ART_STYLES[1]).value
@@ -1502,12 +1512,15 @@ export default function Gallery() {
       if (fam === 'grok') {
         payload.aspectRatio = '2:3'; payload.resolution = '2k'
       } else if (fam === 'seedream') {
-        // Always send the dropdown value. Official 9:16 = 1152*2048.
         const seedreamAllowed = CREATE_SIZES_SEEDREAM.map(s => s.value)
         const chosen = String(size || '').trim()
-        payload.size = seedreamAllowed.includes(chosen) ? chosen : '1152*2048'
-        payload.thinking = 'disabled'
+        payload.size = seedreamAllowed.includes(chosen) ? chosen : '2048*2048'
         payload.outputFormat = 'jpeg'
+        if (isSequentialModel(createModel)) {
+          payload.max_images = Math.max(1, Math.min(15, parseInt(createMaxImages, 10) || 1))
+        }
+        // Pro only supports thinking
+        if (String(createModel).includes('pro')) payload.thinking = 'disabled'
       } else if (fam === 'schnell') {
         payload.size = size; payload.seed = seed || undefined; payload.negativePrompt = useNeg
       } else {
@@ -1534,16 +1547,21 @@ export default function Gallery() {
         return
       }
 
-      await saveWithRetry({
-        type: 'image',
-        url: data.imageUrl,
-        prompt: finalPrompt,
-        negative_prompt: useNeg,
-        seed: data.seed,
-        size: data.size,
-        character_id: charId || null,
-        model: createModel,
-      }, 'Your image')
+      const urls = Array.isArray(data.imageUrls) && data.imageUrls.length
+        ? data.imageUrls
+        : (data.imageUrl ? [data.imageUrl] : [])
+      for (let ui = 0; ui < urls.length; ui++) {
+        await saveWithRetry({
+          type: 'image',
+          url: urls[ui],
+          prompt: finalPrompt,
+          negative_prompt: useNeg,
+          seed: data.seed,
+          size: data.size,
+          character_id: charId || null,
+          model: createModel,
+        }, urls.length > 1 ? `Image ${ui + 1}/${urls.length}` : 'Your image')
+      }
 
       setShowCreate(false)
       setPrompt('')
@@ -1579,7 +1597,20 @@ export default function Gallery() {
     setAnimating(true)
     setShowVideo(false)
     try {
-      const payload = { imageUrl: videoSource, prompt: videoPrompt, duration: videoDuration, resolution: videoRes, model: videoModel }
+      // Wan 2.7 Spicy needs image + prompt; resolution 720P/1080P
+      let resOut = videoRes || '720p'
+      if (String(videoModel || '').includes('wan-2.7-spicy')) {
+        const u = String(resOut).toUpperCase()
+        resOut = u.includes('1080') ? '1080P' : '720P'
+      }
+      const payload = {
+        imageUrl: videoSource,
+        image: videoSource,
+        prompt: videoPrompt,
+        duration: videoDuration,
+        resolution: resOut,
+        model: videoModel,
+      }
       if (String(videoModel || '').includes('seedance-2.5')) {
         payload.generate_audio = true
         payload.ratio = 'adaptive'
@@ -1599,7 +1630,8 @@ export default function Gallery() {
       })
       const data = await res.json()
       if (!data.videoUrl) {
-        alert('Video error: ' + (data.error || 'failed'))
+        const extra = data.detail ? `\n\n${typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail).slice(0, 300)}` : ''
+        alert('Video error: ' + (data.error || 'failed') + extra)
         setAnimating(false)
         return
       }
@@ -3573,8 +3605,25 @@ export default function Gallery() {
             </select>
             {imgFamilyOf(createModel) === 'seedream' && (
               <p className="text-[10px] text-gray-600 -mt-2 mb-3">
-                Seedream needs its own pixel sizes. For phone/vertical use <span className="text-pink-400">1152×2048 (9:16)</span> — not the Flux 576×1024 option.
+                Seedream uses its own pixel sizes (Lite supports larger 2K–3K presets).
               </p>
+            )}
+            {isSequentialModel(createModel) && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">How many images (1–15)</label>
+                <select
+                  value={createMaxImages}
+                  onChange={e => setCreateMaxImages(parseInt(e.target.value, 10))}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
+                >
+                  {[1,2,3,4,5,6,8,10,12,15].map(n => (
+                    <option key={n} value={n}>{n} image{n > 1 ? 's' : ''}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-600 -mt-2 mb-3">
+                  Sequential generates related variations in one request (billed per image).
+                </p>
+              </>
             )}
 
             {(imgFamilyOf(createModel) === 'flux' || imgFamilyOf(createModel) === 'schnell') && (
