@@ -442,6 +442,11 @@ export default function Settings() {
 
   return (
     <div className="min-h-screen bg-black text-white p-5 max-w-lg mx-auto">
+      <button type="button" onClick={() => router.push('/admin')} className="w-full text-left bg-gray-900 border border-pink-800 rounded-xl px-4 py-3 mb-4">
+        <p className="font-semibold">Admin defaults</p>
+        <p className="text-[11px] text-gray-500 mt-1">Styles, prompts, tab wording, edition sizes, BabeBucks prices</p>
+      </button>
+
       <div className="flex items-center justify-between mb-6">
         <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <h1 className="text-xl font-bold">Settings</h1>
