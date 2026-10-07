@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
+import { loadAppConfig } from '../lib/appConfig'
 
 export default function Game() {
   const router = useRouter()
@@ -132,13 +133,13 @@ export default function Game() {
   }
   const MINT_ODDS = 1 / 5_000_000 // absolute chance per mystery draw if any Mint is in stock
   const TIER_PRICE = { low: 200, mid: 500, high: 800 }
-  const MEDIA_SINGLE_PRICE = 400
-  const MEDIA_MULTI_PRICE = 1100
-  const MEDIA_MULTI_QTY = 3
-  const MISC_SINGLE_PRICE = 200
-  const MISC_MULTI_PRICE = 500 // 3 qty bundle
-  const MISC_SET_PRICE = 700
-  const VIDEO_UNLOCK_PRICE = 100
+  let MEDIA_SINGLE_PRICE = 400
+  let MEDIA_MULTI_PRICE = 1100
+  let MEDIA_MULTI_QTY = 3
+  let MISC_SINGLE_PRICE = 200
+  let MISC_MULTI_PRICE = 500 // 3 qty bundle
+  let MISC_SET_PRICE = 700
+  let VIDEO_UNLOCK_PRICE = 100
 
   const NAME_FONTS = {
     impact: { family: 'Impact, Haettenschweiler, sans-serif', weight: 900 },
@@ -199,8 +200,8 @@ export default function Game() {
     afterhours: 500,
     mint: null, // blocked
   }
-  const SYSTEM_BUYBACK_MEDIA = 100 // character media
-  const SYSTEM_BUYBACK_MISC = 50
+  let SYSTEM_BUYBACK_MEDIA = 100 // character media
+  let SYSTEM_BUYBACK_MISC = 50
   const isMintRarity = (r) => String(r || '').toLowerCase() === 'mint'
   const systemBuybackCard = (rarity) => {
     const key = String(rarity || 'common').toLowerCase()
@@ -434,6 +435,26 @@ export default function Game() {
     if (settings?.tab_titles) {
       setTabTitles(prev => ({ ...prev, ...settings.tab_titles }))
     }
+    try {
+      const { config } = await loadAppConfig()
+      if (config?.tabs) setTabTitles(prev => ({ ...prev, ...config.tabs }))
+      if (config?.prices) {
+        const pr = config.prices
+        if (pr.mysteryLow) TIER_PRICE.low = Number(pr.mysteryLow)
+        if (pr.mysteryMid) TIER_PRICE.mid = Number(pr.mysteryMid)
+        if (pr.mysteryHigh) TIER_PRICE.high = Number(pr.mysteryHigh)
+        if (pr.mediaSingle) MEDIA_SINGLE_PRICE = Number(pr.mediaSingle)
+        if (pr.mediaMulti) MEDIA_MULTI_PRICE = Number(pr.mediaMulti)
+        if (pr.mediaMultiQty) MEDIA_MULTI_QTY = Number(pr.mediaMultiQty)
+        if (pr.miscSingle) MISC_SINGLE_PRICE = Number(pr.miscSingle)
+        if (pr.miscMulti) MISC_MULTI_PRICE = Number(pr.miscMulti)
+        if (pr.miscSet) MISC_SET_PRICE = Number(pr.miscSet)
+        if (pr.videoUnlock) VIDEO_UNLOCK_PRICE = Number(pr.videoUnlock)
+        if (pr.buyback?.media) SYSTEM_BUYBACK_MEDIA = Number(pr.buyback.media)
+        if (pr.buyback?.misc) SYSTEM_BUYBACK_MISC = Number(pr.buyback.misc)
+        if (pr.buyback) Object.assign(SYSTEM_BUYBACK_CARD, pr.buyback)
+      }
+    } catch (e) { console.warn('app config', e) }
     setShopIntroUrl(settings?.shop_intro_url || '')
 
     // owned card instances (Harem)
