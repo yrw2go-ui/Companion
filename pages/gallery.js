@@ -39,6 +39,8 @@ const IMAGE_MODELS = [
   { id: 'bytedance/seedream-v5.0-lite', label: 'Seedream 5 Lite (faster, 2K–3K)', family: 'seedream', price: null, maxRefs: 0 },
   { id: 'bytedance/seedream-v5.0-lite/sequential', label: 'Seedream 5 Lite Sequential (1–15 images)', family: 'seedream', price: null, maxRefs: 0, sequential: true, maxImages: 15 },
   { id: 'bytedance/seedream-v5.0-lite/text-to-image', label: 'Seedream 5 Lite (legacy id)', family: 'seedream', price: null, maxRefs: 0 },
+  { id: 'bytedance/seedream-v4', label: 'Seedream v4', family: 'seedream', price: null, maxRefs: 0 },
+  { id: 'bytedance/seedream-v4/edit', label: 'Seedream v4 (edit · up to 10)', family: 'seedream', price: null, maxRefs: 10 },
   // Other
   { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux', price: null, maxRefs: 4 },
   { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux', price: null, maxRefs: 4 },
@@ -279,6 +281,24 @@ const I2I_MODELS = [
     defaultSize: '1664*2496', // 2:3 portrait
   },
   {
+    id: 'bytedance/seedream-v4/edit',
+    label: 'Seedream v4 (edit · up to 10)',
+    price: null,
+    maxRefs: 10,
+    sizeMode: 'pixel',
+    sizes: I2I_SIZES_SEEDREAM,
+    defaultSize: '2048*2048',
+  },
+  {
+    id: 'bytedance/seedream-v4',
+    label: 'Seedream v4 (generate)',
+    price: null,
+    maxRefs: 0,
+    sizeMode: 'pixel',
+    sizes: I2I_SIZES_SEEDREAM,
+    defaultSize: '2048*2048',
+  },
+  {
     id: 'xai/grok-imagine-image-quality/edit',
     label: 'Grok Imagine (edit)',
     price: 0.01,
@@ -350,6 +370,7 @@ export default function Gallery() {
   const [guidance, setGuidance] = useState(3.5)
   const [steps, setSteps] = useState(28)
   const [creating, setCreating] = useState(false)
+  const [createJobs, setCreateJobs] = useState(0)
   const [createRefs, setCreateRefs] = useState([]) // optional reference images
   const [pickCreateRef, setPickCreateRef] = useState(null) // 'next' | index
 
@@ -371,6 +392,21 @@ export default function Gallery() {
   )
   const [promptExtraCategories, setPromptExtraCategories] = useState(PROMPT_EXTRA_CATEGORIES)
   const [promptExtras, setPromptExtras] = useState({})
+
+  useEffect(() => {
+    supabase.from('app_config').select('data').eq('id', 1).maybeSingle().then(({ data }) => {
+      const saved = data?.data || {}
+      if (saved.artStyles?.length) {
+        const styles = saved.artStyles.map(s => ({ label: s.label, value: s.prompt || '' }))
+        setArtStylesList(styles)
+        const fort = styles.find(s => /fortnite/i.test(s.label))
+        if (fort) setCreateArtStyle(fort.value)
+      }
+      if (saved.prompts?.negative) setNegative(saved.prompts.negative)
+      if (saved.promptExtras?.length) setPromptExtraCategories(saved.promptExtras)
+    })
+  }, [])
+
   const [customChipCat, setCustomChipCat] = useState('')
   const [customChipLabel, setCustomChipLabel] = useState('')
   const [customChipText, setCustomChipText] = useState('')
@@ -1443,7 +1479,8 @@ export default function Gallery() {
     const parts = []
     const baseTrim = String(base || '').trim()
     if (baseTrim) parts.push(baseTrim)
-    for (const catId of PROMPT_EXTRA_ORDER) {
+    const extraOrder = [...promptExtraCategories.map(c => c.id), ...PROMPT_EXTRA_ORDER]
+    for (const catId of extraOrder) {
       const optId = promptExtras[catId]
       if (!optId) continue
       const cat = promptExtraCategories.find(c => c.id === catId)
@@ -1497,18 +1534,32 @@ export default function Gallery() {
   }
 
   const createImage = async () => {
-    if (!prompt.trim() || creating) return
-    setCreating(true)
+    if (!prompt.trim()) return
+    // Snapshot so a second Generate, or closing the popup, cannot change this job
+    const snap = {
+      prompt: prompt.trim(),
+      negative,
+      seed,
+      size,
+      charId,
+      model: createModel,
+      artStyle: createArtStyle,
+      refs: createRefs.map(r => r?.url).filter(Boolean),
+      maxImages: createMaxImages,
+      guidance,
+      steps,
+    }
+    setCreateJobs(n => n + 1)
     try {
-      const fam = imgFamilyOf(createModel)
-      const maxR = createMaxRefs(createModel)
-      const refUrls = createRefs.map(r => r?.url).filter(Boolean).slice(0, maxR)
-      const composed = composePromptWithExtras(prompt.trim())
-      const finalPrompt = withStyle(composed || prompt.trim(), createArtStyle)
-      const useNeg = isStylizedArt(createArtStyle)
-        ? [negative, STYLIZED_NEG].filter(Boolean).join(', ')
-        : negative
-      const payload = { model: createModel, prompt: finalPrompt }
+      const fam = imgFamilyOf(snap.model)
+      const maxR = createMaxRefs(snap.model)
+      const refUrls = snap.refs.slice(0, maxR)
+      const composed = composePromptWithExtras(snap.prompt)
+      const finalPrompt = withStyle(composed || snap.prompt, snap.artStyle)
+      const useNeg = isStylizedArt(snap.artStyle)
+        ? [snap.negative, STYLIZED_NEG].filter(Boolean).join(', ')
+        : snap.negative
+      const payload = { model: snap.model, prompt: finalPrompt }
       if (fam === 'grok') {
         payload.aspectRatio = '2:3'; payload.resolution = '2k'
       } else if (fam === 'seedream') {
@@ -1516,11 +1567,11 @@ export default function Gallery() {
         const chosen = String(size || '').trim()
         payload.size = seedreamAllowed.includes(chosen) ? chosen : '2048*2048'
         payload.outputFormat = 'jpeg'
-        if (isSequentialModel(createModel)) {
-          payload.max_images = Math.max(1, Math.min(15, parseInt(createMaxImages, 10) || 1))
+        if (isSequentialModel(snap.model)) {
+          payload.max_images = Math.max(1, Math.min(15, parseInt(snap.maxImages, 10) || 1))
         }
         // Pro only supports thinking
-        if (String(createModel).includes('pro')) payload.thinking = 'disabled'
+        if (String(snap.model).includes('pro')) payload.thinking = 'disabled'
       } else if (fam === 'schnell') {
         payload.size = size; payload.seed = seed || undefined; payload.negativePrompt = useNeg
       } else {
@@ -1543,7 +1594,6 @@ export default function Gallery() {
       const data = await res.json()
       if (!data.imageUrl) {
         alert('Error: ' + (data.error || 'failed'))
-        setCreating(false)
         return
       }
 
@@ -1558,22 +1608,17 @@ export default function Gallery() {
           negative_prompt: useNeg,
           seed: data.seed,
           size: data.size,
-          character_id: charId || null,
-          model: createModel,
+          character_id: snap.charId || null,
+          model: snap.model,
         }, urls.length > 1 ? `Image ${ui + 1}/${urls.length}` : 'Your image')
       }
 
-      setShowCreate(false)
-      setPrompt('')
-      setSeed('')
-      setCreateRefs([])
-      setPickCreateRef(null)
-      clearPromptExtras()
       load()
     } catch (err) {
       alert('Error: ' + err.message)
+    } finally {
+      setCreateJobs(n => Math.max(0, n - 1))
     }
-    setCreating(false)
   }
 
   const openAnimate = (url) => {
@@ -3661,15 +3706,20 @@ export default function Gallery() {
               {characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
 
+            {createJobs > 0 && (
+              <p className="text-[11px] text-pink-300 mb-2">
+                {createJobs} image{createJobs === 1 ? '' : 's'} still generating. You can close this or start another. Finished ones land in the gallery.
+              </p>
+            )}
             <div className="flex gap-2">
               <button
-                onClick={() => { setShowCreate(false); setCreateRefs([]); setPickCreateRef(null); clearPromptExtras() }}
+                onClick={() => { setShowCreate(false); setPickCreateRef(null) }}
                 className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-semibold"
               >
-                Cancel
+                {createJobs ? 'Close (keep running)' : 'Close'}
               </button>
-              <button onClick={createImage} disabled={creating} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
-                {creating ? 'Generating...' : 'Generate'}
+              <button onClick={createImage} disabled={!prompt.trim()} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
+                {createJobs ? `Generate (${createJobs} running)` : 'Generate'}
               </button>
             </div>
           </div>
