@@ -107,7 +107,9 @@ export default async function handler(req, res) {
     referenceImageUrl4,
   ].filter(Boolean)
   const primaryRef = referenceImageUrl || extraRefs[0] || null
-  const refCap = (model && String(model).includes('seedream') && String(model).includes('edit'))
+  const refCap = /seedream-v4\/edit/.test(String(model || ''))
+    ? 10
+    : (model && String(model).includes('seedream') && String(model).includes('edit'))
     ? 14
     : 4
   const allRefs = primaryRef
@@ -185,8 +187,9 @@ export default async function handler(req, res) {
   const isSeedreamSeq = useModel.includes('/sequential')
 
   if (isEdit && useModel.startsWith('bytedance/seedream')) {
-    // Seedream edit (Pro or Lite). Lite: up to 14 images, no thinking param.
-    usedSize = normalizeSeedreamSize(size || '1664*2496', isSeedreamLite)
+    // Seedream edit. v4: images[] up to 10, default 2048*2048. Lite: up to 14.
+    const v4 = /seedream-v4/.test(useModel)
+    usedSize = normalizeSeedreamSize(size || (v4 ? '2048*2048' : '1664*2496'), isSeedreamLite)
     body = {
       model: useModel,
       prompt,
@@ -195,8 +198,8 @@ export default async function handler(req, res) {
       output_format: outputFormat || 'jpeg',
       enable_base64_output: false,
     }
-    // Pro edit supports thinking; Lite schema does not list it
-    if (!isSeedreamLite) body.thinking = thinking || 'disabled'
+    // Pro edit supports thinking. v4 and Lite schemas do not.
+    if (!isSeedreamLite && !/seedream-v4/.test(useModel)) body.thinking = thinking || 'disabled'
   } else if (isEdit && useModel.startsWith('xai/grok-imagine')) {
     // Grok Imagine edit: image_urls[]
     body = {
