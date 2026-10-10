@@ -489,6 +489,13 @@ export default function Gallery() {
   const [grabbingFrame, setGrabbingFrame] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkStatus, setBulkStatus] = useState('')
+  const [dlToast, setDlToast] = useState(null)
+  const toastTimer = useRef(null)
+  const showToast = (text, tone = 'info', hold = 1800) => {
+    clearTimeout(toastTimer.current)
+    setDlToast({ text, tone })
+    if (hold) toastTimer.current = setTimeout(() => setDlToast(null), hold)
+  }
   const [showMiscModal, setShowMiscModal] = useState(false)
   const [miscSets, setMiscSets] = useState([])
   const [miscMode, setMiscMode] = useState('standalone') // standalone | existing | new
@@ -2967,13 +2974,13 @@ export default function Gallery() {
 
   const downloadItem = async (item) => {
     if (!item?.url) {
-      alert('No file URL')
+      showToast("Can't download", 'err')
       return
     }
+    showToast('Downloading…', 'info', 0)
     const fileName = buildDownloadName(item)
     const wantMime = mimeFromName(fileName, item.type === 'video' ? 'video/mp4' : 'image/jpeg')
 
-    // 0) Prefer prefetched blob (still inside user gesture — no await)
     const pre = prefetchBlobRef.current
     if (pre?.url === item.url && pre.blob && pre.blob.size > 0) {
       try {
@@ -2981,13 +2988,13 @@ export default function Gallery() {
           ? pre.blob
           : new Blob([pre.blob], { type: wantMime })
         triggerBlobDownload(typed, fileName)
+        showToast('Complete', 'ok')
         return
       } catch (err) {
         console.warn('prefetch download failed', err)
       }
     }
 
-    // 1) Fetch now, force MIME, then download
     try {
       const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'no-cache' })
       if (!res.ok) throw new Error('HTTP ' + res.status)
@@ -2998,12 +3005,12 @@ export default function Gallery() {
       const blob = new Blob([buf], { type: mime })
       prefetchBlobRef.current = { url: item.url, blob, mime }
       triggerBlobDownload(blob, fileName)
+      showToast('Complete', 'ok')
       return
     } catch (err) {
       console.warn('blob download failed', err)
     }
 
-    // 2) Direct anchor (cross-origin may ignore download attr)
     try {
       const a = document.createElement('a')
       a.href = item.url
@@ -3014,14 +3021,13 @@ export default function Gallery() {
       document.body.appendChild(a)
       a.click()
       setTimeout(() => a.remove(), 1000)
+      showToast('Complete', 'ok')
       return
     } catch (err) {
       console.warn('anchor download failed', err)
     }
 
-    // 3) Last resort — open tab so user can long-press Save
-    window.open(item.url, '_blank', 'noopener,noreferrer')
-    alert('Could not force a download.\n\nFile opened in a new tab — long-press → Save image/video.')
+    showToast("Can't download", 'err')
   }
 
   const copyUrl = (val) => {
@@ -3048,6 +3054,7 @@ export default function Gallery() {
     }
     for (let i = 0; i < list.length; i++) {
       const item = list[i]
+      showToast(`Downloading ${i + 1}/${list.length}…`, 'info', 0)
       setBulkStatus(`Downloading ${i + 1}/${list.length}...`)
       try {
         const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'no-cache' })
@@ -3072,7 +3079,7 @@ export default function Gallery() {
     }
     setBulkBusy(false)
     setBulkStatus('')
-    alert(`Downloaded ${ok} of ${list.length}`)
+    showToast(ok ? `Complete · ${ok} of ${list.length}` : "Can't download", ok ? 'ok' : 'err')
   }
 
   const shown = (() => {
@@ -3184,6 +3191,13 @@ export default function Gallery() {
 
   return (
     <div className="min-h-screen bg-black text-white p-5 w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto">
+      {dlToast && (
+        <div className={`fixed top-3 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-full text-sm font-semibold shadow-lg ${
+          dlToast.tone === 'ok' ? 'bg-green-600 text-white' : dlToast.tone === 'err' ? 'bg-red-700 text-white' : 'bg-gray-900 text-white border border-gray-700'
+        }`}>
+          {dlToast.text}
+        </div>
+      )}
       <Script
         type="module"
         src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"
