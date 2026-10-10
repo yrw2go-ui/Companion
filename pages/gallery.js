@@ -3466,6 +3466,17 @@ export default function Gallery() {
                   ✓
                 </span>
               )}
+              {!pickMode && (
+                <span
+                  role="button"
+                  aria-label="Download"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); downloadItem(item) }}
+                  className="absolute bottom-1.5 right-1.5 w-7 h-7 rounded-full bg-black/75 border border-white/20 flex items-center justify-center text-sm active:bg-pink-600"
+                >
+                  ⬇
+                </span>
+              )}
             </button>
           ))}
         </div>
