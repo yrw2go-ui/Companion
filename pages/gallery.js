@@ -2980,7 +2980,6 @@ export default function Gallery() {
         const typed = pre.blob.type && pre.blob.type !== 'application/octet-stream'
           ? pre.blob
           : new Blob([pre.blob], { type: wantMime })
-        }
         triggerBlobDownload(typed, fileName)
         return
       } catch (err) {
@@ -3400,6 +3399,7 @@ export default function Gallery() {
       ) : shown.length === 0 ? (
         <p className="text-gray-500 text-sm">Nothing here yet. Tap "+ Create" to make something.</p>
       ) : (
+        <>
         {pickMode && (
           <div className="sticky top-0 z-20 mb-3 flex items-center gap-2 bg-black/90 backdrop-blur rounded-xl border border-gray-800 px-2 py-2">
             <span className="text-xs text-gray-300 px-1">{Object.keys(picked).length} selected</span>
@@ -3480,6 +3480,7 @@ export default function Gallery() {
             </button>
           ))}
         </div>
+        </>
       )}
 
       {/* CREATE / REGENERATE */}
