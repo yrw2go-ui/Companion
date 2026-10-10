@@ -2951,25 +2951,21 @@ export default function Gallery() {
   }
 
   const triggerBlobDownload = (blob, fileName) => {
-    // Ensure correct MIME so Android saves as PNG/JPG instead of queuing oddly
-    const mime = blob.type && blob.type !== 'application/octet-stream'
-      ? blob.type
-      : mimeFromName(fileName, 'image/jpeg')
-    const typed = blob.type === mime ? blob : new Blob([blob], { type: mime })
-    const objUrl = URL.createObjectURL(typed)
+    // octet-stream makes Android put the file in Downloads instead of opening it
+    const file = new File([blob], fileName, { type: 'application/octet-stream' })
+    const objUrl = URL.createObjectURL(file)
     const a = document.createElement('a')
     a.href = objUrl
     a.download = fileName
     a.rel = 'noopener'
     a.style.display = 'none'
     document.body.appendChild(a)
-    // Synchronous click — must stay inside user gesture when possible
     a.click()
-    // Keep blob URL alive longer; Android often finishes write after 1–2s
     setTimeout(() => {
       try { a.remove() } catch {}
       try { URL.revokeObjectURL(objUrl) } catch {}
     }, 60000)
+    return true
   }
 
   const downloadItem = async (item) => {
@@ -3484,7 +3480,15 @@ export default function Gallery() {
                 <span
                   role="button"
                   aria-label="Download"
-                  onPointerDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    if (item?.url && !(prefetchBlobRef.current?.url === item.url && prefetchBlobRef.current?.blob)) {
+                      fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' })
+                        .then(r => r.ok ? r.blob() : null)
+                        .then(blob => { if (blob) prefetchBlobRef.current = { url: item.url, blob, mime: blob.type } })
+                        .catch(() => {})
+                    }
+                  }}
                   onClick={(e) => { e.stopPropagation(); e.preventDefault(); downloadItem(item) }}
                   className="absolute bottom-1.5 right-1.5 w-7 h-7 rounded-full bg-black/75 border border-white/20 flex items-center justify-center text-sm active:bg-pink-600"
                 >
