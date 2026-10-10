@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Script from 'next/script'
 import { supabase } from '../lib/supabaseClient'
 import { makePoster } from '../lib/posterFrame'
+import { buildDownloadName, triggerBlobDownload } from '../lib/downloadName'
 
 // prices are only shown where Atlas's docs confirmed a figure.
 // null means the price wasn't listed in the schema we have, so we say so
@@ -351,6 +352,10 @@ export default function Gallery() {
   const [gSearch, setGSearch] = useState('')
   const [favOnly, setFavOnly] = useState(false)
   const [selected, setSelected] = useState(null)
+  const [pickMode, setPickMode] = useState(false)
+  const [picked, setPicked] = useState({})
+  const holdTimer = useRef(null)
+  const suppressClick = useRef(false)
 
   const [showCreate, setShowCreate] = useState(false)
   const [prompt, setPrompt] = useState('')
@@ -2795,6 +2800,38 @@ export default function Gallery() {
     setMiscBusy(false)
   }
 
+
+  const exitPick = () => { setPickMode(false); setPicked({}) }
+  const startHold = (item) => {
+    suppressClick.current = false
+    clearTimeout(holdTimer.current)
+    holdTimer.current = setTimeout(() => {
+      suppressClick.current = true
+      setPickMode(true)
+      setPicked(prev => ({ ...prev, [item.key]: true }))
+    }, 450)
+  }
+  const cancelHold = () => clearTimeout(holdTimer.current)
+  const onTileClick = (item) => {
+    if (suppressClick.current) { suppressClick.current = false; return }
+    if (pickMode) {
+      setPicked(prev => {
+        const next = { ...prev }
+        if (next[item.key]) delete next[item.key]
+        else next[item.key] = true
+        return next
+      })
+      return
+    }
+    setSelected(item)
+  }
+  const selectAllShown = () => {
+    const next = {}
+    shown.forEach(item => { next[item.key] = true })
+    setPicked(next)
+    setPickMode(true)
+  }
+
   const remove = async (item) => {
     if (item.source === 'cards') {
       alert('This is card art. Delete or replace it from the Cards page.')
@@ -2853,26 +2890,47 @@ export default function Gallery() {
     load()
   }
 
+  const deletePicked = async () => {
+    const items = shown.filter(item => picked[item.key])
+    if (!items.length) { alert('Select at least one item'); return }
+    const cards = items.filter(i => i.source === 'cards')
+    const rest = items.filter(i => i.source !== 'cards')
+    const live = rest.filter(i => i.linkedPublished || (i.characterMediaLinks || []).length)
+    const ok = confirm(
+      `Delete ${rest.length} item${rest.length === 1 ? '' : 's'}?` +
+      (cards.length ? `\n${cards.length} card image${cards.length === 1 ? '' : 's'} will be skipped. Delete those from Cards.` : '') +
+      (live.length ? `\n\n${live.length} are live or linked. This can break game content.` : '') +
+      '\n\nThis cannot be undone.'
+    )
+    if (!ok) return
+    let failed = 0
+    for (const item of rest) {
+      try {
+        const res = await fetch('/api/delete-gallery-item', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source: item.source,
+            id: item.id,
+            itemKey: item.key,
+            url: item.url,
+            posterUrl: item.poster_url || item.thumbnail_url || null,
+          }),
+        })
+        const data = await res.json()
+        if (!data.ok) failed++
+      } catch {
+        failed++
+      }
+    }
+    exitPick()
+    setSelected(null)
+    await load()
+    if (failed) alert(`${failed} item${failed === 1 ? '' : 's'} could not be deleted.`)
+  }
+
   const [copiedUrl, setCopiedUrl] = useState(false)
   const copy = (val) => navigator.clipboard?.writeText(String(val))
-
-  const buildDownloadName = (item) => {
-    const isVideo = item.type === 'video'
-    const isModel = item.type === 'model'
-    const stamp = new Date(item.created_at || Date.now()).toISOString().slice(0, 10)
-    const base = (item.prompt ? String(item.prompt).slice(0, 30).replace(/[^a-z0-9]+/gi, '_') : item.type) || 'media'
-    const urlLow = String(item.url || '').toLowerCase()
-    let ext = isModel ? 'glb' : isVideo ? 'mp4' : 'jpg'
-    if (urlLow.includes('.png')) ext = 'png'
-    else if (urlLow.includes('.webp')) ext = 'webp'
-    else if (urlLow.includes('.gif')) ext = 'gif'
-    else if (urlLow.includes('.webm')) ext = 'webm'
-    else if (urlLow.includes('.mp4')) ext = 'mp4'
-    else if (urlLow.includes('.jpeg') || urlLow.includes('.jpg')) ext = 'jpg'
-    downloadCounter.current += 1
-    const seq = String(downloadCounter.current).padStart(3, '0')
-    return `${base}_${stamp}_${seq}.${ext}`
-  }
 
   const mimeFromName = (fileName, fallback = 'application/octet-stream') => {
     const n = String(fileName || '').toLowerCase()
@@ -2922,24 +2980,6 @@ export default function Gallery() {
         const typed = pre.blob.type && pre.blob.type !== 'application/octet-stream'
           ? pre.blob
           : new Blob([pre.blob], { type: wantMime })
-        // File System Access API (Chrome desktop / some Android)
-        if (typeof window.showSaveFilePicker === 'function') {
-          try {
-            const handle = await window.showSaveFilePicker({
-              suggestedName: fileName,
-              types: [{
-                description: 'Media',
-                accept: { [wantMime]: ['.' + fileName.split('.').pop()] },
-              }],
-            })
-            const writable = await handle.createWritable()
-            await writable.write(typed)
-            await writable.close()
-            return
-          } catch (e) {
-            // user cancelled or unsupported — fall through to anchor
-            if (e && e.name === 'AbortError') return
-          }
         }
         triggerBlobDownload(typed, fileName)
         return
@@ -2958,23 +2998,6 @@ export default function Gallery() {
       if (!mime || mime === 'application/octet-stream') mime = wantMime
       const blob = new Blob([buf], { type: mime })
       prefetchBlobRef.current = { url: item.url, blob, mime }
-      if (typeof window.showSaveFilePicker === 'function') {
-        try {
-          const handle = await window.showSaveFilePicker({
-            suggestedName: fileName,
-            types: [{
-              description: 'Media',
-              accept: { [mime]: ['.' + fileName.split('.').pop()] },
-            }],
-          })
-          const writable = await handle.createWritable()
-          await writable.write(blob)
-          await writable.close()
-          return
-        } catch (e) {
-          if (e && e.name === 'AbortError') return
-        }
-      }
       triggerBlobDownload(blob, fileName)
       return
     } catch (err) {
@@ -3012,16 +3035,41 @@ export default function Gallery() {
     if (bulkBusy) return
     const list = media.filter(m => m.url)
     if (!list.length) { alert('Nothing to download'); return }
-    if (!confirm(`Download ${list.length} items (including card art)? Browser may block multiple downloads — allow popups if asked.`)) return
+    if (!confirm(`Download ${list.length} items into Downloads?`)) return
     setBulkBusy(true)
     let ok = 0
+    let dir = null
+    if (typeof window.showDirectoryPicker === 'function') {
+      try {
+        dir = await window.showDirectoryPicker({ id: 'ga-downloads', mode: 'readwrite', startIn: 'downloads' })
+      } catch (e) {
+        if (e && e.name === 'AbortError') { setBulkBusy(false); return }
+        dir = null
+      }
+    }
     for (let i = 0; i < list.length; i++) {
+      const item = list[i]
       setBulkStatus(`Downloading ${i + 1}/${list.length}...`)
       try {
-        await downloadItem(list[i])
+        const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'no-cache' })
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        const buf = await res.arrayBuffer()
+        const mime = res.headers.get('content-type') || (item.type === 'video' ? 'video/mp4' : 'image/jpeg')
+        const blob = new Blob([buf], { type: mime })
+        const fileName = buildDownloadName(item, { mime })
+        if (dir) {
+          const handle = await dir.getFileHandle(fileName, { create: true })
+          const writable = await handle.createWritable()
+          await writable.write(blob)
+          await writable.close()
+        } else {
+          triggerBlobDownload(blob, fileName)
+          await new Promise(r => setTimeout(r, 350))
+        }
         ok++
-        await new Promise(r => setTimeout(r, 400))
-      } catch {}
+      } catch (err) {
+        console.warn('bulk item', err)
+      }
     }
     setBulkBusy(false)
     setBulkStatus('')
@@ -3352,10 +3400,29 @@ export default function Gallery() {
       ) : shown.length === 0 ? (
         <p className="text-gray-500 text-sm">Nothing here yet. Tap "+ Create" to make something.</p>
       ) : (
+        {pickMode && (
+          <div className="sticky top-0 z-20 mb-3 flex items-center gap-2 bg-black/90 backdrop-blur rounded-xl border border-gray-800 px-2 py-2">
+            <span className="text-xs text-gray-300 px-1">{Object.keys(picked).length} selected</span>
+            <button type="button" onClick={() => {
+              const next = {}
+              shown.forEach(item => { next[item.key] = true })
+              setPicked(next)
+            }} className="px-2 py-1 rounded-lg bg-gray-800 text-xs font-semibold">All</button>
+            <button type="button" onClick={() => setPicked({})} className="px-2 py-1 rounded-lg bg-gray-800 text-xs font-semibold">None</button>
+            <button type="button" onClick={deletePicked} className="ml-auto px-3 py-1 rounded-lg bg-red-800 text-xs font-semibold">🗑 Delete</button>
+            <button type="button" onClick={exitPick} className="px-2 py-1 rounded-lg text-xs text-gray-400">Done</button>
+          </div>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
           {shown.map(item => (
-            <button key={item.key} onClick={() => setSelected(item)}
-              className="relative aspect-square rounded-xl overflow-hidden bg-gray-900">
+            <button key={item.key}
+              onClick={() => onTileClick(item)}
+              onPointerDown={() => startHold(item)}
+              onPointerUp={cancelHold}
+              onPointerLeave={cancelHold}
+              onPointerCancel={cancelHold}
+              onContextMenu={(e) => e.preventDefault()}
+              className={`relative aspect-square rounded-xl overflow-hidden bg-gray-900 ${pickMode && picked[item.key] ? 'ring-2 ring-pink-500' : ''}`}>
               {item.type === 'image' ? (
                 <img src={item.url} alt="" className="w-full h-full object-cover" />
               ) : (
@@ -3393,6 +3460,11 @@ export default function Gallery() {
               )}
               {item.is_favorite && (
                 <span className="absolute top-1.5 right-1.5 text-amber-400 text-sm drop-shadow">★</span>
+              )}
+              {pickMode && (
+                <span className={`absolute top-1.5 right-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${picked[item.key] ? 'bg-pink-600 border-pink-400 text-white' : 'bg-black/60 border-white/70 text-transparent'}`}>
+                  ✓
+                </span>
               )}
             </button>
           ))}
