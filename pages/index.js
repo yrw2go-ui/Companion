@@ -77,7 +77,7 @@ export default function Home() {
             </button>
             <button
               type="button"
-              onClick={() => router.push('/chat')}
+              onClick={() => router.push('/create')}
               className="bg-purple-600 hover:bg-purple-500 rounded-full px-4 py-2 text-sm font-semibold"
             >
               + New

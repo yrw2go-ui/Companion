@@ -32,6 +32,7 @@ const IMAGE_MODELS = [
 // Models that accept referenceImageUrl (I2I / edit)
 const EDIT_IMAGE_MODELS = [
   { id: 'alibaba/wan-2.7-pro/image-edit', label: 'Wan 2.7 Pro Edit (default)' },
+  { id: 'bytedance/seedream-v4/edit', label: 'Seedream v4 Edit (up to 10)' },
   { id: 'bytedance/seedream-v5.0-pro/edit', label: 'Seedream 5 Pro Edit' },
   { id: 'bytedance/seedream-v5.0-lite/edit', label: 'Seedream 5 Lite Edit' },
   { id: 'xai/grok-imagine-image-quality/edit', label: 'Grok Imagine Edit' },
