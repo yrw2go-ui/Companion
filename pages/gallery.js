@@ -408,6 +408,12 @@ export default function Gallery() {
     { id: 17, name: 'zit deepthroat', path: 'https://civitai.red/api/download/models/2506764?fileId=2394784', scale: 0.7, base: 'zimage', trigger: "Nsfw Deepthroat, realistic photo of woman sucking a man's penis." },
     { id: 18, name: 'flux eye contact bj', path: 'https://civitai.red/api/download/models/1849560?fileId=1749348', scale: 0.8, base: 'flux', trigger: '' },
     { id: 19, name: 'flux pov bj', path: 'https://civitai.red/api/download/models/815057?fileId=728606', scale: 0.7, base: 'flux', trigger: 'pbja, girl, pov, penis' },
+    { id: 20, name: 'scg anatomy', path: 'https://civitai.red/api/download/models/736227?fileId=650228', scale: 0.8, base: 'flux', trigger: 'scg-anatomy-female' },
+    { id: 21, name: 'qwen pussy anus', path: 'https://civitai.red/api/download/models/2576020?fileId=2463249', scale: 0.8, base: 'qwen', trigger: '' },
+    { id: 22, name: 'qwen innie', path: 'https://civitai.red/api/download/models/2355839?fileId=2246378', scale: 0.8, base: 'qwen', trigger: '' },
+    { id: 23, name: 'qwen pussy realistic', path: 'https://civitai.red/api/download/models/2587089?fileId=2474498', scale: 0.8, base: 'qwen', trigger: 'sologirl' },
+    { id: 24, name: 'qwen narrow hips', path: 'https://civitai.red/api/download/models/2438226?fileId=2328955', scale: 0.8, base: 'qwen', trigger: 'narrow hips, small hips, tiny hips, petite hips, shrink hips, woman' },
+    { id: 25, name: 'qwen sex', path: 'https://civitai.red/api/download/models/2517095?fileId=2404838', scale: 0.8, base: 'qwen', trigger: '' },
   ]
   useEffect(() => {
     try {
