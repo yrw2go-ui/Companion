@@ -81,6 +81,7 @@ export default async function handler(req, res) {
     referenceImageUrls, referenceImageUrl2, referenceImageUrl3, referenceImageUrl4,
     model, aspectRatio, resolution, outputFormat, thinking, guidance, steps,
     max_images, maxImages, // Seedream sequential: 1-15
+    loras,
     // optional: client can ask us to skip gallery register (e.g. card-only flows)
     skipGalleryRegister,
     character_id,
@@ -280,6 +281,18 @@ export default async function handler(req, res) {
       seed: usedSeed,
     }
     if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
+  }
+
+  if (Array.isArray(loras) && loras.length && /-lora$|\/lora/.test(useModel)) {
+    body.loras = loras.slice(0, 3).map(item => {
+      if (typeof item === 'string') return { path: item, scale: 0.8 }
+      const path = String(item?.path || '').trim()
+      let scale = parseFloat(item?.scale)
+      if (!path) return null
+      if (isNaN(scale) || scale <= 0) scale = 0.8
+      return { path, scale: Math.min(2, scale) }
+    }).filter(Boolean)
+    if (!body.loras.length) delete body.loras
   }
 
   try {
