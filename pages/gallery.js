@@ -491,9 +491,9 @@ export default function Gallery() {
   const [bulkStatus, setBulkStatus] = useState('')
   const [dlToast, setDlToast] = useState(null)
   const toastTimer = useRef(null)
-  const showToast = (text, tone = 'info', hold = 1800) => {
+  const showToast = (text, tone = 'info', hold = 1800, onTap = null) => {
     clearTimeout(toastTimer.current)
-    setDlToast({ text, tone })
+    setDlToast({ text, tone, onTap })
     if (hold) toastTimer.current = setTimeout(() => setDlToast(null), hold)
   }
   const [showMiscModal, setShowMiscModal] = useState(false)
@@ -2973,17 +2973,12 @@ export default function Gallery() {
       showToast("Can't download", 'err')
       return
     }
-    showToast('Downloading…', 'info', 0)
     const fileName = buildDownloadName(item)
-    const wantMime = mimeFromName(fileName, item.type === 'video' ? 'video/mp4' : 'image/jpeg')
-
     const pre = prefetchBlobRef.current
+    // Blob already in hand: save inside this tap. Android accepts this.
     if (pre?.url === item.url && pre.blob && pre.blob.size > 0) {
       try {
-        const typed = pre.blob.type && pre.blob.type !== 'application/octet-stream'
-          ? pre.blob
-          : new Blob([pre.blob], { type: wantMime })
-        triggerBlobDownload(typed, fileName)
+        triggerBlobDownload(pre.blob, fileName)
         showToast('Complete', 'ok')
         return
       } catch (err) {
@@ -2991,39 +2986,26 @@ export default function Gallery() {
       }
     }
 
+    showToast('Downloading…', 'info', 0)
     try {
-      const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'no-cache' })
+      const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' })
       if (!res.ok) throw new Error('HTTP ' + res.status)
-      const buf = await res.arrayBuffer()
-      if (!buf || buf.byteLength === 0) throw new Error('Empty file')
-      let mime = res.headers.get('content-type') || ''
-      if (!mime || mime === 'application/octet-stream') mime = wantMime
-      const blob = new Blob([buf], { type: mime })
-      prefetchBlobRef.current = { url: item.url, blob, mime }
-      triggerBlobDownload(blob, fileName)
-      showToast('Complete', 'ok')
-      return
+      const blob = await res.blob()
+      if (!blob || blob.size === 0) throw new Error('Empty file')
+      prefetchBlobRef.current = { url: item.url, blob, mime: blob.type }
+      // After the wait, Android drops a silent save. Ask for one tap so it lands in Downloads.
+      showToast('Tap to save', 'save', 0, () => {
+        try {
+          triggerBlobDownload(blob, fileName)
+          showToast('Complete', 'ok')
+        } catch {
+          showToast("Can't download", 'err')
+        }
+      })
     } catch (err) {
       console.warn('blob download failed', err)
+      showToast("Can't download", 'err')
     }
-
-    try {
-      const a = document.createElement('a')
-      a.href = item.url
-      a.download = fileName
-      a.rel = 'noopener noreferrer'
-      a.target = '_blank'
-      a.style.display = 'none'
-      document.body.appendChild(a)
-      a.click()
-      setTimeout(() => a.remove(), 1000)
-      showToast('Complete', 'ok')
-      return
-    } catch (err) {
-      console.warn('anchor download failed', err)
-    }
-
-    showToast("Can't download", 'err')
   }
 
   const copyUrl = (val) => {
@@ -3188,11 +3170,15 @@ export default function Gallery() {
   return (
     <div className="min-h-screen bg-black text-white p-5 w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto">
       {dlToast && (
-        <div className={`fixed top-3 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-full text-sm font-semibold shadow-lg ${
-          dlToast.tone === 'ok' ? 'bg-green-600 text-white' : dlToast.tone === 'err' ? 'bg-red-700 text-white' : 'bg-gray-900 text-white border border-gray-700'
-        }`}>
+        <button
+          type="button"
+          onClick={() => { if (dlToast.onTap) dlToast.onTap() }}
+          className={`fixed top-3 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-full text-sm font-semibold shadow-lg ${
+            dlToast.tone === 'ok' ? 'bg-green-600 text-white' : dlToast.tone === 'err' ? 'bg-red-700 text-white' : dlToast.tone === 'save' ? 'bg-pink-600 text-white' : 'bg-gray-900 text-white border border-gray-700'
+          }`}
+        >
           {dlToast.text}
-        </div>
+        </button>
       )}
       <Script
         type="module"
