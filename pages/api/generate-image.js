@@ -271,7 +271,14 @@ export default async function handler(req, res) {
     usedSeed = (seed !== undefined && seed !== null && seed !== '') ? parseInt(seed) : randSeed()
     let g = parseFloat(guidance); if (isNaN(g)) g = 6.5; g = Math.max(1, Math.min(12, g))
     let st = parseInt(steps); if (isNaN(st)) st = 28; st = Math.max(10, Math.min(50, st))
-    body = {
+    const isQwenLora = /qwen-image\/text-to-image-lora/.test(useModel)
+    body = isQwenLora ? {
+      model: useModel,
+      prompt,
+      size: usedSize,
+      seed: usedSeed,
+      output_format: 'png',
+    } : {
       model: useModel,
       prompt,
       size: usedSize,
@@ -280,7 +287,7 @@ export default async function handler(req, res) {
       num_inference_steps: st,
       seed: usedSeed,
     }
-    if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
+    if (!isQwenLora && negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
   }
 
   if (Array.isArray(loras) && loras.length && /-lora$|\/lora/.test(useModel)) {
@@ -310,9 +317,10 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Atlas returned non-JSON', raw: submitParsed.raw?.slice(0, 300) })
     }
 
-    const predictionId = submitParsed.data.data?.id
+    const predictionId = submitParsed.data.data?.id || submitParsed.data.id
     if (!predictionId) {
-      return res.status(500).json({ error: 'No prediction ID', detail: submitParsed.data })
+      const msg = submitParsed.data?.error?.message || submitParsed.data?.message || submitParsed.data?.error || 'No prediction ID'
+      return res.status(500).json({ error: String(msg), detail: submitParsed.data })
     }
 
     let atlasUrl = null
