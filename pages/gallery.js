@@ -44,7 +44,9 @@ const IMAGE_MODELS = [
   { id: 'bytedance/seedream-v4/edit', label: 'Seedream v4 (edit · up to 10)', family: 'seedream', price: null, maxRefs: 10 },
   // Other
   { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux', price: null, maxRefs: 4 },
+  { id: 'z-image/turbo-lora', label: 'Z-Image Turbo LoRA (stack up to 3)', family: 'flux', price: null, maxRefs: 0, lora: true },
   { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux', price: null, maxRefs: 4 },
+  { id: 'black-forest-labs/flux-dev-lora', label: 'Flux Dev LoRA (stack up to 3)', family: 'flux', price: null, maxRefs: 0, lora: true },
   { id: 'black-forest-labs/flux-schnell', label: 'Flux Schnell (fast)', family: 'schnell', price: null, maxRefs: 4 },
   { id: 'xai/grok-imagine-image-quality/text-to-image', label: 'Grok Imagine Quality', family: 'grok', price: { '1k': 0.05, '2k': 0.07 }, maxRefs: 1 },
   { id: 'black-forest-labs/flux-2-pro/text-to-image', label: 'Flux 2 Pro', family: 'flux', price: null, maxRefs: 4 },
@@ -55,6 +57,7 @@ const IMAGE_MODELS = [
 ]
 const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
 const imgModelOf = (id) => IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]
+const supportsLora = (id) => !!imgModelOf(id).lora
 const isSequentialModel = (id) => !!(imgModelOf(id).sequential)
 const createMaxRefs = (modelId) => {
   const n = (IMAGE_MODELS.find(m => m.id === modelId) || IMAGE_MODELS[0]).maxRefs || 0
@@ -381,6 +384,7 @@ export default function Gallery() {
 
   const SEEDREAM_DEFAULT = (IMAGE_MODELS.find(m => m.family === 'seedream') || IMAGE_MODELS[0]).id
   const [createModel, setCreateModel] = useState(SEEDREAM_DEFAULT)
+  const [createLoras, setCreateLoras] = useState('')
   const [createMaxImages, setCreateMaxImages] = useState(4)
   const [artStylesList, setArtStylesList] = useState(ART_STYLES)
   const [createArtStyle, setCreateArtStyle] = useState(
@@ -490,6 +494,7 @@ export default function Gallery() {
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkStatus, setBulkStatus] = useState('')
   const [dlToast, setDlToast] = useState(null)
+  const [dlReady, setDlReady] = useState({})
   const toastTimer = useRef(null)
   const showToast = (text, tone = 'info', hold = 1800, onTap = null) => {
     clearTimeout(toastTimer.current)
@@ -1551,6 +1556,7 @@ export default function Gallery() {
       maxImages: createMaxImages,
       guidance,
       steps,
+      loras: createLoras,
     }
     setCreateJobs(n => n + 1)
     try {
@@ -1563,6 +1569,18 @@ export default function Gallery() {
         ? [snap.negative, STYLIZED_NEG].filter(Boolean).join(', ')
         : snap.negative
       const payload = { model: snap.model, prompt: finalPrompt }
+      if (supportsLora(snap.model)) {
+        const loras = String(snap.loras || '').split('\n').map(s => s.trim()).filter(Boolean).slice(0, 3).map(line => {
+          const parts = line.split(/\s+/)
+          const last = parts[parts.length - 1]
+          const scale = parseFloat(last)
+          if (parts.length > 1 && !isNaN(scale) && scale > 0 && scale <= 2) {
+            return { path: parts.slice(0, -1).join(' '), scale }
+          }
+          return { path: line, scale: 0.8 }
+        }).filter(x => x.path)
+        if (loras.length) payload.loras = loras
+      }
       if (fam === 'grok') {
         payload.aspectRatio = '2:3'; payload.resolution = '2k'
       } else if (fam === 'seedream') {
@@ -2968,42 +2986,67 @@ export default function Gallery() {
     return true
   }
 
-  const downloadItem = async (item) => {
-    if (!item?.url) {
-      showToast("Can't download", 'err')
+  const prepareDownload = async (item) => {
+    const fileName = buildDownloadName(item)
+    const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' })
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    const blob = await res.blob()
+    if (!blob || blob.size === 0) throw new Error('Empty file')
+    const file = new File([blob], fileName, { type: 'application/octet-stream' })
+    const href = URL.createObjectURL(file)
+    setDlReady(prev => ({ ...prev, [item.key]: { href, name: fileName } }))
+    return { href, name: fileName }
+  }
+
+  const onDownloadLink = async (e, item) => {
+    e.stopPropagation()
+    const ready = dlReady[item.key]
+    if (ready?.href) {
+      // Real <a download> click. Browser is saving it.
+      showToast('Downloading…', 'info', 0)
+      setTimeout(() => showToast('Complete', 'ok'), 700)
       return
     }
-    const fileName = buildDownloadName(item)
-    const pre = prefetchBlobRef.current
-    // Blob already in hand: save inside this tap. Android accepts this.
-    if (pre?.url === item.url && pre.blob && pre.blob.size > 0) {
-      try {
-        triggerBlobDownload(pre.blob, fileName)
-        showToast('Complete', 'ok')
-        return
-      } catch (err) {
-        console.warn('prefetch download failed', err)
-      }
-    }
-
+    e.preventDefault()
+    if (!item?.url) { showToast("Can't download", 'err'); return }
     showToast('Downloading…', 'info', 0)
     try {
-      const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' })
-      if (!res.ok) throw new Error('HTTP ' + res.status)
-      const blob = await res.blob()
-      if (!blob || blob.size === 0) throw new Error('Empty file')
-      prefetchBlobRef.current = { url: item.url, blob, mime: blob.type }
-      // After the wait, Android drops a silent save. Ask for one tap so it lands in Downloads.
+      await prepareDownload(item)
+      showToast('Tap to save', 'save', 0)
+    } catch (err) {
+      console.warn('download prepare failed', err)
+      showToast("Can't download", 'err')
+    }
+  }
+
+  const downloadItem = async (item) => {
+    if (!item?.url) { showToast("Can't download", 'err'); return }
+    const ready = dlReady[item.key]
+    if (ready?.href) {
+      showToast('Downloading…', 'info', 0)
+      const a = document.createElement('a')
+      a.href = ready.href
+      a.download = ready.name
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => showToast('Complete', 'ok'), 700)
+      return
+    }
+    showToast('Downloading…', 'info', 0)
+    try {
+      const readyNow = await prepareDownload(item)
       showToast('Tap to save', 'save', 0, () => {
-        try {
-          triggerBlobDownload(blob, fileName)
-          showToast('Complete', 'ok')
-        } catch {
-          showToast("Can't download", 'err')
-        }
+        const a = document.createElement('a')
+        a.href = readyNow.href
+        a.download = readyNow.name
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        showToast('Complete', 'ok')
       })
     } catch (err) {
-      console.warn('blob download failed', err)
+      console.warn('download failed', err)
       showToast("Can't download", 'err')
     }
   }
@@ -3411,14 +3454,15 @@ export default function Gallery() {
         )}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
           {shown.map(item => (
-            <button key={item.key}
+            <div key={item.key} className={`relative aspect-square rounded-xl overflow-hidden bg-gray-900 ${pickMode && picked[item.key] ? 'ring-2 ring-pink-500' : ''}`}>
+            <button type="button"
               onClick={() => onTileClick(item)}
               onPointerDown={() => startHold(item)}
               onPointerUp={cancelHold}
               onPointerLeave={cancelHold}
               onPointerCancel={cancelHold}
               onContextMenu={(e) => e.preventDefault()}
-              className={`relative aspect-square rounded-xl overflow-hidden bg-gray-900 ${pickMode && picked[item.key] ? 'ring-2 ring-pink-500' : ''}`}>
+              className="absolute inset-0 w-full h-full">
               {item.type === 'image' ? (
                 <img src={item.url} alt="" className="w-full h-full object-cover" />
               ) : (
@@ -3462,26 +3506,19 @@ export default function Gallery() {
                   ✓
                 </span>
               )}
+            </button>
               {!pickMode && (
-                <span
-                  role="button"
+                <a
+                  href={dlReady[item.key]?.href || undefined}
+                  download={dlReady[item.key]?.name || undefined}
                   aria-label="Download"
-                  onPointerDown={(e) => {
-                    e.stopPropagation()
-                    if (item?.url && !(prefetchBlobRef.current?.url === item.url && prefetchBlobRef.current?.blob)) {
-                      fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' })
-                        .then(r => r.ok ? r.blob() : null)
-                        .then(blob => { if (blob) prefetchBlobRef.current = { url: item.url, blob, mime: blob.type } })
-                        .catch(() => {})
-                    }
-                  }}
-                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); downloadItem(item) }}
-                  className="absolute bottom-1.5 right-1.5 w-7 h-7 rounded-full bg-black/75 border border-white/20 flex items-center justify-center text-sm active:bg-pink-600"
+                  onClick={(e) => onDownloadLink(e, item)}
+                  className="absolute bottom-1.5 right-1.5 z-10 w-7 h-7 rounded-full bg-black/75 border border-white/20 flex items-center justify-center text-sm active:bg-pink-600"
                 >
                   ⬇
-                </span>
+                </a>
               )}
-            </button>
+            </div>
           ))}
         </div>
         </>
@@ -3524,6 +3561,19 @@ export default function Gallery() {
             <p className="text-[10px] text-gray-600 mb-3">
               {priceLabel(IMAGE_MODELS.find(m => m.id === createModel), '2k')}
             </p>
+            {supportsLora(createModel) && (
+              <>
+                <label className="block text-xs text-gray-400 mb-1">LoRA stack (up to 3)</label>
+                <textarea
+                  rows={3}
+                  value={createLoras}
+                  onChange={e => setCreateLoras(e.target.value)}
+                  placeholder={"One LoRA per line. Optional strength at the end.\nhttps://civitai.com/api/download/models/123 0.8\nowner/style-lora 0.6"}
+                  className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-xs mb-1 outline-none focus:border-purple-500"
+                />
+                <p className="text-[10px] text-gray-600 mb-3">Must match this base. Flux LoRAs on Flux Dev LoRA. Z-Image LoRAs on Z-Image Turbo LoRA. Use a .safetensors URL or Hugging Face owner/name. Put the trigger word in the prompt.</p>
+              </>
+            )}
 
             {maxR > 0 && (
               <>
