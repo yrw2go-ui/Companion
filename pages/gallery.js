@@ -45,7 +45,7 @@ const IMAGE_MODELS = [
   { id: 'bytedance/seedream-v4', label: 'Seedream v4', family: 'seedream', price: null, maxRefs: 0 },
   { id: 'bytedance/seedream-v4/edit', label: 'Seedream v4 (edit · up to 10)', family: 'seedream', price: null, maxRefs: 10 },
   // Other
-  { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux', price: null, maxRefs: 4 },
+  { id: 'z-image/turbo', label: 'Z-Image Turbo', family: 'flux', price: null, maxRefs: 0 },
   { id: 'z-image/turbo-lora', label: 'Z-Image Turbo LoRA (stack up to 3)', family: 'flux', price: null, maxRefs: 0, lora: true },
   { id: 'black-forest-labs/flux-dev', label: 'Flux Dev', family: 'flux', price: null, maxRefs: 4 },
   { id: 'black-forest-labs/flux-dev-lora', label: 'Flux Dev LoRA (stack up to 3)', family: 'flux', price: null, maxRefs: 0, lora: true },
@@ -405,7 +405,6 @@ export default function Gallery() {
     { id: 14, name: 'flux cowgirl', path: 'https://civitai.red/api/download/models/1078264?fileId=983331', scale: 0.8, base: 'flux', trigger: 'nude woman and a man, on top of a man, penis inside her anus, cowgirl' },
     { id: 15, name: 'flux pussy', path: 'https://civitai.red/api/download/models/1101748?fileId=1007182', scale: 0.8, base: 'flux', trigger: 'bush pussy, hairy pussy, shaved pussy, butterfly pussy, pink pussy, asian pussy' },
     { id: 16, name: 'flux reverse cowgirl', path: 'https://civitai.red/api/download/models/918306?fileId=825818', scale: 0.7, base: 'flux', trigger: '' },
-    { id: 17, name: 'zit deepthroat', path: 'https://civitai.red/api/download/models/2506764?fileId=2394784', scale: 0.7, base: 'zimage', trigger: "Nsfw Deepthroat, realistic photo of woman sucking a man's penis." },
     { id: 18, name: 'flux eye contact bj', path: 'https://civitai.red/api/download/models/1849560?fileId=1749348', scale: 0.8, base: 'flux', trigger: '' },
     { id: 19, name: 'flux pov bj', path: 'https://civitai.red/api/download/models/815057?fileId=728606', scale: 0.7, base: 'flux', trigger: 'pbja, girl, pov, penis' },
     { id: 20, name: 'scg anatomy', path: 'https://civitai.red/api/download/models/736227?fileId=650228', scale: 0.8, base: 'flux', trigger: 'scg-anatomy-female' },
@@ -3658,7 +3657,7 @@ export default function Gallery() {
               }}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500"
             >
-              {IMAGE_MODELS.map(m => (
+              {IMAGE_MODELS.filter(m => createRefs.length === 0 || m.maxRefs > 0).map(m => (
                 <option key={m.id} value={m.id}>
                   {m.label}{m.maxRefs > 0 ? ` · up to ${m.maxRefs} ref${m.maxRefs > 1 ? 's' : ''}` : ''}
                 </option>
@@ -4038,7 +4037,12 @@ export default function Gallery() {
                     key={m.key || m.id || m.url}
                     type="button"
                     onClick={() => {
-                      const maxR = createMaxRefs(createModel)
+                      let model = createModel
+                      if (createMaxRefs(model) === 0) {
+                        const fallback = IMAGE_MODELS.find(x => x.maxRefs > 0)
+                        if (fallback) { model = fallback.id; setCreateModel(fallback.id) }
+                      }
+                      const maxR = createMaxRefs(model)
                       setCreateRefs(prev => {
                         const next = [...prev]
                         if (typeof pickCreateRef === 'number' && pickCreateRef >= 0) next[pickCreateRef] = m
