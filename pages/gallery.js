@@ -14,7 +14,9 @@ const VIDEO_MODELS = [
   { id: 'atlascloud/wan-2.2-turbo/image-to-video', label: 'Wan 2.2 Turbo (fast, 5s)', price: null },
   { id: 'xai/grok-imagine-video-v1.5/image-to-video', label: 'Grok Imagine (up to 1080p) 🔊', price: null },
   { id: 'alibaba/wan-2.7/image-to-video', label: 'Wan 2.7 (start/end/continue) 🔊', price: null },
-  { id: 'alibaba/wan-2.2-spicy/image-to-video-lora', label: 'Wan 2.2 Spicy (LoRA support)', price: null },
+  { id: 'alibaba/wan-2.2-spicy/image-to-video-lora', label: 'Wan 2.2 Spicy (LoRA support)', price: null, lora: 'spicy' },
+  { id: 'atlascloud/wan-2.2/image-to-video-lora', label: 'Wan 2.2 LoRA (stack up to 3)', price: null, lora: true },
+  { id: 'atlascloud/wan-2.2-turbo/infinite-image-to-video-lora', label: 'Wan 2.2 Turbo Infinite LoRA', price: null, lora: true },
   { id: 'atlascloud/wan-2.2-turbo-spicy/image-to-video', label: 'Wan 2.2 Spicy', price: null },
   { id: 'atlascloud/wan-2.7-spicy/image-to-video', label: 'Wan 2.7 Spicy 🔊', price: null },
   { id: 'bytedance/seedance-v1.5-pro/image-to-video-spicy', label: 'Seedance Spicy I2V 🔊', price: null },
@@ -54,10 +56,14 @@ const IMAGE_MODELS = [
   { id: 'google/imagen4-ultra/text-to-image', label: 'Imagen 4 Ultra', family: 'flux', price: null, maxRefs: 2 },
   { id: 'ideogram/ideogram-v3/text-to-image', label: 'Ideogram v3 (text/typography)', family: 'flux', price: null, maxRefs: 2 },
   { id: 'qwen/qwen-image-2.0/text-to-image', label: 'Qwen Image 2.0', family: 'flux', price: null, maxRefs: 4 },
+  { id: 'alibaba/qwen-image/text-to-image-lora', label: 'Qwen Image LoRA (stack up to 3)', family: 'qwen', price: null, maxRefs: 0, lora: true },
 ]
 const imgFamilyOf = (id) => (IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]).family
 const imgModelOf = (id) => IMAGE_MODELS.find(m => m.id === id) || IMAGE_MODELS[0]
 const supportsLora = (id) => !!imgModelOf(id).lora
+const videoModelOf = (id) => VIDEO_MODELS.find(m => m.id === id) || {}
+const supportsVideoLora = (id) => !!videoModelOf(id).lora
+const isSpicyVideoLora = (id) => videoModelOf(id).lora === 'spicy'
 const isSequentialModel = (id) => !!(imgModelOf(id).sequential)
 const createMaxRefs = (modelId) => {
   const n = (IMAGE_MODELS.find(m => m.id === modelId) || IMAGE_MODELS[0]).maxRefs || 0
@@ -382,9 +388,92 @@ export default function Gallery() {
   const [highNoiseLoras, setHighNoiseLoras] = useState('')
   const [lowNoiseLoras, setLowNoiseLoras] = useState('')
 
+  const DEFAULT_LORAS = [
+    { id: 1, name: 'Z body retouched', path: 'https://civitai.red/api/download/models/2473400?fileId=2362044', scale: 0.7, base: 'zimage', trigger: 'nipples' },
+    { id: 2, name: 'thigh gap', path: 'https://civitai.red/api/download/models/2462071?fileId=2350633', scale: 0.7, base: 'zimage', trigger: 'thighgap' },
+    { id: 3, name: 'nsfw unlocked', path: 'https://civitai.red/api/download/models/2628256?fileId=2515988', scale: 0.7, base: 'zimage', trigger: '' },
+    { id: 4, name: 'elna', path: 'https://civitai.red/api/download/models/3389487?fileId=3278714', scale: 0.8, base: 'zimage', trigger: 'elnaXCV' },
+    { id: 5, name: 'turbo pussy z', path: 'https://civitai.red/api/download/models/2639284?fileId=2527219', scale: 0.7, base: 'zimage', trigger: '' },
+    { id: 6, name: 'flux anatomy', path: 'https://civitai.red/api/download/models/847761?fileId=761049', scale: 0.8, base: 'flux', trigger: 'nude, breasts, ass, nipples, pussy' },
+    { id: 7, name: 'zit nsfw v3', path: 'https://civitai.red/api/download/models/2898951?fileId=2776902', scale: 0.7, base: 'zimage', trigger: '' },
+    { id: 8, name: 'flux petite', path: 'https://civitai.red/api/download/models/1038569?fileId=945271', scale: 0.8, base: 'flux', trigger: 'petite, slender, small breast, vulva, nipples' },
+    { id: 9, name: 'flux deepthroat', path: 'https://civitai.red/api/download/models/810290?fileId=723930', scale: 0.7, base: 'flux', trigger: 'dtsv, girl, boy, penis' },
+    { id: 10, name: 'nsfw master zit', path: 'https://civitai.red/api/download/models/2904324?fileId=2782086', scale: 0.7, base: 'zimage', trigger: '' },
+    { id: 11, name: 'perfection zit', path: 'https://civitai.red/api/download/models/2577477?fileId=2464717', scale: 0.6, base: 'zimage', trigger: 'ultra detailed, cinematic, detailed skin pore, realism style' },
+    { id: 12, name: 'nsfw flux', path: 'https://civitai.red/api/download/models/733658?fileId=647734', scale: 0.7, base: 'flux', trigger: 'AiArtV' },
+    { id: 13, name: 'better nudes', path: 'https://civitai.red/api/download/models/2474435?fileId=2365660', scale: 0.7, base: 'zimage', trigger: '' },
+    { id: 14, name: 'flux cowgirl', path: 'https://civitai.red/api/download/models/1078264?fileId=983331', scale: 0.8, base: 'flux', trigger: 'nude woman and a man, on top of a man, penis inside her anus, cowgirl' },
+    { id: 15, name: 'flux pussy', path: 'https://civitai.red/api/download/models/1101748?fileId=1007182', scale: 0.8, base: 'flux', trigger: 'bush pussy, hairy pussy, shaved pussy, butterfly pussy, pink pussy, asian pussy' },
+    { id: 16, name: 'flux reverse cowgirl', path: 'https://civitai.red/api/download/models/918306?fileId=825818', scale: 0.7, base: 'flux', trigger: '' },
+    { id: 17, name: 'zit deepthroat', path: 'https://civitai.red/api/download/models/2506764?fileId=2394784', scale: 0.7, base: 'zimage', trigger: "Nsfw Deepthroat, realistic photo of woman sucking a man's penis." },
+    { id: 18, name: 'flux eye contact bj', path: 'https://civitai.red/api/download/models/1849560?fileId=1749348', scale: 0.8, base: 'flux', trigger: '' },
+    { id: 19, name: 'flux pov bj', path: 'https://civitai.red/api/download/models/815057?fileId=728606', scale: 0.7, base: 'flux', trigger: 'pbja, girl, pov, penis' },
+  ]
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('ga_saved_loras') || '[]')
+      const have = new Set((stored || []).map(x => x.path))
+      const merged = [...stored, ...DEFAULT_LORAS.filter(d => !have.has(d.path))]
+      setSavedLoras(merged)
+      if (merged.length !== stored.length) localStorage.setItem('ga_saved_loras', JSON.stringify(merged))
+    } catch {
+      setSavedLoras(DEFAULT_LORAS)
+    }
+  }, [])
+  const persistLoras = (list) => {
+    setSavedLoras(list)
+    try { localStorage.setItem('ga_saved_loras', JSON.stringify(list)) } catch {}
+  }
+  const saveLoraLine = (line, base) => {
+    const clean = String(line || '').trim()
+    if (!clean) return
+    const parts = clean.split(/\s+/)
+    const last = parts[parts.length - 1]
+    const scale = parseFloat(last)
+    const path = (parts.length > 1 && !isNaN(scale)) ? parts.slice(0, -1).join(' ') : clean
+    const name = (loraName || path.split('/').pop() || 'LoRA').replace(/\.safetensors$/i, '').slice(0, 40)
+    const trigger = String(loraTrigger || '').trim()
+    const item = { id: Date.now(), name, path, scale: (!isNaN(scale) && scale > 0) ? scale : 0.8, base, trigger }
+    persistLoras([item, ...savedLoras.filter(x => x.path !== path)].slice(0, 30))
+    setLoraName('')
+    setLoraTrigger('')
+  }
+  const applyTrigger = (trigger, setter, current) => {
+    const word = String(trigger || '').trim()
+    if (!word) return
+    const text = String(current || '')
+    if (text.toLowerCase().includes(word.toLowerCase())) return
+    setter(text.trim() ? `${word}, ${text}` : word)
+  }
+  const insertLora = (item, setter, current, promptSetter, promptValue) => {
+    const line = `${item.path} ${item.scale}`
+    const lines = String(current || '').split('\n').map(s => s.trim()).filter(Boolean)
+    if (!lines.some(l => l.startsWith(item.path))) setter([...lines, line].slice(0, 3).join('\n'))
+    applyTrigger(item.trigger, promptSetter, promptValue)
+  }
+  const setLoraScale = (text, setter, index, scale) => {
+    const lines = String(text || '').split('\n').map(s => s.trim()).filter(Boolean)
+    if (!lines[index]) return
+    const parts = lines[index].split(/\s+/)
+    const last = parts[parts.length - 1]
+    const path = (!isNaN(parseFloat(last)) && parts.length > 1) ? parts.slice(0, -1).join(' ') : lines[index]
+    lines[index] = `${path} ${Number(scale).toFixed(2)}`
+    setter(lines.join('\n'))
+  }
+  const loraLines = (text) => String(text || '').split('\n').map(s => s.trim()).filter(Boolean).map(line => {
+    const parts = line.split(/\s+/)
+    const last = parts[parts.length - 1]
+    const scale = parseFloat(last)
+    if (parts.length > 1 && !isNaN(scale)) return { path: parts.slice(0, -1).join(' '), scale }
+    return { path: line, scale: 0.8 }
+  })
   const SEEDREAM_DEFAULT = (IMAGE_MODELS.find(m => m.family === 'seedream') || IMAGE_MODELS[0]).id
   const [createModel, setCreateModel] = useState(SEEDREAM_DEFAULT)
   const [createLoras, setCreateLoras] = useState('')
+  const [videoLoras, setVideoLoras] = useState('')
+  const [savedLoras, setSavedLoras] = useState([])
+  const [loraName, setLoraName] = useState('')
+  const [loraTrigger, setLoraTrigger] = useState('')
   const [createMaxImages, setCreateMaxImages] = useState(4)
   const [artStylesList, setArtStylesList] = useState(ART_STYLES)
   const [createArtStyle, setCreateArtStyle] = useState(
@@ -1683,11 +1772,14 @@ export default function Gallery() {
         payload.output_format = 'mp4'
         payload.watermark = false
       }
-      if (videoModel === 'alibaba/wan-2.2-spicy/image-to-video-lora') {
+      if (isSpicyVideoLora(videoModel)) {
         const high = parseLoras(highNoiseLoras)
         const low = parseLoras(lowNoiseLoras)
         if (high.length) payload.highNoiseLoras = high
         if (low.length) payload.lowNoiseLoras = low
+      } else if (supportsVideoLora(videoModel)) {
+        const loras = parseLoras(videoLoras)
+        if (loras.length) payload.loras = loras
       }
       const res = await fetch('/api/generate-video', {
         method: 'POST',
@@ -3564,6 +3656,19 @@ export default function Gallery() {
             {supportsLora(createModel) && (
               <>
                 <label className="block text-xs text-gray-400 mb-1">LoRA stack (up to 3)</label>
+                {savedLoras.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {savedLoras.map(item => (
+                      <button key={item.id} type="button" onClick={() => insertLora(item, setCreateLoras, createLoras, setPrompt, prompt)}
+                        title={item.trigger ? `trigger: ${item.trigger}` : item.path}
+                        className="text-[10px] px-2 py-1 rounded-full bg-purple-950 border border-purple-800 text-purple-200">
+                        {item.name}{item.trigger ? ` · ${item.trigger}` : ''}
+                        <span onClick={e => { e.stopPropagation(); persistLoras(savedLoras.filter(x => x.id !== item.id)) }}
+                          className="ml-1 text-red-400">✕</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <textarea
                   rows={3}
                   value={createLoras}
@@ -3571,7 +3676,24 @@ export default function Gallery() {
                   placeholder={"One LoRA per line. Optional strength at the end.\nhttps://civitai.com/api/download/models/123 0.8\nowner/style-lora 0.6"}
                   className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-xs mb-1 outline-none focus:border-purple-500"
                 />
-                <p className="text-[10px] text-gray-600 mb-3">Must match this base. Flux LoRAs on Flux Dev LoRA. Z-Image LoRAs on Z-Image Turbo LoRA. Use a .safetensors URL or Hugging Face owner/name. Put the trigger word in the prompt.</p>
+                {loraLines(createLoras).map((row, idx) => (
+                  <div key={idx} className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] text-gray-500 w-16 truncate">{savedLoras.find(s => s.path === row.path)?.name || `LoRA ${idx+1}`}</span>
+                    <input type="range" min="0" max="1.5" step="0.05" value={row.scale}
+                      onChange={e => setLoraScale(createLoras, setCreateLoras, idx, e.target.value)}
+                      className="flex-1 accent-purple-500" />
+                    <span className="text-[10px] text-purple-300 w-8">{Number(row.scale).toFixed(2)}</span>
+                  </div>
+                ))}
+                <div className="flex gap-2 mb-1">
+                  <input value={loraName} onChange={e => setLoraName(e.target.value)} placeholder="name"
+                    className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1 text-[11px] outline-none focus:border-purple-500" />
+                  <input value={loraTrigger} onChange={e => setLoraTrigger(e.target.value)} placeholder="trigger word"
+                    className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1 text-[11px] outline-none focus:border-purple-500" />
+                  <button type="button" onClick={() => saveLoraLine(String(createLoras).split('\n')[0], 'image')}
+                    className="px-3 py-1 text-[11px] rounded-lg bg-purple-800 text-white">Save</button>
+                </div>
+                <p className="text-[10px] text-gray-600 mb-3">Tap a saved one to add it. Must match this base. Flux on Flux Dev LoRA, Z-Image on Z-Image Turbo LoRA, Qwen on Qwen Image LoRA.</p>
               </>
             )}
 
@@ -3948,7 +4070,7 @@ export default function Gallery() {
               {priceLabel(VIDEO_MODELS.find(m => m.id === videoModel))}
             </p>
 
-            {videoModel === 'alibaba/wan-2.2-spicy/image-to-video-lora' && (
+            {isSpicyVideoLora(videoModel) && (
               <div className="mb-3 space-y-2 border border-purple-900/50 rounded-lg p-3 bg-gray-950">
                 <p className="text-[10px] text-purple-300">LoRA slots (one URL per line, max 3 each)</p>
                 <div>
@@ -3962,6 +4084,43 @@ export default function Gallery() {
                   <textarea rows={2} value={lowNoiseLoras} onChange={e => setLowNoiseLoras(e.target.value)}
                     placeholder="https://.../lora.safetensors"
                     className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-purple-500" />
+                </div>
+              </div>
+            )}
+
+            {supportsVideoLora(videoModel) && !isSpicyVideoLora(videoModel) && (
+              <div className="mb-3 space-y-2 border border-purple-900/50 rounded-lg p-3 bg-gray-950">
+                <p className="text-[10px] text-purple-300">LoRA stack (one per line, max 3)</p>
+                {savedLoras.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {savedLoras.map(item => (
+                      <button key={item.id} type="button" onClick={() => insertLora(item, setVideoLoras, videoLoras, setVideoPrompt, videoPrompt)}
+                        title={item.trigger ? `trigger: ${item.trigger}` : item.path}
+                        className="text-[10px] px-2 py-1 rounded-full bg-purple-950 border border-purple-800 text-purple-200">
+                        {item.name}{item.trigger ? ` · ${item.trigger}` : ''}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <textarea rows={2} value={videoLoras} onChange={e => setVideoLoras(e.target.value)}
+                  placeholder="https://civitai.com/api/download/models/123 0.8"
+                  className="w-full bg-black border border-gray-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-purple-500" />
+                {loraLines(videoLoras).map((row, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-500 w-16 truncate">{savedLoras.find(s => s.path === row.path)?.name || `LoRA ${idx+1}`}</span>
+                    <input type="range" min="0" max="1.5" step="0.05" value={row.scale}
+                      onChange={e => setLoraScale(videoLoras, setVideoLoras, idx, e.target.value)}
+                      className="flex-1 accent-purple-500" />
+                    <span className="text-[10px] text-purple-300 w-8">{Number(row.scale).toFixed(2)}</span>
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <input value={loraName} onChange={e => setLoraName(e.target.value)} placeholder="name"
+                    className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1 text-[11px] outline-none focus:border-purple-500" />
+                  <input value={loraTrigger} onChange={e => setLoraTrigger(e.target.value)} placeholder="trigger word"
+                    className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1 text-[11px] outline-none focus:border-purple-500" />
+                  <button type="button" onClick={() => saveLoraLine(String(videoLoras).split('\n')[0], 'video')}
+                    className="px-3 py-1 text-[11px] rounded-lg bg-purple-800 text-white">Save</button>
                 </div>
               </div>
             )}
