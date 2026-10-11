@@ -466,6 +466,14 @@ export default function Gallery() {
     lines[index] = `${path} ${Number(scale).toFixed(2)}`
     setter(lines.join('\n'))
   }
+  const loraBaseForModel = (id) => {
+    const m = String(id || '')
+    if (m.includes('z-image')) return 'zimage'
+    if (m.includes('flux')) return 'flux'
+    if (m.includes('qwen')) return 'qwen'
+    if (m.includes('wan')) return 'wan'
+    return ''
+  }
   const loraLines = (text) => String(text || '').split('\n').map(s => s.trim()).filter(Boolean).map(line => {
     const parts = line.split(/\s+/)
     const last = parts[parts.length - 1]
@@ -3664,15 +3672,19 @@ export default function Gallery() {
                 <label className="block text-xs text-gray-400 mb-1">LoRA stack (up to 3)</label>
                 {savedLoras.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2">
-                    {savedLoras.map(item => (
-                      <button key={item.id} type="button" onClick={() => insertLora(item, setCreateLoras, createLoras, setPrompt, prompt)}
-                        title={item.trigger ? `trigger: ${item.trigger}` : item.path}
-                        className="text-[10px] px-2 py-1 rounded-full bg-purple-950 border border-purple-800 text-purple-200">
+                    {savedLoras.map(item => {
+                      const ok = item.base === loraBaseForModel(createModel)
+                      return (
+                      <button key={item.id} type="button" disabled={!ok}
+                        onClick={() => ok && insertLora(item, setCreateLoras, createLoras, setPrompt, prompt)}
+                        title={ok ? (item.trigger ? `trigger: ${item.trigger}` : item.path) : `needs ${item.base} model`}
+                        className={`text-[10px] px-2 py-1 rounded-full border ${ok ? 'bg-purple-950 border-purple-800 text-purple-200' : 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed'}`}>
                         {item.name}{item.trigger ? ` · ${item.trigger}` : ''}
                         <span onClick={e => { e.stopPropagation(); persistLoras(savedLoras.filter(x => x.id !== item.id)) }}
                           className="ml-1 text-red-400">✕</span>
                       </button>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
                 <textarea
@@ -4099,13 +4111,17 @@ export default function Gallery() {
                 <p className="text-[10px] text-purple-300">LoRA stack (one per line, max 3)</p>
                 {savedLoras.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
-                    {savedLoras.map(item => (
-                      <button key={item.id} type="button" onClick={() => insertLora(item, setVideoLoras, videoLoras, setVideoPrompt, videoPrompt)}
-                        title={item.trigger ? `trigger: ${item.trigger}` : item.path}
-                        className="text-[10px] px-2 py-1 rounded-full bg-purple-950 border border-purple-800 text-purple-200">
+                    {savedLoras.map(item => {
+                      const ok = item.base === loraBaseForModel(videoModel)
+                      return (
+                      <button key={item.id} type="button" disabled={!ok}
+                        onClick={() => ok && insertLora(item, setVideoLoras, videoLoras, setVideoPrompt, videoPrompt)}
+                        title={ok ? (item.trigger ? `trigger: ${item.trigger}` : item.path) : `needs ${item.base} model`}
+                        className={`text-[10px] px-2 py-1 rounded-full border ${ok ? 'bg-purple-950 border-purple-800 text-purple-200' : 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed'}`}>
                         {item.name}{item.trigger ? ` · ${item.trigger}` : ''}
                       </button>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
                 <textarea rows={2} value={videoLoras} onChange={e => setVideoLoras(e.target.value)}
