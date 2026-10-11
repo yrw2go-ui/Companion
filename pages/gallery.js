@@ -3680,7 +3680,9 @@ export default function Gallery() {
                         title={ok ? (item.trigger ? `trigger: ${item.trigger}` : item.path) : `needs ${item.base} model`}
                         className={`text-[10px] px-2 py-1 rounded-full border ${ok ? 'bg-purple-950 border-purple-800 text-purple-200' : 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed'}`}>
                         {item.name}{item.trigger ? ` · ${item.trigger}` : ''}
-                        <span onClick={e => { e.stopPropagation(); persistLoras(savedLoras.filter(x => x.id !== item.id)) }}
+                        <span onDoubleClick={e => { e.stopPropagation(); persistLoras(savedLoras.filter(x => x.id !== item.id)) }}
+                          onClick={e => e.stopPropagation()}
+                          title="double tap to remove"
                           className="ml-1 text-red-400">✕</span>
                       </button>
                       )
