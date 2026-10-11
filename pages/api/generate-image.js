@@ -272,22 +272,36 @@ export default async function handler(req, res) {
     let g = parseFloat(guidance); if (isNaN(g)) g = 6.5; g = Math.max(1, Math.min(12, g))
     let st = parseInt(steps); if (isNaN(st)) st = 28; st = Math.max(10, Math.min(50, st))
     const isQwenLora = /qwen-image\/text-to-image-lora/.test(useModel)
-    body = isQwenLora ? {
-      model: useModel,
-      prompt,
-      size: usedSize,
-      seed: usedSeed,
-      output_format: 'png',
-    } : {
-      model: useModel,
-      prompt,
-      size: usedSize,
-      num_images: 1,
-      guidance_scale: g,
-      num_inference_steps: st,
-      seed: usedSeed,
+    const isFlux = /flux/i.test(useModel)
+    if (!usedSize) usedSize = size || '1024*1024'
+    if (isQwenLora) {
+      body = { model: useModel, prompt, size: usedSize, seed: usedSeed, output_format: 'png' }
+    } else if (isFlux) {
+      // Flux wants cfg_scale, and it must be > 1 when a negative prompt is sent
+      let cfg = g
+      if (negativePrompt && negativePrompt.trim() && cfg <= 1) cfg = 2
+      body = {
+        model: useModel,
+        prompt,
+        size: usedSize,
+        num_images: 1,
+        cfg_scale: cfg,
+        num_inference_steps: st,
+        seed: usedSeed,
+      }
+      if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
+    } else {
+      body = {
+        model: useModel,
+        prompt,
+        size: usedSize,
+        num_images: 1,
+        guidance_scale: g,
+        num_inference_steps: st,
+        seed: usedSeed,
+      }
+      if (negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
     }
-    if (!isQwenLora && negativePrompt && negativePrompt.trim()) body.negative_prompt = negativePrompt.trim()
   }
 
   if (Array.isArray(loras) && loras.length && /-lora$|\/lora/.test(useModel)) {
