@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
 import { downloadCard } from '../lib/renderCard'
+import { buildDownloadName, triggerBlobDownload } from '../lib/downloadName'
 import { makePoster } from '../lib/posterFrame'
 
 const DEFAULT_NEGATIVE = 'blurry, (Asian), mature woman, big hips, wide hips, big breasts, unattractive female, low quality, deformed, extra fingers, extra limbs, mutated hands, bad anatomy, disfigured, poorly drawn face, watermark, text, signature, cropped, out of frame'
@@ -176,10 +177,26 @@ const PROMPT_EXTRA_CATEGORIES = [
       { id: 'ornate', label: 'Ornate', text: 'ornate baroque trading card design, intricate decorative gold frame, classic collectible border' },
     ],
   },
+  {
+    id: 'pose',
+    label: 'Pose',
+    options: [
+      { id: 'standing', label: 'Standing', text: 'standing pose, weight on one leg' },
+      { id: 'sitting', label: 'Sitting', text: 'sitting pose' },
+      { id: 'kneeling', label: 'Kneeling', text: 'kneeling pose' },
+      { id: 'lying', label: 'Lying down', text: 'lying down pose' },
+      { id: 'leaning', label: 'Leaning', text: 'leaning against a wall' },
+      { id: 'looking_back', label: 'Looking back', text: 'looking back over the shoulder' },
+      { id: 'hands_hips', label: 'Hands on hips', text: 'hands on hips pose' },
+      { id: 'arms_up', label: 'Arms up', text: 'arms raised above the head' },
+      { id: 'walking', label: 'Walking', text: 'walking toward the camera' },
+      { id: 'crouching', label: 'Crouching', text: 'crouching pose' },
+    ],
+  },
 ]
 
 const PROMPT_EXTRA_ORDER = [
-  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'card_design',
+  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'pose', 'card_design',
 ]
 
 const CARD_TEXT_SIZES = [
@@ -331,6 +348,11 @@ export default function Cards() {
   const [customChipLabel, setCustomChipLabel] = useState('')
   const [customChipText, setCustomChipText] = useState('')
   const [customChipSaving, setCustomChipSaving] = useState(false)
+  const [editingChip, setEditingChip] = useState(null)
+  const [editChipLabel, setEditChipLabel] = useState('')
+  const [editChipText, setEditChipText] = useState('')
+  const [showNewCat, setShowNewCat] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
   const [cardTextOn, setCardTextOn] = useState(false)
   const [cardTextContent, setCardTextContent] = useState('')
   const [cardTextSize, setCardTextSize] = useState('medium')
@@ -413,7 +435,9 @@ export default function Cards() {
           if (ft) setArtStyle(ft.value)
         }
         if (Array.isArray(data?.prompt_extra_categories) && data.prompt_extra_categories.length) {
-          setPromptExtraCategories(data.prompt_extra_categories)
+          const have = new Set(data.prompt_extra_categories.map(c => c.id))
+          const merged = [...data.prompt_extra_categories, ...PROMPT_EXTRA_CATEGORIES.filter(c => !have.has(c.id))]
+          setPromptExtraCategories(merged)
         }
       } catch (e) {
         console.warn('art styles load', e)
@@ -899,7 +923,79 @@ export default function Cards() {
   }
 
 
-  const buildCardTextFragment = () => {
+  
+  const persistCategories = async (nextCats) => {
+    const { error } = await supabase.from('user_settings').upsert({
+      id: 1,
+      prompt_extra_categories: nextCats,
+    })
+    if (error) throw new Error(error.message)
+    setPromptExtraCategories(nextCats)
+  }
+
+  const saveEditedChip = async () => {
+    if (!editingChip) return
+    const label = editChipLabel.trim()
+    const text = editChipText.trim()
+    if (!label || !text) { alert('Need a label and prompt text'); return }
+    const nextCats = promptExtraCategories.map(c =>
+      c.id === editingChip.catId
+        ? { ...c, options: (c.options || []).map(o => o.id === editingChip.optId ? { ...o, label, text } : o) }
+        : c
+    )
+    setCustomChipSaving(true)
+    try {
+      await persistCategories(nextCats)
+      setEditingChip(null)
+    } catch (e) {
+      alert('Could not save: ' + e.message)
+    }
+    setCustomChipSaving(false)
+  }
+
+  const deleteChip = async (catId, optId) => {
+    if (!confirm('Remove this attribute?')) return
+    const nextCats = promptExtraCategories.map(c =>
+      c.id === catId ? { ...c, options: (c.options || []).filter(o => o.id !== optId) } : c
+    )
+    try {
+      await persistCategories(nextCats)
+      setEditingChip(null)
+    } catch (e) {
+      alert('Could not delete: ' + e.message)
+    }
+  }
+
+  const addCategory = async () => {
+    const label = newCatName.trim()
+    if (!label) { alert('Need a category name'); return }
+    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `cat_${Date.now()}`
+    if (promptExtraCategories.some(c => c.id === id)) { alert('That category already exists'); return }
+    const nextCats = [...promptExtraCategories, { id, label, options: [] }]
+    setCustomChipSaving(true)
+    try {
+      await persistCategories(nextCats)
+      setNewCatName('')
+      setShowNewCat(false)
+      setCustomChipCat(id)
+    } catch (e) {
+      alert('Could not add category: ' + e.message)
+    }
+    setCustomChipSaving(false)
+  }
+
+  const deleteCategory = async (catId) => {
+    const cat = promptExtraCategories.find(c => c.id === catId)
+    if (!confirm(`Remove the whole "${cat?.label || catId}" category?`)) return
+    const nextCats = promptExtraCategories.filter(c => c.id !== catId)
+    try {
+      await persistCategories(nextCats)
+    } catch (e) {
+      alert('Could not remove category: ' + e.message)
+    }
+  }
+
+const buildCardTextFragment = () => {
     if (!cardTextOn || !cardTextContent.trim()) return ''
     const size = CARD_TEXT_SIZES.find(s => s.id === cardTextSize)?.text || 'medium-sized text'
     const pos = CARD_TEXT_POS.find(s => s.id === cardTextPos)?.text || 'at the bottom of the card'
@@ -1722,7 +1818,7 @@ export default function Cards() {
       const safeName = String(card.name || 'card').replace(/[^a-z0-9]+/gi, '_').toLowerCase()
       const a = document.createElement('a')
       a.href = url
-      a.download = `${card.card_number || 'card'}_${safeName}.mp4`
+      a.download = buildDownloadName({ type: 'video', url: 'x.mp4' }, { ext: 'mp4' })
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -2659,23 +2755,41 @@ export default function Cards() {
 
                       {promptExtraCategories.map(cat => (
                         <div key={cat.id} className="mb-3">
-                          <p className="text-[10px] text-gray-500 mb-1.5 uppercase tracking-wide">{cat.label}</p>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <p className="text-[10px] text-gray-500 uppercase tracking-wide">{cat.label}</p>
+                            <button type="button" onClick={() => deleteCategory(cat.id)}
+                              className="text-[9px] text-gray-600 hover:text-red-400">remove</button>
+                          </div>
                           <div className="flex flex-wrap gap-1.5 items-center">
                             {(cat.options || []).map(opt => {
                               const on = promptExtras[cat.id] === opt.id
                               return (
-                                <button
-                                  key={opt.id}
-                                  type="button"
-                                  onClick={() => togglePromptExtra(cat.id, opt.id)}
-                                  className={`text-[11px] px-2.5 py-1 rounded-full border font-medium transition ${
-                                    on
-                                      ? 'bg-pink-600 border-pink-400 text-white'
-                                      : 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500'
-                                  }`}
-                                >
-                                  {opt.label}
-                                </button>
+                                <span key={opt.id} className="inline-flex items-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePromptExtra(cat.id, opt.id)}
+                                    className={`text-[11px] px-2.5 py-1 rounded-l-full border font-medium transition ${
+                                      on
+                                        ? 'bg-pink-600 border-pink-400 text-white'
+                                        : 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500'
+                                    }`}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="Edit attribute"
+                                    onClick={() => {
+                                      setEditingChip({ catId: cat.id, optId: opt.id })
+                                      setEditChipLabel(opt.label)
+                                      setEditChipText(opt.text || '')
+                                      setCustomChipCat('')
+                                    }}
+                                    className={`text-[10px] px-1.5 py-1 rounded-r-full border-y border-r ${
+                                      on ? 'bg-pink-700 border-pink-400 text-white' : 'bg-gray-800 border-gray-700 text-gray-500'
+                                    }`}
+                                  >✎</button>
+                                </span>
                               )
                             })}
                             <button
@@ -2691,6 +2805,27 @@ export default function Cards() {
                               +
                             </button>
                           </div>
+                          {editingChip?.catId === cat.id && (
+                            <div className="mt-2 p-2 rounded-lg border border-blue-700 bg-blue-950/30 space-y-1.5">
+                              <p className="text-[10px] text-blue-300 font-semibold">Edit attribute</p>
+                              <input value={editChipLabel} onChange={e => setEditChipLabel(e.target.value)}
+                                placeholder="Button label"
+                                className="w-full bg-black border border-gray-700 rounded px-2 py-1.5 text-[11px] outline-none focus:border-blue-500" />
+                              <input value={editChipText} onChange={e => setEditChipText(e.target.value)}
+                                placeholder="Prompt text to append"
+                                className="w-full bg-black border border-gray-700 rounded px-2 py-1.5 text-[11px] outline-none focus:border-blue-500" />
+                              <div className="flex gap-2">
+                                <button type="button" onClick={() => setEditingChip(null)}
+                                  className="flex-1 bg-gray-800 rounded py-1.5 text-[11px]">Cancel</button>
+                                <button type="button" onClick={() => deleteChip(editingChip.catId, editingChip.optId)}
+                                  className="bg-red-900/60 text-red-300 rounded px-3 py-1.5 text-[11px]">Delete</button>
+                                <button type="button" disabled={customChipSaving} onClick={saveEditedChip}
+                                  className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded py-1.5 text-[11px] font-semibold">
+                                  {customChipSaving ? 'Saving…' : 'Save'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
                           {customChipCat === cat.id && (
                             <div className="mt-2 p-2 rounded-lg border border-pink-700 bg-pink-950/30 space-y-1.5">
                               <p className="text-[10px] text-pink-300 font-semibold">New {cat.label} chip</p>
@@ -2728,6 +2863,29 @@ export default function Cards() {
                         </div>
                       ))}
 
+                      <div className="pt-2 border-t border-gray-800 mb-3">
+                        {!showNewCat ? (
+                          <button type="button" onClick={() => setShowNewCat(true)}
+                            className="text-[11px] px-2.5 py-1 rounded-full border border-dashed border-pink-700 text-pink-300">
+                            + New category
+                          </button>
+                        ) : (
+                          <div className="p-2 rounded-lg border border-pink-700 bg-pink-950/30 space-y-1.5">
+                            <p className="text-[10px] text-pink-300 font-semibold">New category</p>
+                            <input value={newCatName} onChange={e => setNewCatName(e.target.value)}
+                              placeholder="Category name (e.g. Pose, Outfit, Lighting)"
+                              className="w-full bg-black border border-gray-700 rounded px-2 py-1.5 text-[11px] outline-none focus:border-pink-500" />
+                            <div className="flex gap-2">
+                              <button type="button" onClick={() => { setShowNewCat(false); setNewCatName('') }}
+                                className="flex-1 bg-gray-800 rounded py-1.5 text-[11px]">Cancel</button>
+                              <button type="button" disabled={customChipSaving} onClick={addCategory}
+                                className="flex-1 bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded py-1.5 text-[11px] font-semibold">
+                                {customChipSaving ? 'Saving…' : 'Add category'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       <div className="pt-2 border-t border-gray-800">
                         <button
                           type="button"
