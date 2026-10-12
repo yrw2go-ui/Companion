@@ -193,10 +193,33 @@ const PROMPT_EXTRA_CATEGORIES = [
       { id: 'crouching', label: 'Crouching', text: 'crouching pose' },
     ],
   },
+  {
+    id: 'attire',
+    label: 'Attire',
+    options: [
+      { id: 'lingerie', label: 'Lingerie', text: 'wearing lingerie' },
+      { id: 'bikini', label: 'Bikini', text: 'wearing a bikini' },
+      { id: 'dress', label: 'Dress', text: 'wearing a short dress' },
+      { id: 'casual', label: 'Casual', text: 'wearing casual clothes' },
+      { id: 'nude', label: 'Nude', text: 'nude' },
+    ],
+  },
+  {
+    id: 'scene',
+    label: 'Scene',
+    options: [
+      { id: 'bedroom', label: 'Bedroom', text: 'in a bedroom' },
+      { id: 'studio', label: 'Studio', text: 'in a photo studio' },
+      { id: 'beach', label: 'Beach', text: 'on a beach' },
+      { id: 'outdoors', label: 'Outdoors', text: 'outdoors, natural light' },
+      { id: 'night', label: 'Night', text: 'at night, moody lighting' },
+    ],
+  },
 ]
 
+const MULTI_CATEGORIES = new Set(['pose','attire','scene'])
 const PROMPT_EXTRA_ORDER = [
-  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'pose', 'card_design',
+  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'pose', 'attire', 'scene', 'card_design',
 ]
 
 const CARD_TEXT_SIZES = [
@@ -882,8 +905,14 @@ export default function Cards() {
   const togglePromptExtra = (catId, optId) => {
     setPromptExtras(prev => {
       const next = { ...prev }
-      if (next[catId] === optId) delete next[catId]
-      else next[catId] = optId
+      if (MULTI_CATEGORIES.has(catId)) {
+        const cur = Array.isArray(next[catId]) ? next[catId] : (next[catId] ? [next[catId]] : [])
+        next[catId] = cur.includes(optId) ? cur.filter(x => x !== optId) : [...cur, optId]
+        if (!next[catId].length) delete next[catId]
+      } else {
+        if (next[catId] === optId) delete next[catId]
+        else next[catId] = optId
+      }
       return next
     })
   }
@@ -1010,11 +1039,14 @@ const buildCardTextFragment = () => {
     const baseTrim = String(base || '').trim()
     if (baseTrim) parts.push(baseTrim)
     for (const catId of PROMPT_EXTRA_ORDER) {
-      const optId = promptExtras[catId]
-      if (!optId) continue
+      const picked = promptExtras[catId]
+      if (!picked) continue
+      const ids = Array.isArray(picked) ? picked : [picked]
       const cat = promptExtraCategories.find(c => c.id === catId)
-      const opt = cat?.options?.find(o => o.id === optId)
-      if (opt?.text) parts.push(opt.text)
+      for (const optId of ids) {
+        const opt = cat?.options?.find(o => o.id === optId)
+        if (opt?.text) parts.push(opt.text)
+      }
     }
     const textFrag = buildCardTextFragment()
     if (textFrag) parts.push(textFrag)
@@ -2762,7 +2794,8 @@ const buildCardTextFragment = () => {
                           </div>
                           <div className="flex flex-wrap gap-1.5 items-center">
                             {(cat.options || []).map(opt => {
-                              const on = promptExtras[cat.id] === opt.id
+                              const picked = promptExtras[cat.id]
+                              const on = Array.isArray(picked) ? picked.includes(opt.id) : picked === opt.id
                               return (
                                 <span key={opt.id} className="inline-flex items-center">
                                   <button
