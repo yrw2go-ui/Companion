@@ -97,6 +97,13 @@ const isStylizedArt = (style) =>
 // Same prompt extras as card creation — click chips to add/remove in fixed order
 const PROMPT_EXTRA_CATEGORIES = [
   {
+    id: 'female',
+    label: 'Female',
+    options: [
+      { id: 'female', label: 'Female', text: 'female' },
+    ],
+  },
+  {
     id: 'skin',
     label: 'Skin',
     options: [
@@ -217,6 +224,19 @@ const PROMPT_EXTRA_CATEGORIES = [
     ],
   },
   {
+    id: 'lighting',
+    label: 'Lighting',
+    options: [
+      { id: 'soft', label: 'Soft', text: 'soft even lighting' },
+      { id: 'studio', label: 'Studio', text: 'professional studio lighting' },
+      { id: 'golden', label: 'Golden hour', text: 'golden hour sunlight' },
+      { id: 'dramatic', label: 'Dramatic', text: 'dramatic side lighting' },
+      { id: 'neon', label: 'Neon', text: 'neon colored lighting' },
+      { id: 'night', label: 'Night', text: 'moody night lighting' },
+      { id: 'rim', label: 'Rim light', text: 'rim lighting outlining the figure' },
+    ],
+  },
+  {
     id: 'card_design',
     label: 'Card design',
     options: [
@@ -268,10 +288,10 @@ const PROMPT_EXTRA_CATEGORIES = [
     ],
   },
 ]
-const MULTI_CATEGORIES = new Set(['pose','attire','scene','nationality','expression','expressions'])
+const MULTI_CATEGORIES = new Set(['pose','attire','scene','lighting','nationality','expression','expressions'])
 const MULTI_LIMIT = { nationality: 3 }
 const PROMPT_EXTRA_ORDER = [
-  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'pose', 'attire', 'scene', 'nationality', 'expression', 'card_design',
+  'female', 'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'attire', 'nationality', 'expression', 'pose', 'scene', 'lighting', 'card_design',
 ]
 const CARD_TEXT_SIZES = [
   { id: 'small', label: 'Small', text: 'small text' },
@@ -752,7 +772,9 @@ export default function Gallery() {
         if (Array.isArray(data?.prompt_extra_categories) && data.prompt_extra_categories.length) {
           const have = new Set(data.prompt_extra_categories.map(c => c.id))
           const merged = [...data.prompt_extra_categories, ...PROMPT_EXTRA_CATEGORIES.filter(c => !have.has(c.id))]
-          setPromptExtraCategories(merged)
+          const isFemale = c => c.id === 'female' || /female/i.test(c.label || '')
+          const pinned = [...merged.filter(isFemale), ...merged.filter(c => !isFemale(c))]
+          setPromptExtraCategories(pinned)
         }
       } catch (e) {
         console.warn('art styles load', e)
@@ -1742,10 +1764,25 @@ export default function Gallery() {
   }
   const composePromptWithExtras = (base) => {
     const parts = []
+    const HEAD = ['female']
+    const TAIL = ['pose','scene','lighting','card_design']
+    const seen = new Set([...promptExtraCategories.map(c => c.id), ...PROMPT_EXTRA_ORDER])
+    const extraOrder = [...HEAD.filter(id => seen.has(id)), ...[...seen].filter(id => !HEAD.includes(id) && !TAIL.includes(id)), ...TAIL.filter(id => seen.has(id))]
+    const take = (catId) => {
+      const picked = promptExtras[catId]
+      if (!picked) return
+      const ids = Array.isArray(picked) ? picked : [picked]
+      const cat = promptExtraCategories.find(c => c.id === catId)
+      for (const optId of ids) {
+        const opt = cat?.options?.find(o => o.id === optId)
+        if (opt?.text) parts.push(opt.text)
+      }
+    }
+    for (const catId of HEAD) take(catId)
     const baseTrim = String(base || '').trim()
     if (baseTrim) parts.push(baseTrim)
-    const extraOrder = [...new Set([...promptExtraCategories.map(c => c.id), ...PROMPT_EXTRA_ORDER])]
     for (const catId of extraOrder) {
+      if (HEAD.includes(catId)) continue
       const picked = promptExtras[catId]
       if (!picked) continue
       const ids = Array.isArray(picked) ? picked : [picked]
@@ -1801,8 +1838,22 @@ export default function Gallery() {
     setShowCreate(true)
   }
 
+  const selectedExtraCount = () => {
+    let n = 0
+    for (const v of Object.values(promptExtras || {})) {
+      if (Array.isArray(v)) n += v.length
+      else if (v) n += 1
+    }
+    if (cardTextOn && cardTextContent.trim()) n += 1
+    return n
+  }
   const createImage = async () => {
-    if (!prompt.trim()) return
+    const composedNow = composePromptWithExtras(prompt.trim())
+    if (!composedNow.trim()) return
+    if (!prompt.trim() && selectedExtraCount() < 2) {
+      alert('Select at least 2 chips, or type a prompt')
+      return
+    }
     // Snapshot so a second Generate, or closing the popup, cannot change this job
     const snap = {
       prompt: prompt.trim(),
@@ -4194,7 +4245,7 @@ export default function Gallery() {
               >
                 {createJobs ? 'Close (keep running)' : 'Close'}
               </button>
-              <button onClick={createImage} disabled={!prompt.trim()} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
+              <button onClick={createImage} disabled={!composePromptWithExtras(prompt.trim()).trim() || (!prompt.trim() && selectedExtraCount() < 2)} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
                 {createJobs ? `Generate (${createJobs} running)` : 'Generate'}
               </button>
             </div>

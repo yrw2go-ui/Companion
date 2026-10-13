@@ -76,6 +76,13 @@ const ART_STYLES = [
 // Click-to-add prompt extras. Single-select per category; order is fixed for natural prompts.
 const PROMPT_EXTRA_CATEGORIES = [
   {
+    id: 'female',
+    label: 'Female',
+    options: [
+      { id: 'female', label: 'Female', text: 'female' },
+    ],
+  },
+  {
     id: 'skin',
     label: 'Skin',
     options: [
@@ -196,6 +203,19 @@ const PROMPT_EXTRA_CATEGORIES = [
     ],
   },
   {
+    id: 'lighting',
+    label: 'Lighting',
+    options: [
+      { id: 'soft', label: 'Soft', text: 'soft even lighting' },
+      { id: 'studio', label: 'Studio', text: 'professional studio lighting' },
+      { id: 'golden', label: 'Golden hour', text: 'golden hour sunlight' },
+      { id: 'dramatic', label: 'Dramatic', text: 'dramatic side lighting' },
+      { id: 'neon', label: 'Neon', text: 'neon colored lighting' },
+      { id: 'night', label: 'Night', text: 'moody night lighting' },
+      { id: 'rim', label: 'Rim light', text: 'rim lighting outlining the figure' },
+    ],
+  },
+  {
     id: 'card_design',
     label: 'Card design',
     options: [
@@ -248,10 +268,10 @@ const PROMPT_EXTRA_CATEGORIES = [
   },
 ]
 
-const MULTI_CATEGORIES = new Set(['pose','attire','scene','nationality','expression','expressions'])
+const MULTI_CATEGORIES = new Set(['pose','attire','scene','lighting','nationality','expression','expressions'])
 const MULTI_LIMIT = { nationality: 3 }
 const PROMPT_EXTRA_ORDER = [
-  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'pose', 'attire', 'scene', 'nationality', 'expression', 'card_design',
+  'female', 'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'attire', 'nationality', 'expression', 'pose', 'scene', 'lighting', 'card_design',
 ]
 
 const CARD_TEXT_SIZES = [
@@ -487,7 +507,9 @@ export default function Cards() {
         if (Array.isArray(data?.prompt_extra_categories) && data.prompt_extra_categories.length) {
           const have = new Set(data.prompt_extra_categories.map(c => c.id))
           const merged = [...data.prompt_extra_categories, ...PROMPT_EXTRA_CATEGORIES.filter(c => !have.has(c.id))]
-          setPromptExtraCategories(merged)
+          const isFemale = c => c.id === 'female' || /female/i.test(c.label || '')
+          const pinned = [...merged.filter(isFemale), ...merged.filter(c => !isFemale(c))]
+          setPromptExtraCategories(pinned)
         }
       } catch (e) {
         console.warn('art styles load', e)
@@ -1069,9 +1091,25 @@ const buildCardTextFragment = () => {
   // base prompt + physical attrs + card design + optional text → logical order
   const composePromptWithExtras = (base) => {
     const parts = []
+    const HEAD = ['female']
+    const TAIL = ['pose','scene','lighting','card_design']
+    const seen = new Set([...promptExtraCategories.map(c => c.id), ...PROMPT_EXTRA_ORDER])
+    const extraOrder = [...HEAD.filter(id => seen.has(id)), ...[...seen].filter(id => !HEAD.includes(id) && !TAIL.includes(id)), ...TAIL.filter(id => seen.has(id))]
+    const take = (catId) => {
+      const picked = promptExtras[catId]
+      if (!picked) return
+      const ids = Array.isArray(picked) ? picked : [picked]
+      const cat = promptExtraCategories.find(c => c.id === catId)
+      for (const optId of ids) {
+        const opt = cat?.options?.find(o => o.id === optId)
+        if (opt?.text) parts.push(opt.text)
+      }
+    }
+    for (const catId of HEAD) take(catId)
     const baseTrim = String(base || '').trim()
     if (baseTrim) parts.push(baseTrim)
-    for (const catId of [...new Set([...promptExtraCategories.map(c => c.id), ...PROMPT_EXTRA_ORDER])]) {
+    for (const catId of extraOrder) {
+      if (HEAD.includes(catId)) continue
       const picked = promptExtras[catId]
       if (!picked) continue
       const ids = Array.isArray(picked) ? picked : [picked]
