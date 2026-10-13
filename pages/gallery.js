@@ -186,6 +186,23 @@ const PROMPT_EXTRA_CATEGORIES = [
     ],
   },
   {
+    id: 'nationality',
+    label: 'Nationality',
+    options: [
+      { id: 'american', label: 'American', text: 'American' },
+      { id: 'latina', label: 'Latina', text: 'Latina' },
+      { id: 'brazilian', label: 'Brazilian', text: 'Brazilian' },
+      { id: 'european', label: 'European', text: 'European' },
+      { id: 'asian', label: 'Asian', text: 'Asian' },
+      { id: 'korean', label: 'Korean', text: 'Korean' },
+      { id: 'japanese', label: 'Japanese', text: 'Japanese' },
+      { id: 'indian', label: 'Indian', text: 'Indian' },
+      { id: 'middle_eastern', label: 'Middle Eastern', text: 'Middle Eastern' },
+      { id: 'african', label: 'African', text: 'African' },
+      { id: 'mixed', label: 'Mixed', text: 'mixed ethnicity' },
+    ],
+  },
+  {
     id: 'card_design',
     label: 'Card design',
     options: [
@@ -237,9 +254,10 @@ const PROMPT_EXTRA_CATEGORIES = [
     ],
   },
 ]
-const MULTI_CATEGORIES = new Set(['pose','attire','scene'])
+const MULTI_CATEGORIES = new Set(['pose','attire','scene','nationality'])
+const MULTI_LIMIT = { nationality: 3 }
 const PROMPT_EXTRA_ORDER = [
-  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'pose', 'attire', 'scene', 'card_design',
+  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'pose', 'attire', 'scene', 'nationality', 'card_design',
 ]
 const CARD_TEXT_SIZES = [
   { id: 'small', label: 'Small', text: 'small text' },
@@ -1586,7 +1604,13 @@ export default function Gallery() {
       const next = { ...prev }
       if (MULTI_CATEGORIES.has(catId)) {
         const cur = Array.isArray(next[catId]) ? next[catId] : (next[catId] ? [next[catId]] : [])
-        next[catId] = cur.includes(optId) ? cur.filter(x => x !== optId) : [...cur, optId]
+        if (cur.includes(optId)) {
+          next[catId] = cur.filter(x => x !== optId)
+        } else {
+          const limit = MULTI_LIMIT[catId] || 0
+          if (limit && cur.length >= limit) return prev
+          next[catId] = [...cur, optId]
+        }
         if (!next[catId].length) delete next[catId]
       } else {
         if (next[catId] === optId) delete next[catId]
