@@ -1038,7 +1038,7 @@ const buildCardTextFragment = () => {
     const parts = []
     const baseTrim = String(base || '').trim()
     if (baseTrim) parts.push(baseTrim)
-    for (const catId of PROMPT_EXTRA_ORDER) {
+    for (const catId of [...new Set([...promptExtraCategories.map(c => c.id), ...PROMPT_EXTRA_ORDER])]) {
       const picked = promptExtras[catId]
       if (!picked) continue
       const ids = Array.isArray(picked) ? picked : [picked]

@@ -1712,7 +1712,7 @@ export default function Gallery() {
     const parts = []
     const baseTrim = String(base || '').trim()
     if (baseTrim) parts.push(baseTrim)
-    const extraOrder = [...promptExtraCategories.map(c => c.id), ...PROMPT_EXTRA_ORDER]
+    const extraOrder = [...new Set([...promptExtraCategories.map(c => c.id), ...PROMPT_EXTRA_ORDER])]
     for (const catId of extraOrder) {
       const picked = promptExtras[catId]
       if (!picked) continue
