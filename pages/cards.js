@@ -182,6 +182,20 @@ const PROMPT_EXTRA_CATEGORIES = [
     ],
   },
   {
+    id: 'expression',
+    label: 'Expression',
+    options: [
+      { id: 'smile', label: 'Smile', text: 'smiling' },
+      { id: 'serious', label: 'Serious', text: 'serious expression' },
+      { id: 'sultry', label: 'Sultry', text: 'sultry look' },
+      { id: 'surprised', label: 'Surprised', text: 'surprised expression' },
+      { id: 'laughing', label: 'Laughing', text: 'laughing' },
+      { id: 'wink', label: 'Wink', text: 'winking' },
+      { id: 'biting_lip', label: 'Biting lip', text: 'biting her lip' },
+      { id: 'eyes_closed', label: 'Eyes closed', text: 'eyes closed' },
+    ],
+  },
+  {
     id: 'card_design',
     label: 'Card design',
     options: [
@@ -234,10 +248,10 @@ const PROMPT_EXTRA_CATEGORIES = [
   },
 ]
 
-const MULTI_CATEGORIES = new Set(['pose','attire','scene','nationality'])
+const MULTI_CATEGORIES = new Set(['pose','attire','scene','nationality','expression','expressions'])
 const MULTI_LIMIT = { nationality: 3 }
 const PROMPT_EXTRA_ORDER = [
-  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'pose', 'attire', 'scene', 'nationality', 'card_design',
+  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'pose', 'attire', 'scene', 'nationality', 'expression', 'card_design',
 ]
 
 const CARD_TEXT_SIZES = [
@@ -379,9 +393,7 @@ export default function Cards() {
   const [negative, setNegative] = useState(DEFAULT_NEGATIVE)
   const [size, setSize] = useState('768*1024')
   const [artStylesList, setArtStylesList] = useState(ART_STYLES)
-  const [artStyle, setArtStyle] = useState(
-    (ART_STYLES.find(s => /fortnite/i.test(s.label)) || ART_STYLES[1]).value
-  )
+  const [artStyle, setArtStyle] = useState('')
   // prompt extras: categoryId -> optionId (or null)
   const [promptExtraCategories, setPromptExtraCategories] = useState(PROMPT_EXTRA_CATEGORIES)
   const [promptExtras, setPromptExtras] = useState({})
@@ -471,10 +483,7 @@ export default function Cards() {
         setArtStylesList(styles)
         const def = data?.default_art_style
         if (def != null && styles.some(s => s.value === def)) setArtStyle(def)
-        else {
-          const ft = styles.find(s => /fortnite/i.test(s.label))
-          if (ft) setArtStyle(ft.value)
-        }
+        else setArtStyle('')
         if (Array.isArray(data?.prompt_extra_categories) && data.prompt_extra_categories.length) {
           const have = new Set(data.prompt_extra_categories.map(c => c.id))
           const merged = [...data.prompt_extra_categories, ...PROMPT_EXTRA_CATEGORIES.filter(c => !have.has(c.id))]

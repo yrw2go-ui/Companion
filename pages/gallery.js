@@ -203,6 +203,20 @@ const PROMPT_EXTRA_CATEGORIES = [
     ],
   },
   {
+    id: 'expression',
+    label: 'Expression',
+    options: [
+      { id: 'smile', label: 'Smile', text: 'smiling' },
+      { id: 'serious', label: 'Serious', text: 'serious expression' },
+      { id: 'sultry', label: 'Sultry', text: 'sultry look' },
+      { id: 'surprised', label: 'Surprised', text: 'surprised expression' },
+      { id: 'laughing', label: 'Laughing', text: 'laughing' },
+      { id: 'wink', label: 'Wink', text: 'winking' },
+      { id: 'biting_lip', label: 'Biting lip', text: 'biting her lip' },
+      { id: 'eyes_closed', label: 'Eyes closed', text: 'eyes closed' },
+    ],
+  },
+  {
     id: 'card_design',
     label: 'Card design',
     options: [
@@ -254,10 +268,10 @@ const PROMPT_EXTRA_CATEGORIES = [
     ],
   },
 ]
-const MULTI_CATEGORIES = new Set(['pose','attire','scene','nationality'])
+const MULTI_CATEGORIES = new Set(['pose','attire','scene','nationality','expression','expressions'])
 const MULTI_LIMIT = { nationality: 3 }
 const PROMPT_EXTRA_ORDER = [
-  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'pose', 'attire', 'scene', 'nationality', 'card_design',
+  'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'pose', 'attire', 'scene', 'nationality', 'expression', 'card_design',
 ]
 const CARD_TEXT_SIZES = [
   { id: 'small', label: 'Small', text: 'small text' },
@@ -546,9 +560,7 @@ export default function Gallery() {
   const [loraTrigger, setLoraTrigger] = useState('')
   const [createMaxImages, setCreateMaxImages] = useState(4)
   const [artStylesList, setArtStylesList] = useState(ART_STYLES)
-  const [createArtStyle, setCreateArtStyle] = useState(
-    (ART_STYLES.find(s => /fortnite/i.test(s.label)) || ART_STYLES[1]).value
-  )
+  const [createArtStyle, setCreateArtStyle] = useState('')
   const [promptExtraCategories, setPromptExtraCategories] = useState(PROMPT_EXTRA_CATEGORIES)
   const [promptExtras, setPromptExtras] = useState({})
 
@@ -558,8 +570,6 @@ export default function Gallery() {
       if (saved.artStyles?.length) {
         const styles = saved.artStyles.map(s => ({ label: s.label, value: s.prompt || '' }))
         setArtStylesList(styles)
-        const fort = styles.find(s => /fortnite/i.test(s.label))
-        if (fort) setCreateArtStyle(fort.value)
       }
       if (saved.prompts?.negative) setNegative(saved.prompts.negative)
       if (saved.promptExtras?.length) setPromptExtraCategories(saved.promptExtras)
@@ -737,10 +747,7 @@ export default function Gallery() {
         setArtStylesList(styles)
         const def = data?.default_art_style
         if (def != null && styles.some(s => s.value === def)) setCreateArtStyle(def)
-        else {
-          const ft = styles.find(s => /fortnite/i.test(s.label))
-          if (ft) setCreateArtStyle(ft.value)
-        }
+        else setCreateArtStyle('')
         if (Array.isArray(data?.prompt_extra_categories) && data.prompt_extra_categories.length) {
           const have = new Set(data.prompt_extra_categories.map(c => c.id))
           const merged = [...data.prompt_extra_categories, ...PROMPT_EXTRA_CATEGORIES.filter(c => !have.has(c.id))]
@@ -3914,7 +3921,7 @@ export default function Gallery() {
               ))}
             </select>
             <p className="text-[10px] text-gray-600 mb-3">
-              Appended to the end of your prompt on generate. Editable in Settings · default is Fortnite Style.
+              Appended to the end of your prompt on generate. Editable in Settings · default is None.
             </p>
 
             {/* Prompt extras — same as card creation */}
