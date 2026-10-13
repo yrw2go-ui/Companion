@@ -727,6 +727,7 @@ export default function Gallery() {
   const [cleaningSupport, setCleaningSupport] = useState(false)
   const [editPrompt, setEditPrompt] = useState('')
   const [savingPrompt, setSavingPrompt] = useState(false)
+  const [topMenuOpen, setTopMenuOpen] = useState(false)
   const [showResetModal, setShowResetModal] = useState(false)
   const [resetConfirmText, setResetConfirmText] = useState('')
   const [resetting, setResetting] = useState(false)
@@ -3495,49 +3496,34 @@ export default function Gallery() {
         <h1 className="text-xl font-bold">Gallery</h1>
         <button onClick={() => router.push('/media')} className="text-pink-400 hover:text-pink-300 text-sm font-semibold ml-2">Media</button>
         <button onClick={() => router.push('/cards')} className="text-gray-400 hover:text-white text-sm ml-2">Cards</button>
-        <div className="flex gap-2 flex-wrap justify-end">
-          <button onClick={downloadAll} disabled={bulkBusy} className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 py-2 text-sm font-semibold" title="Download all media">
-            ⬇ All
-          </button>
-          <button
-            type="button"
-            onClick={() => { setShowResetModal(true); setResetConfirmText(''); setResetStatus('') }}
-            disabled={resetting}
-            className="bg-red-950 hover:bg-red-900 disabled:opacity-50 rounded-full px-3 py-2 text-sm font-semibold text-red-300"
-            title="Reset all data + storage (keeps Main Banner, +media, Misc Beauties folders)"
-          >
-            🗑 Reset
-          </button>
-          <button onClick={() => setShowT2V(true)} className="bg-gray-800 hover:bg-gray-700 rounded-full px-3 py-2 text-sm font-semibold" title="Video from text">
-            🎬 Text
-          </button>
-          <button
-            type="button"
-            disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
-            className="bg-emerald-800 hover:bg-emerald-700 disabled:opacity-50 rounded-full px-3 py-2 text-sm font-semibold"
-            title="Upload images or videos to Gallery"
-          >
-            {uploading ? '…' : '⬆ Upload'}
-          </button>
-          <button
-            type="button"
-            disabled={fetchingOrphans}
-            onClick={fetchOrphansIntoGallery}
-            className="bg-amber-900 hover:bg-amber-800 disabled:opacity-50 rounded-full px-3 py-2 text-sm font-semibold"
-            title="Find storage files missing from Gallery and import them"
-          >
-            {fetchingOrphans ? '…' : 'Fetch'}
-          </button>
-          <button
-            type="button"
-            disabled={cleaningSupport || fetchingOrphans}
-            onClick={cleanUnusedThumbsPosters}
-            className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-full px-3 py-2 text-sm font-semibold border border-gray-600"
-            title="Delete unused thumb_* and poster_* files from storage"
-          >
-            {cleaningSupport ? '…' : 'Clean thumbs'}
-          </button>
+        <div className="flex gap-2 items-center justify-end">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setTopMenuOpen(v => !v)}
+              className="bg-gray-800 hover:bg-gray-700 rounded-full w-9 h-9 text-lg font-bold"
+              title="More"
+            >⋯</button>
+            {topMenuOpen && (
+              <>
+                <button type="button" className="fixed inset-0 z-40" onClick={() => setTopMenuOpen(false)} />
+                <div className="absolute right-0 top-11 z-50 w-44 bg-gray-900 border border-gray-700 rounded-xl shadow-xl overflow-hidden">
+                  <button type="button" disabled={bulkBusy} onClick={() => { setTopMenuOpen(false); downloadAll() }}
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-800 disabled:opacity-50">⬇ Download all</button>
+                  <button type="button" onClick={() => { setTopMenuOpen(false); setShowT2V(true) }}
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-800">🎬 Text to video</button>
+                  <button type="button" disabled={uploading} onClick={() => { setTopMenuOpen(false); fileInputRef.current?.click() }}
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-800 disabled:opacity-50">{uploading ? 'Uploading…' : '⬆ Upload'}</button>
+                  <button type="button" disabled={fetchingOrphans} onClick={() => { setTopMenuOpen(false); fetchOrphansIntoGallery() }}
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-800 disabled:opacity-50">{fetchingOrphans ? 'Fetching…' : 'Fetch orphans'}</button>
+                  <button type="button" disabled={cleaningSupport || fetchingOrphans} onClick={() => { setTopMenuOpen(false); cleanUnusedThumbsPosters() }}
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-800 disabled:opacity-50">{cleaningSupport ? 'Cleaning…' : 'Clean thumbs'}</button>
+                  <button type="button" disabled={resetting} onClick={() => { setTopMenuOpen(false); setShowResetModal(true); setResetConfirmText(''); setResetStatus('') }}
+                    className="w-full text-left px-3 py-2.5 text-sm text-red-300 hover:bg-red-950 disabled:opacity-50">🗑 Reset all</button>
+                </div>
+              </>
+            )}
+          </div>
           <input
             ref={fileInputRef}
             type="file"
