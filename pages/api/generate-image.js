@@ -117,12 +117,21 @@ export default async function handler(req, res) {
     ? [primaryRef, ...extraRefs.filter(u => u !== primaryRef)].slice(0, refCap)
     : []
 
-  // A reference image means image-to-image. Use the explicit edit model if
-  // one was passed (e.g. Seedream edit), else default to Wan edit.
+  // Never swap the model the user picked. Seedream text-to-image ids with a
+  // reference become the matching Seedream edit id. Wan is only used when the
+  // user actually chose Wan, or when no model was sent at all.
   const isEdit = allRefs.length > 0
-  const useModel = isEdit
-    ? (model && (model.includes('edit') || model.includes('/edit')) ? model : 'alibaba/wan-2.7-pro/image-edit')
-    : (model || DEFAULT_MODEL)
+  const seedreamEditOf = (id) => {
+    const s = String(id || '')
+    if (s.includes('seedream-v5.0-pro') && !s.includes('/edit')) return 'bytedance/seedream-v5.0-pro/edit'
+    if (s.includes('seedream-v5.0-lite') && !s.includes('/edit')) return 'bytedance/seedream-v5.0-lite/edit'
+    if (s.includes('seedream-v4') && !s.includes('/edit')) return 'bytedance/seedream-v4/edit'
+    return s
+  }
+  const requested = String(model || '').trim()
+  const useModel = requested
+    ? (isEdit ? seedreamEditOf(requested) : requested)
+    : (isEdit ? 'bytedance/seedream-v5.0-pro/edit' : DEFAULT_MODEL)
 
   let body
   let usedSeed = null
