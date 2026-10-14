@@ -3247,6 +3247,16 @@ export default function Gallery() {
     setPickMode(true)
   }
 
+  const movePickedToFolder = async (folderId) => {
+    const items = shown.filter(item => picked[item.key])
+    if (!items.length) { alert('Select some items first'); return }
+    for (const item of items) {
+      await assignFolder(item, folderId || null)
+    }
+    setPicked({})
+    setPickMode(false)
+  }
+
   const remove = async (item) => {
     if (item.source === 'cards') {
       alert('This is card art. Delete or replace it from the Cards page.')
@@ -3823,7 +3833,20 @@ export default function Gallery() {
               setPicked(next)
             }} className="px-2 py-1 rounded-lg bg-gray-800 text-xs font-semibold">All</button>
             <button type="button" onClick={() => setPicked({})} className="px-2 py-1 rounded-lg bg-gray-800 text-xs font-semibold">None</button>
-            <button type="button" onClick={deletePicked} className="ml-auto px-3 py-1 rounded-lg bg-red-800 text-xs font-semibold">🗑 Delete</button>
+            <select
+              value=""
+              onChange={e => {
+                const v = e.target.value
+                if (!v) return
+                movePickedToFolder(v === 'unfiled' ? null : v)
+              }}
+              className="ml-auto bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs outline-none"
+            >
+              <option value="">Move to…</option>
+              <option value="unfiled">Unfiled</option>
+              {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+            <button type="button" onClick={deletePicked} className="px-3 py-1 rounded-lg bg-red-800 text-xs font-semibold">🗑 Delete</button>
             <button type="button" onClick={exitPick} className="px-2 py-1 rounded-lg text-xs text-gray-400">Done</button>
           </div>
         )}
@@ -5103,7 +5126,7 @@ export default function Gallery() {
                     {copiedUrl ? 'Copied' : 'Copy'}
                   </button>
                 </div>
-                <p className="text-[10px] text-gray-600 font-mono break-all leading-snug">{selected.url}</p>
+                <p className="hidden">{selected.url}</p>
                 <button onClick={() => downloadItem(selected)}
                   className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-3">
                   ⬇ Download {selected.type === 'video' ? 'video' : 'image'}
