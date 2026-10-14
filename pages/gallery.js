@@ -623,6 +623,8 @@ export default function Gallery() {
   const [createArtStyle, setCreateArtStyle] = useState('')
   const [promptExtraCategories, setPromptExtraCategories] = useState(PROMPT_EXTRA_CATEGORIES)
   const [promptExtras, setPromptExtras] = useState({})
+  const chipPrefixRef = useRef('')
+  const userPromptRef = useRef('')
 
   useEffect(() => {
     supabase.from('app_config').select('data').eq('id', 1).maybeSingle().then(({ data }) => {
@@ -1669,6 +1671,14 @@ export default function Gallery() {
     setLoading(false)
   }
 
+  const chipTextOf = (extras) => composePromptWithExtras('', extras).trim()
+  const applyChipsToPrompt = (extras) => {
+    const chips = chipTextOf(extras)
+    const user = userPromptRef.current.trim()
+    const next = [chips, user].filter(Boolean).join(', ')
+    chipPrefixRef.current = chips
+    setPrompt(next)
+  }
   const togglePromptExtra = (catId, optId) => {
     setPromptExtras(prev => {
       const next = { ...prev }
@@ -1686,6 +1696,7 @@ export default function Gallery() {
         if (next[catId] === optId) delete next[catId]
         else next[catId] = optId
       }
+      applyChipsToPrompt(next)
       return next
     })
   }
@@ -1693,6 +1704,7 @@ export default function Gallery() {
     setPromptExtras({})
     setCardTextOn(false)
     setCardTextContent('')
+    applyChipsToPrompt({})
   }
 
   const saveCustomChipToCategory = async () => {
@@ -1802,14 +1814,15 @@ export default function Gallery() {
     const color = CARD_TEXT_COLORS.find(s => s.id === cardTextColor)?.text || 'white'
     return `${size} reading "${cardTextContent.trim()}" in ${color} ${font} ${pos}`
   }
-  const composePromptWithExtras = (base) => {
+  const composePromptWithExtras = (base, extras) => {
+    const src = extras || promptExtras
     const parts = []
     const HEAD = ['female']
     const TAIL = ['pose','scene','lighting','card_design']
     const seen = new Set([...promptExtraCategories.map(c => c.id), ...PROMPT_EXTRA_ORDER])
     const extraOrder = [...HEAD.filter(id => seen.has(id)), ...[...seen].filter(id => !HEAD.includes(id) && !TAIL.includes(id)), ...TAIL.filter(id => seen.has(id))]
     const take = (catId) => {
-      const picked = promptExtras[catId]
+      const picked = src[catId]
       if (!picked) return
       const ids = Array.isArray(picked) ? picked : [picked]
       const cat = promptExtraCategories.find(c => c.id === catId)
@@ -1914,8 +1927,7 @@ export default function Gallery() {
       const fam = imgFamilyOf(snap.model)
       const maxR = createMaxRefs(snap.model)
       const refUrls = snap.refs.slice(0, maxR)
-      const composed = composePromptWithExtras(snap.prompt)
-      const finalPrompt = withStyle(composed || snap.prompt, snap.artStyle)
+      const finalPrompt = withStyle(snap.prompt, snap.artStyle)
       const useNeg = isStylizedArt(snap.artStyle)
         ? [snap.negative, STYLIZED_NEG].filter(Boolean).join(', ')
         : snap.negative
@@ -1981,7 +1993,7 @@ export default function Gallery() {
           seed: data.seed,
           size: data.size,
           character_id: snap.charId || null,
-          model: snap.model,
+          model: data.model || snap.model,
         }, urls.length > 1 ? `Image ${ui + 1}/${urls.length}` : 'Your image')
       }
 
@@ -4007,7 +4019,14 @@ export default function Gallery() {
             )}
 
             <label className="block text-xs text-gray-400 mb-1">Prompt</label>
-            <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={5}
+            <textarea value={prompt} onChange={e => {
+              const v = e.target.value
+              const chips = chipPrefixRef.current
+              let user = v
+              if (chips && v.startsWith(chips)) user = v.slice(chips.length).replace(/^,\s*/, '')
+              userPromptRef.current = user
+              setPrompt(v)
+            }} rows={5}
               placeholder="describe the image..."
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500" />
 
@@ -4211,15 +4230,7 @@ export default function Gallery() {
                   </div>
                 )}
               </div>
-              {(Object.keys(promptExtras).length > 0 || (cardTextOn && cardTextContent.trim())) && (
-                <div className="mt-3 p-2 rounded-lg bg-gray-950 border border-gray-800">
-                  <p className="text-[9px] text-gray-500 mb-1">Final prompt preview</p>
-                  <p className="text-[11px] text-gray-300 leading-relaxed break-words">
-                    {composePromptWithExtras(prompt) || '(add a base prompt)'}
-                    {createArtStyle ? <span className="text-purple-400">, [art style]</span> : null}
-                  </p>
-                </div>
-              )}
+
             </div>
 
             {(imgFamilyOf(createModel) === 'flux' || imgFamilyOf(createModel) === 'schnell') && (
