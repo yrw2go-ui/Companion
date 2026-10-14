@@ -404,6 +404,44 @@ const i2iModelOf = (modelId) => I2I_MODELS.find(m => m.id === modelId) || I2I_MO
 const i2iMaxRefs = (modelId) => i2iModelOf(modelId).maxRefs || 1
 const i2iSizesOf = (modelId) => i2iModelOf(modelId).sizes || I2I_SIZES_PIXEL
 const i2iDefaultSize = (modelId) => i2iModelOf(modelId).defaultSize || i2iSizesOf(modelId)[0]?.value
+const ALL_I2I_SIZES = (() => {
+  const seen = new Set()
+  const out = []
+  for (const list of [I2I_SIZES_PIXEL, I2I_SIZES_SEEDREAM, I2I_SIZES_GROK]) {
+    for (const s of list) {
+      if (seen.has(s.value)) continue
+      seen.add(s.value)
+      out.push(s)
+    }
+  }
+  return out
+})()
+const ratioOf = (value) => {
+  if (!value) return null
+  const v = String(value)
+  if (v.includes('|')) {
+    const [a] = v.split('|')
+    const [w, h] = a.split(':').map(Number)
+    return w && h ? w / h : null
+  }
+  const parts = v.replace(/x/gi, '*').split('*').map(Number)
+  return parts[0] && parts[1] ? parts[0] / parts[1] : null
+}
+const closestSize = (modelId, sourceSize) => {
+  const opts = i2iSizesOf(modelId)
+  if (!opts.length) return i2iDefaultSize(modelId)
+  const target = ratioOf(sourceSize)
+  if (!target) return i2iDefaultSize(modelId)
+  let best = opts[0]
+  let bestDiff = Infinity
+  for (const o of opts) {
+    const r = ratioOf(o.value)
+    if (!r) continue
+    const d = Math.abs(Math.log(r) - Math.log(target))
+    if (d < bestDiff) { bestDiff = d; best = o }
+  }
+  return best.value
+}
 
 // small helper to render a price, or an honest "not listed" note
 const priceLabel = (model, resolution) => {
@@ -452,6 +490,8 @@ export default function Gallery() {
   const [gSearch, setGSearch] = useState('')
   const [favOnly, setFavOnly] = useState(false)
   const [selected, setSelected] = useState(null)
+  const [detailFull, setDetailFull] = useState(false)
+  const swipeRef = useRef(null)
   const [pickMode, setPickMode] = useState(false)
   const [picked, setPicked] = useState({})
   const holdTimer = useRef(null)
@@ -2574,7 +2614,7 @@ export default function Gallery() {
     setPickRefSlot(null)
     setTransformPrompt('')
     setTransformModel(model)
-    setTransformSize(i2iDefaultSize(model))
+    setTransformSize(closestSize(model, item.size))
     setSelected(null)
     setShowTransform(true)
   }
@@ -3140,6 +3180,30 @@ export default function Gallery() {
   }
 
 
+  const stepSelected = (dir) => {
+    if (!selected) return
+    const idx = shown.findIndex(m => m.key === selected.key)
+    if (idx < 0) return
+    const next = shown[idx + dir]
+    if (next) setSelected(next)
+  }
+  const onSwipeStart = (e) => {
+    const x = e.touches?.[0]?.clientX
+    if (x == null) return
+    swipeRef.current = { x, y: e.touches[0].clientY }
+  }
+  const onSwipeEnd = (e) => {
+    const start = swipeRef.current
+    swipeRef.current = null
+    if (!start) return
+    const t = e.changedTouches?.[0]
+    if (!t) return
+    const dx = t.clientX - start.x
+    const dy = t.clientY - start.y
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return
+    stepSelected(dx < 0 ? 1 : -1)
+  }
+
   const exitPick = () => { setPickMode(false); setPicked({}) }
   const startHold = (item) => {
     suppressClick.current = false
@@ -3162,7 +3226,7 @@ export default function Gallery() {
       })
       return
     }
-    setSelected(item)
+    setDetailFull(false); setSelected(item)
   }
   const selectAllShown = () => {
     const next = {}
@@ -4565,9 +4629,7 @@ export default function Gallery() {
                 setTransformModel(next)
                 const allow = Math.max(0, i2iMaxRefs(next) - 1)
                 setTransformRefs(prev => prev.slice(0, allow))
-                const opts = i2iSizesOf(next)
-                const def = i2iDefaultSize(next)
-                setTransformSize(opts.some(o => o.value === transformSize) ? transformSize : def)
+                setTransformSize(closestSize(next, transformSource?.size))
               }}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-purple-500"
             >
@@ -4586,17 +4648,26 @@ export default function Gallery() {
               value={
                 i2iSizesOf(transformModel).some(o => o.value === transformSize)
                   ? transformSize
-                  : i2iDefaultSize(transformModel)
+                  : closestSize(transformModel, transformSource?.size)
               }
-              onChange={e => setTransformSize(e.target.value)}
+              onChange={e => {
+                const v = e.target.value
+                if (!i2iSizesOf(transformModel).some(o => o.value === v)) return
+                setTransformSize(v)
+              }}
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-1 outline-none focus:border-purple-500"
             >
-              {i2iSizesOf(transformModel).map(s => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
+              {ALL_I2I_SIZES.map(s => {
+                const ok = i2iSizesOf(transformModel).some(o => o.value === s.value)
+                return (
+                  <option key={s.value} value={s.value} disabled={!ok} className={ok ? '' : 'text-gray-600'}>
+                    {ok ? s.label : `${s.label} (not for this model)`}
+                  </option>
+                )
+              })}
             </select>
             <p className="text-[10px] text-gray-600 mb-3">
-              Options depend on the model. Grok uses aspect + resolution; Seedream / Wan use pixel size.
+              Grayed sizes are locked for this model. Defaults to the image ratio when that model supports it.
             </p>
 
             <label className="block text-xs text-gray-400 mb-1">What should change?</label>
@@ -4896,7 +4967,7 @@ export default function Gallery() {
       {selected && (
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
           <div className="w-full max-w-md my-8" onClick={e => e.stopPropagation()}>
-            <div className="relative">
+            <div className="relative" onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}>
               {selected.type === 'image' ? (
                 <img src={selected.url} alt="" className="w-full rounded-2xl" />
               ) : selected.type === 'model' ? (
@@ -4913,6 +4984,27 @@ export default function Gallery() {
               )}
               <button
                 type="button"
+                onClick={() => setDetailFull(true)}
+                className="absolute top-3 right-3 z-10 w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 border border-white/30 text-white text-sm font-bold leading-none flex items-center justify-center shadow-lg"
+                title="Full screen"
+                aria-label="Full screen"
+              >
+                ⛶
+              </button>
+              <button
+                type="button"
+                onClick={() => stepSelected(-1)}
+                className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/50 text-white text-lg"
+                aria-label="Previous"
+              >‹</button>
+              <button
+                type="button"
+                onClick={() => stepSelected(1)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/50 text-white text-lg"
+                aria-label="Next"
+              >›</button>
+              <button
+                type="button"
                 onClick={() => setSelected(null)}
                 className="absolute bottom-3 right-3 z-10 w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 border border-white/30 text-white text-lg font-bold leading-none flex items-center justify-center shadow-lg"
                 title="Close"
@@ -4921,6 +5013,29 @@ export default function Gallery() {
                 ×
               </button>
             </div>
+            {detailFull && (
+              <div
+                className="fixed inset-0 z-[70] bg-black flex items-center justify-center"
+                onTouchStart={onSwipeStart}
+                onTouchEnd={onSwipeEnd}
+              >
+                {selected.type === 'image' ? (
+                  <img src={selected.url} alt="" className="max-w-full max-h-full object-contain" />
+                ) : selected.type === 'video' ? (
+                  <video src={selected.url} controls autoPlay loop playsInline className="max-w-full max-h-full" />
+                ) : (
+                  <img src={selected.url} alt="" className="max-w-full max-h-full object-contain" />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDetailFull(false)}
+                  className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/70 border border-white/30 text-white text-xl font-bold"
+                  aria-label="Exit full screen"
+                >×</button>
+                <button type="button" onClick={() => stepSelected(-1)} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white text-2xl">‹</button>
+                <button type="button" onClick={() => stepSelected(1)} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white text-2xl">›</button>
+              </div>
+            )}
 
             {selected.source === 'gallery_media' && (
               <button onClick={() => toggleFavorite(selected)}
