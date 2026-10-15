@@ -493,6 +493,8 @@ export default function Gallery() {
   const [selected, setSelected] = useState(null)
   const [detailFull, setDetailFull] = useState(false)
   const swipeRef = useRef(null)
+  const lastTapRef = useRef({ key: '', t: 0 })
+  const lastFullTapRef = useRef(0)
   const [pickMode, setPickMode] = useState(false)
   const [picked, setPicked] = useState({})
   const holdTimer = useRef(null)
@@ -663,6 +665,14 @@ export default function Gallery() {
   // Extra refs beyond the main image (slots 2–4). Length capped by model maxRefs − 1.
   const [transformRefs, setTransformRefs] = useState([]) // array of gallery items or { url }
   const [transformPrompt, setTransformPrompt] = useState('')
+  const DEFAULT_TF_CHIPS = [
+    'Unattired','sultry look','braces','film grain','soft focus','kneeling','standing','butt out','sultry pose','semi-closeup','closeup','upper body view','pussy focus','high camera angle','low camera angle','booty focus','remove jewelry/accessories','barefoot','Converse','Nikes','eyeliner','makeup','mascara','perky areolas',
+  ]
+  const [tfChips, setTfChips] = useState(DEFAULT_TF_CHIPS)
+  const [tfPicked, setTfPicked] = useState([])
+  const [tfChipEdit, setTfChipEdit] = useState(null)
+  const [tfChipDraft, setTfChipDraft] = useState('')
+  const [tfAdding, setTfAdding] = useState(false)
   const [transformModel, setTransformModel] = useState('bytedance/seedream-v5.0-pro/edit')
   const [transformSize, setTransformSize] = useState(() => i2iDefaultSize('bytedance/seedream-v5.0-pro/edit'))
   const [transformJobs, setTransformJobs] = useState(0) // allow multiple edits at once
@@ -2649,12 +2659,36 @@ export default function Gallery() {
   // clear the copied indicator whenever the detail selection changes
   // (kept simple: reset on close/open via the button timeout is enough)
 
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('tf_quick_chips') || 'null')
+      if (Array.isArray(saved) && saved.length) setTfChips(saved)
+    } catch {}
+  }, [])
+  const saveTfChips = (next) => {
+    setTfChips(next)
+    try { localStorage.setItem('tf_quick_chips', JSON.stringify(next)) } catch {}
+  }
+  const toggleTfChip = (label) => {
+    setTfPicked(prev => {
+      const on = prev.includes(label)
+      if (on) {
+        setTransformPrompt(p => p.replace(new RegExp(',?\\s*' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').replace(/^,\s*|\s*,\s*$/g, '').replace(/,\s*,/g, ', ').trim())
+        return prev.filter(x => x !== label)
+      }
+      if (prev.length >= 10) { alert('Up to 10 at a time'); return prev }
+      setTransformPrompt(p => p.trim() ? `${p.trim()}, ${label}` : label)
+      return [...prev, label]
+    })
+  }
+
   const openTransform = (item) => {
     const model = 'bytedance/seedream-v5.0-pro/edit'
     setTransformSource(item)
     setTransformRefs([])
     setPickRefSlot(null)
     setTransformPrompt('')
+    setTfPicked([])
     setTransformModel(model)
     setTransformSize(closestSize(model, item.size))
     setSelected(null)
@@ -3268,7 +3302,26 @@ export default function Gallery() {
       })
       return
     }
-    setDetailFull(false); setSelected(item)
+    const now = Date.now()
+    const last = lastTapRef.current
+    if (last.key === item.key && now - last.t < 320) {
+      lastTapRef.current = { key: '', t: 0 }
+      setSelected(item)
+      setDetailFull(true)
+      return
+    }
+    lastTapRef.current = { key: item.key, t: now }
+    setDetailFull(false)
+    setSelected(item)
+  }
+  const onFullTap = () => {
+    const now = Date.now()
+    if (now - lastFullTapRef.current < 320) {
+      lastFullTapRef.current = 0
+      setDetailFull(false)
+      return
+    }
+    lastFullTapRef.current = now
   }
   const selectAllShown = () => {
     const next = {}
@@ -4763,7 +4816,60 @@ export default function Gallery() {
             <label className="block text-xs text-gray-400 mb-1">What should change?</label>
             <textarea value={transformPrompt} onChange={e => setTransformPrompt(e.target.value)} rows={4}
               placeholder="e.g. change the background to a sunlit beach; keep the person exactly the same"
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 outline-none focus:border-purple-500" />
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-purple-500" />
+
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] text-gray-500">Quick prompts · {tfPicked.length}/10</span>
+                <button type="button" onClick={() => { setTfAdding(true); setTfChipDraft('') }} className="text-[10px] text-pink-400">+ add</button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {tfChips.map((label, i) => {
+                  const on = tfPicked.includes(label)
+                  return (
+                    <span key={label + i} className="inline-flex items-center">
+                      {tfChipEdit === i ? (
+                        <input
+                          value={tfChipDraft}
+                          onChange={e => setTfChipDraft(e.target.value)}
+                          onBlur={() => {
+                            const v = tfChipDraft.trim()
+                            setTfChipEdit(null)
+                            if (!v || v === label) return
+                            const next = tfChips.map((c, idx) => idx === i ? v : c)
+                            saveTfChips(next)
+                            setTfPicked(prev => prev.map(x => x === label ? v : x))
+                          }}
+                          onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                          autoFocus
+                          className="w-28 bg-black border border-pink-500 rounded-full px-2 py-0.5 text-[11px] outline-none"
+                        />
+                      ) : (
+                        <button type="button" onClick={() => toggleTfChip(label)}
+                          className={`text-[11px] px-2.5 py-1 rounded-l-full border ${on ? 'bg-purple-600 border-purple-500 text-white' : 'bg-gray-900 border-gray-700 text-gray-300'}`}>
+                          {label}
+                        </button>
+                      )}
+                      <button type="button" onClick={() => { setTfChipEdit(i); setTfChipDraft(label) }} className="text-[9px] px-1 text-gray-500 hover:text-pink-300" title="Edit">✎</button>
+                      <button type="button" onClick={() => { saveTfChips(tfChips.filter((_, idx) => idx !== i)); setTfPicked(prev => prev.filter(x => x !== label)) }} className="text-[9px] pr-1 text-gray-600 hover:text-red-400" title="Remove">×</button>
+                    </span>
+                  )
+                })}
+              </div>
+              {tfAdding && (
+                <div className="flex gap-2 mt-2">
+                  <input value={tfChipDraft} onChange={e => setTfChipDraft(e.target.value)} placeholder="New quick prompt"
+                    className="flex-1 bg-black border border-gray-700 rounded-lg px-2 py-1 text-xs outline-none focus:border-pink-500" />
+                  <button type="button" onClick={() => {
+                    const v = tfChipDraft.trim()
+                    if (!v) return
+                    saveTfChips([...tfChips, v])
+                    setTfChipDraft('')
+                    setTfAdding(false)
+                  }} className="px-2 py-1 rounded-lg bg-pink-600 text-xs">Save</button>
+                </div>
+              )}
+            </div>
 
             <div className="flex gap-2">
               <button
@@ -5108,6 +5214,8 @@ export default function Gallery() {
                 className="fixed inset-0 z-[70] bg-black flex items-center justify-center"
                 onTouchStart={onSwipeStart}
                 onTouchEnd={onSwipeEnd}
+                onClick={onFullTap}
+                onDoubleClick={() => setDetailFull(false)}
               >
                 {selected.type === 'image' ? (
                   <img src={selected.url} alt="" className="max-w-full max-h-full object-contain" />
