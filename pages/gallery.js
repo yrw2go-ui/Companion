@@ -667,7 +667,30 @@ export default function Gallery() {
   const [transformRefs, setTransformRefs] = useState([]) // array of gallery items or { url }
   const [transformPrompt, setTransformPrompt] = useState('')
   const DEFAULT_TF_CHIPS = [
-    'Unattired','sultry look','braces','film grain','soft focus','kneeling','standing','butt out','sultry pose','semi-closeup','closeup','upper body view','pussy focus','high camera angle','low camera angle','booty focus','remove jewelry/accessories','barefoot','Converse','Nikes','eyeliner','makeup','mascara','perky areolas',
+    { label: 'stand', text: 'standing' },
+    { label: 'kneel', text: 'kneeling' },
+    { label: 'butt out', text: 'butt out' },
+    { label: 'sultry', text: 'sultry look' },
+    { label: 'pose', text: 'sultry pose' },
+    { label: 'closeup', text: 'closeup' },
+    { label: 'semi-close', text: 'semi-closeup' },
+    { label: 'upper body', text: 'upper body view' },
+    { label: 'high angle', text: 'high camera angle' },
+    { label: 'low angle', text: 'low camera angle' },
+    { label: 'pussy', text: 'pussy focus' },
+    { label: 'booty', text: 'booty focus' },
+    { label: 'unattired', text: 'Unattired' },
+    { label: 'barefoot', text: 'barefoot' },
+    { label: 'braces', text: 'braces' },
+    { label: 'makeup', text: 'makeup' },
+    { label: 'eyeliner', text: 'eyeliner' },
+    { label: 'mascara', text: 'mascara' },
+    { label: 'areolas', text: 'perky areolas' },
+    { label: 'film grain', text: 'film grain' },
+    { label: 'soft focus', text: 'soft focus' },
+    { label: 'Converse', text: 'Converse' },
+    { label: 'Nikes', text: 'Nikes' },
+    { label: 'no jewelry', text: 'remove jewelry/accessories' },
   ]
   const [tfChips, setTfChips] = useState(DEFAULT_TF_CHIPS)
   const [tfPicked, setTfPicked] = useState([])
@@ -2665,23 +2688,24 @@ export default function Gallery() {
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tf_quick_chips') || 'null')
-      if (Array.isArray(saved) && saved.length) setTfChips(saved)
+      if (Array.isArray(saved) && saved.length && saved[0] && typeof saved[0] === 'object') setTfChips(saved)
     } catch {}
   }, [])
   const saveTfChips = (next) => {
     setTfChips(next)
     try { localStorage.setItem('tf_quick_chips', JSON.stringify(next)) } catch {}
   }
-  const toggleTfChip = (label) => {
+  const toggleTfChip = (chip) => {
+    const key = chip.text
     setTfPicked(prev => {
-      const on = prev.includes(label)
+      const on = prev.includes(key)
       if (on) {
-        setTransformPrompt(p => p.replace(new RegExp(',?\\s*' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').replace(/^,\s*|\s*,\s*$/g, '').replace(/,\s*,/g, ', ').trim())
-        return prev.filter(x => x !== label)
+        setTransformPrompt(p => p.replace(new RegExp(',?\\s*' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').replace(/^,\s*|\s*,\s*$/g, '').replace(/,\s*,/g, ', ').trim())
+        return prev.filter(x => x !== key)
       }
       if (prev.length >= 10) { alert('Up to 10 at a time'); return prev }
-      setTransformPrompt(p => p.trim() ? `${p.trim()}, ${label}` : label)
-      return [...prev, label]
+      setTransformPrompt(p => p.trim() ? `${p.trim()}, ${key}` : key)
+      return [...prev, key]
     })
   }
 
@@ -4840,10 +4864,12 @@ export default function Gallery() {
                 <button type="button" onClick={() => { setTfAdding(true); setTfChipDraft('') }} className="text-[10px] text-pink-400">+ add</button>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {tfChips.map((label, i) => {
-                  const on = tfPicked.includes(label)
+                {tfChips.map((chip, i) => {
+                  const label = chip.label || chip
+                  const text = chip.text || chip
+                  const on = tfPicked.includes(text)
                   return (
-                    <span key={label + i} className="inline-flex items-center">
+                    <span key={text + i} className="inline-flex items-center">
                       {tfChipEdit === i ? (
                         <input
                           value={tfChipDraft}
@@ -4851,23 +4877,22 @@ export default function Gallery() {
                           onBlur={() => {
                             const v = tfChipDraft.trim()
                             setTfChipEdit(null)
-                            if (!v || v === label) return
-                            const next = tfChips.map((c, idx) => idx === i ? v : c)
+                            if (!v) return
+                            const next = tfChips.map((c, idx) => idx === i ? { label: v, text: v } : c)
                             saveTfChips(next)
-                            setTfPicked(prev => prev.map(x => x === label ? v : x))
                           }}
                           onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                           autoFocus
-                          className="w-28 bg-black border border-pink-500 rounded-full px-2 py-0.5 text-[11px] outline-none"
+                          className="w-24 bg-black border border-pink-500 rounded-full px-2 py-0.5 text-[11px] outline-none"
                         />
                       ) : (
-                        <button type="button" onClick={() => toggleTfChip(label)}
+                        <button type="button" onClick={() => toggleTfChip({ label, text })}
                           className={`text-[11px] px-2.5 py-1 rounded-l-full border ${on ? 'bg-purple-600 border-purple-500 text-white' : 'bg-gray-900 border-gray-700 text-gray-300'}`}>
                           {label}
                         </button>
                       )}
                       <button type="button" onClick={() => { setTfChipEdit(i); setTfChipDraft(label) }} className="text-[9px] px-1 text-gray-500 hover:text-pink-300" title="Edit">✎</button>
-                      <button type="button" onClick={() => { saveTfChips(tfChips.filter((_, idx) => idx !== i)); setTfPicked(prev => prev.filter(x => x !== label)) }} className="text-[9px] pr-1 text-gray-600 hover:text-red-400" title="Remove">×</button>
+                      <button type="button" onClick={() => { saveTfChips(tfChips.filter((_, idx) => idx !== i)); setTfPicked(prev => prev.filter(x => x !== text)) }} className="text-[9px] pr-1 text-gray-600 hover:text-red-400" title="Remove">×</button>
                     </span>
                   )
                 })}
@@ -4879,7 +4904,7 @@ export default function Gallery() {
                   <button type="button" onClick={() => {
                     const v = tfChipDraft.trim()
                     if (!v) return
-                    saveTfChips([...tfChips, v])
+                    saveTfChips([...tfChips, { label: v, text: v }])
                     setTfChipDraft('')
                     setTfAdding(false)
                   }} className="px-2 py-1 rounded-lg bg-pink-600 text-xs">Save</button>
