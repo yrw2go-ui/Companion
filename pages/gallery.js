@@ -495,6 +495,7 @@ export default function Gallery() {
   const swipeRef = useRef(null)
   const lastTapRef = useRef({ key: '', t: 0 })
   const lastFullTapRef = useRef(0)
+  const tapTimerRef = useRef(null)
   const [pickMode, setPickMode] = useState(false)
   const [picked, setPicked] = useState({})
   const holdTimer = useRef(null)
@@ -3306,19 +3307,24 @@ export default function Gallery() {
     }
     const now = Date.now()
     const last = lastTapRef.current
-    if (last.key === item.key && now - last.t < 320) {
+    if (last.key === item.key && now - last.t < 300) {
+      clearTimeout(tapTimerRef.current)
       lastTapRef.current = { key: '', t: 0 }
       setSelected(item)
       setDetailFull(true)
       return
     }
     lastTapRef.current = { key: item.key, t: now }
-    setDetailFull(false)
-    setSelected(item)
+    clearTimeout(tapTimerRef.current)
+    tapTimerRef.current = setTimeout(() => {
+      setDetailFull(false)
+      setSelected(item)
+    }, 280)
   }
-  const onFullTap = () => {
+  const onFullTap = (e) => {
+    if (e.target.closest('button')) return
     const now = Date.now()
-    if (now - lastFullTapRef.current < 320) {
+    if (now - lastFullTapRef.current < 300) {
       lastFullTapRef.current = 0
       setDetailFull(false)
       return
@@ -5175,7 +5181,14 @@ export default function Gallery() {
       {selected && (
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
           <div className="w-full max-w-md my-8" onClick={e => e.stopPropagation()}>
-            <div className="relative" onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}>
+            <div className="relative" onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}
+              onDoubleClick={() => setDetailFull(true)}
+              onClick={(e) => {
+                if (e.target.closest('button')) return
+                const now = Date.now()
+                if (now - lastFullTapRef.current < 300) { setDetailFull(true); lastFullTapRef.current = 0 }
+                else lastFullTapRef.current = now
+              }}>
               {selected.type === 'image' ? (
                 <img src={selected.url} alt="" className="w-full rounded-2xl" />
               ) : selected.type === 'model' ? (
