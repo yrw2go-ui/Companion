@@ -80,6 +80,7 @@ const PROMPT_EXTRA_CATEGORIES = [
     label: 'Female',
     options: [
       { id: 'female', label: 'Female', text: 'female' },
+      { id: 'girl', label: 'Girl', text: 'girl' },
     ],
   },
   {
@@ -268,10 +269,10 @@ const PROMPT_EXTRA_CATEGORIES = [
   },
 ]
 
-const MULTI_CATEGORIES = new Set(['pose','attire','scene','lighting','nationality','expression','expressions'])
+const MULTI_CATEGORIES = new Set(['female','girl','pose','attire','scene','lighting','nationality','expression','expressions'])
 const MULTI_LIMIT = { nationality: 3 }
 const PROMPT_EXTRA_ORDER = [
-  'female', 'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'attire', 'nationality', 'expression', 'pose', 'scene', 'lighting', 'card_design',
+  'female', 'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'attire', 'nationality', 'expression', 'card_design', 'pose', 'scene', 'lighting',
 ]
 
 const CARD_TEXT_SIZES = [
@@ -417,6 +418,8 @@ export default function Cards() {
   // prompt extras: categoryId -> optionId (or null)
   const [promptExtraCategories, setPromptExtraCategories] = useState(PROMPT_EXTRA_CATEGORIES)
   const [promptExtras, setPromptExtras] = useState({})
+  const [editingCatId, setEditingCatId] = useState(null)
+  const [editCatLabel, setEditCatLabel] = useState('')
   const [customChipCat, setCustomChipCat] = useState('hair_color')
   const [customChipLabel, setCustomChipLabel] = useState('')
   const [customChipText, setCustomChipText] = useState('')
@@ -507,9 +510,11 @@ export default function Cards() {
         if (Array.isArray(data?.prompt_extra_categories) && data.prompt_extra_categories.length) {
           const have = new Set(data.prompt_extra_categories.map(c => c.id))
           const merged = [...data.prompt_extra_categories, ...PROMPT_EXTRA_CATEGORIES.filter(c => !have.has(c.id))]
-          const isFemale = c => c.id === 'female' || /female/i.test(c.label || '')
-          const pinned = [...merged.filter(isFemale), ...merged.filter(c => !isFemale(c))]
-          setPromptExtraCategories(pinned)
+          const norm = normalizeCategories(merged)
+          setPromptExtraCategories(norm)
+          if (JSON.stringify(norm) !== JSON.stringify(merged)) {
+            supabase.from('user_settings').upsert({ id: 1, prompt_extra_categories: norm }).then(() => {})
+          }
         }
       } catch (e) {
         console.warn('art styles load', e)
@@ -1008,6 +1013,31 @@ export default function Cards() {
 
 
   
+  const normalizeCategories = (cats) => {
+    const list = (cats || []).map(c => ({ ...c, options: [...(c.options || [])] }))
+    const isGirl = c => c.id === 'girl' || /^girls?$/i.test(c.label || '')
+    const isExpr = c => c.id === 'expressions' || /^expressions?$/i.test(c.label || '')
+    const female = list.find(c => c.id === 'female') || list.find(c => /female/i.test(c.label || ''))
+    const expr = list.find(c => c.id === 'expression') || list.find(c => /^expression$/i.test(c.label || ''))
+    const absorb = (into, from) => {
+      if (!into || !from || into === from) return
+      const have = new Set((into.options || []).map(o => o.id))
+      for (const o of from.options || []) if (!have.has(o.id)) into.options.push(o)
+    }
+    list.filter(isGirl).forEach(g => absorb(female, g))
+    list.filter(isExpr).forEach(e => { if (e !== expr) absorb(expr, e) })
+    const drop = new Set()
+    if (female) list.filter(isGirl).forEach(g => { if (g !== female) drop.add(g.id) })
+    if (expr) list.filter(isExpr).forEach(e => { if (e !== expr) drop.add(e.id) })
+    const kept = list.filter(c => !drop.has(c.id))
+    const HEAD = ['female']
+    const TAIL = ['pose','scene','lighting']
+    const rest = kept.filter(c => !HEAD.includes(c.id) && !TAIL.includes(c.id))
+    const head = HEAD.map(id => kept.find(c => c.id === id)).filter(Boolean)
+    const tail = TAIL.map(id => kept.find(c => c.id === id)).filter(Boolean)
+    return [...head, ...rest, ...tail]
+  }
+
   const persistCategories = async (nextCats) => {
     const { error } = await supabase.from('user_settings').upsert({
       id: 1,
@@ -1092,7 +1122,7 @@ const buildCardTextFragment = () => {
   const composePromptWithExtras = (base) => {
     const parts = []
     const HEAD = ['female']
-    const TAIL = ['pose','scene','lighting','card_design']
+    const TAIL = ['pose','scene','lighting']
     const seen = new Set([...promptExtraCategories.map(c => c.id), ...PROMPT_EXTRA_ORDER])
     const extraOrder = [...HEAD.filter(id => seen.has(id)), ...[...seen].filter(id => !HEAD.includes(id) && !TAIL.includes(id)), ...TAIL.filter(id => seen.has(id))]
     const take = (catId) => {
@@ -1105,11 +1135,9 @@ const buildCardTextFragment = () => {
         if (opt?.text) parts.push(opt.text)
       }
     }
-    for (const catId of HEAD) take(catId)
     const baseTrim = String(base || '').trim()
     if (baseTrim) parts.push(baseTrim)
     for (const catId of extraOrder) {
-      if (HEAD.includes(catId)) continue
       const picked = promptExtras[catId]
       if (!picked) continue
       const ids = Array.isArray(picked) ? picked : [picked]
@@ -2856,12 +2884,33 @@ const buildCardTextFragment = () => {
                         Tap a chip to use it. Pink <span className="text-pink-400 font-bold">+</span> adds a permanent option to that category.
                       </p>
 
-                      {promptExtraCategories.map(cat => (
+                      {normalizeCategories(promptExtraCategories).map(cat => (
                         <div key={cat.id} className="mb-3">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <p className="text-[10px] text-gray-500 uppercase tracking-wide">{cat.label}</p>
-                            <button type="button" onClick={() => deleteCategory(cat.id)}
+                          <div className="flex items-center justify-between mb-1.5 gap-2">
+                            {editingCatId === cat.id ? (
+                              <input
+                                value={editCatLabel}
+                                onChange={e => setEditCatLabel(e.target.value)}
+                                onBlur={async () => {
+                                  const label = editCatLabel.trim()
+                                  setEditingCatId(null)
+                                  if (!label || label === cat.label) return
+                                  const next = normalizeCategories(promptExtraCategories.map(c => c.id === cat.id ? { ...c, label } : c))
+                                  try { await persistCategories(next) } catch (e) { alert('Could not rename: ' + e.message) }
+                                }}
+                                onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                                autoFocus
+                                className="flex-1 bg-black border border-gray-700 rounded px-2 py-0.5 text-[11px] outline-none focus:border-pink-500"
+                              />
+                            ) : (
+                              <p className="text-[10px] text-gray-500 uppercase tracking-wide">{cat.label}</p>
+                            )}
+                            <div className="flex items-center gap-2">
+                              <button type="button" onClick={() => { setEditingCatId(cat.id); setEditCatLabel(cat.label) }}
+                                className="text-[10px] text-gray-500 hover:text-pink-300" title="Rename category">✎</button>
+                              <button type="button" onClick={() => deleteCategory(cat.id)}
                               className="text-[9px] text-gray-600 hover:text-red-400">remove</button>
+                            </div>
                           </div>
                           <div className="flex flex-wrap gap-1.5 items-center">
                             {(cat.options || []).map(opt => {
