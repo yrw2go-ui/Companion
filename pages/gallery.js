@@ -527,6 +527,7 @@ export default function Gallery() {
     return list
   }
   const [fetchFail, setFetchFail] = useState(null)
+  const [holdDownload, setHoldDownload] = useState(null)
   const [createRefs, setCreateRefs] = useState([]) // optional reference images
   const [pickCreateRef, setPickCreateRef] = useState(null) // 'next' | index
 
@@ -3342,8 +3343,8 @@ export default function Gallery() {
     clearTimeout(holdTimer.current)
     holdTimer.current = setTimeout(() => {
       suppressClick.current = true
-      setPickMode(true)
-      setPicked(prev => ({ ...prev, [item.key]: true }))
+      if (navigator.vibrate) navigator.vibrate(20)
+      setHoldDownload(item)
     }, 450)
   }
   const cancelHold = () => clearTimeout(holdTimer.current)
@@ -3789,6 +3790,8 @@ export default function Gallery() {
               <>
                 <button type="button" className="fixed inset-0 z-40" onClick={() => setTopMenuOpen(false)} />
                 <div className="absolute right-0 top-11 z-50 w-44 bg-gray-900 border border-gray-700 rounded-xl shadow-xl overflow-hidden">
+                  <button type="button" onClick={() => { setTopMenuOpen(false); setPickMode(true) }}
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-800">☑ Select</button>
                   <button type="button" disabled={bulkBusy} onClick={() => { setTopMenuOpen(false); downloadAll() }}
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-800 disabled:opacity-50">⬇ Download all</button>
                   <button type="button" onClick={() => { setTopMenuOpen(false); setShowT2V(true) }}
@@ -3982,6 +3985,22 @@ export default function Gallery() {
         </div>
       )}
 
+      {holdDownload && (
+        <div className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-5" onClick={() => setHoldDownload(null)}>
+          <div className="bg-gray-900 border border-pink-700 rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <p className="text-[10px] tracking-widest text-pink-400 mb-1">GODDESS ARENA</p>
+            <h3 className="font-bold text-lg mb-2">Download</h3>
+            <p className="text-sm text-gray-300 mb-4">Save this {holdDownload.type === 'video' ? 'video' : 'image'} to your device.</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => { const item = holdDownload; setHoldDownload(null); downloadItem(item) }}
+                className="flex-1 bg-pink-600 hover:bg-pink-700 rounded-lg py-2.5 font-semibold">Download</button>
+              <button type="button" onClick={() => setHoldDownload(null)}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-2.5 font-semibold">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {fetchFail && (
         <div className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-5" onClick={() => setFetchFail(null)}>
           <div className="bg-gray-900 border border-pink-700 rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
@@ -4039,10 +4058,11 @@ export default function Gallery() {
               onPointerUp={cancelHold}
               onPointerLeave={cancelHold}
               onPointerCancel={cancelHold}
-              onContextMenu={(e) => e.preventDefault()}
+              onContextMenu={(e) => { e.preventDefault(); e.stopPropagation() }}
+              style={{ WebkitTouchCallout: 'none' }}
               className="absolute inset-0 w-full h-full">
               {item.type === 'image' ? (
-                <img src={item.url} alt="" className="w-full h-full object-cover" />
+                <img src={item.url} alt="" draggable={false} className="w-full h-full object-cover" style={{ WebkitTouchCallout: 'none' }} />
               ) : (
                 <>
                   {item.poster_url ? (
