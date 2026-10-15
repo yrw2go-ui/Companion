@@ -471,6 +471,8 @@ export default function Gallery() {
   const [folders, setFolders] = useState([])
   const [activeFolder, setActiveFolder] = useState('all')  // 'all' | 'unfiled' | folderId
   const [folderModal, setFolderModal] = useState(null)  // { mode:'create'|'rename', id?, name }
+  const folderHoldTimer = useRef(null)
+  const folderHoldFired = useRef(false)
   const [folderMap, setFolderMap] = useState({})  // item_key -> folder_id
   const [savingFolder, setSavingFolder] = useState(false)
   // Folder sort: alpha (default A-Z) | recent | size — second click inverts
@@ -511,6 +513,20 @@ export default function Gallery() {
   const [steps, setSteps] = useState(28)
   const [creating, setCreating] = useState(false)
   const [createJobs, setCreateJobs] = useState(0)
+  const CREATE_JOBS_KEY = 'ga_create_jobs'
+  const ANIM_JOBS_KEY = 'ga_anim_jobs'
+  const readJobList = (key) => {
+    try { const list = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(list) ? list : [] } catch { return [] }
+  }
+  const writeJobList = (key, list) => { try { localStorage.setItem(key, JSON.stringify(list || [])) } catch {} }
+  const syncJobList = (key, setter) => {
+    const cutoff = Date.now() - 15 * 60 * 1000
+    const list = readJobList(key).filter(j => (j.startedAt || 0) > cutoff)
+    writeJobList(key, list)
+    setter(list.length)
+    return list
+  }
+  const [fetchFail, setFetchFail] = useState(null)
   const [createRefs, setCreateRefs] = useState([]) // optional reference images
   const [pickCreateRef, setPickCreateRef] = useState(null) // 'next' | index
 
@@ -1407,6 +1423,8 @@ export default function Gallery() {
     }
     const onShow = () => {
       syncTransformJobsFromStorage()
+      syncJobList(CREATE_JOBS_KEY, setCreateJobs)
+      syncJobList(ANIM_JOBS_KEY, n => setAnimating(n > 0))
       flushPendingGallerySaves()
         .then(() => load())
         .catch(() => {})
@@ -1415,8 +1433,10 @@ export default function Gallery() {
       if (document.visibilityState === 'hidden') onHide()
       else onShow()
     }
-    // Restore edit banner after refresh / return to Gallery
+    // Restore banners after refresh / return to Gallery
     syncTransformJobsFromStorage()
+    syncJobList(CREATE_JOBS_KEY, setCreateJobs)
+    syncJobList(ANIM_JOBS_KEY, n => setAnimating(n > 0))
     document.addEventListener('visibilitychange', onVis)
     window.addEventListener('pageshow', onShow)
     window.addEventListener('focus', onShow)
@@ -1988,7 +2008,12 @@ export default function Gallery() {
       steps,
       loras: createLoras,
     }
-    setCreateJobs(n => n + 1)
+    const jobId = `cr_${Date.now()}`
+    const jobs = readJobList(CREATE_JOBS_KEY)
+    jobs.push({ id: jobId, startedAt: Date.now() })
+    writeJobList(CREATE_JOBS_KEY, jobs)
+    setCreateJobs(jobs.length)
+    const fail = (msg, retry) => setFetchFail({ message: msg, retry })
     try {
       const fam = imgFamilyOf(snap.model)
       const maxR = createMaxRefs(snap.model)
@@ -2043,7 +2068,7 @@ export default function Gallery() {
       })
       const data = await res.json()
       if (!data.imageUrl) {
-        alert('Error: ' + (data.error || 'failed'))
+        fail(data.error || 'Could not create the image', () => createImage())
         return
       }
 
@@ -2065,9 +2090,12 @@ export default function Gallery() {
 
       load()
     } catch (err) {
-      alert('Error: ' + err.message)
+      const msg = /failed to fetch/i.test(err.message) ? 'Could not reach the server' : (err.message || 'Something went wrong')
+      fail(msg, () => createImage())
     } finally {
-      setCreateJobs(n => Math.max(0, n - 1))
+      const left = readJobList(CREATE_JOBS_KEY).filter(j => j.id !== jobId)
+      writeJobList(CREATE_JOBS_KEY, left)
+      setCreateJobs(left.length)
     }
   }
 
@@ -2089,6 +2117,7 @@ export default function Gallery() {
 
   const animate = async () => {
     if (animating) return
+    writeJobList(ANIM_JOBS_KEY, [{ id: 'anim', startedAt: Date.now() }])
     setAnimating(true)
     setShowVideo(false)
     try {
@@ -2130,7 +2159,7 @@ export default function Gallery() {
       if (!data.videoUrl) {
         const extra = data.detail ? `\n\n${typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail).slice(0, 300)}` : ''
         alert('Video error: ' + (data.error || 'failed') + extra)
-        setAnimating(false)
+        writeJobList(ANIM_JOBS_KEY, []); setAnimating(false)
         return
       }
       const poster = await makePoster(data.videoUrl)
@@ -2145,7 +2174,7 @@ export default function Gallery() {
     } catch (err) {
       alert('Error: ' + err.message)
     }
-    setAnimating(false)
+    writeJobList(ANIM_JOBS_KEY, []); setAnimating(false)
   }
 
   // is this canvas frame effectively blank?
@@ -2471,7 +2500,7 @@ export default function Gallery() {
     if (!videoEditPrompt.trim()) { alert('Describe the change you want'); return }
     setShowVideoEdit(false)
     setVideoEditing(true)
-    setAnimating(true)
+    writeJobList(ANIM_JOBS_KEY, [{ id: "anim", startedAt: Date.now() }]); setAnimating(true)
     try {
       const res = await fetch('/api/generate-video', {
         method: 'POST',
@@ -2486,7 +2515,7 @@ export default function Gallery() {
       const data = await res.json()
       if (!data.videoUrl) {
         alert('Error: ' + (data.error || 'failed'))
-        setVideoEditing(false); setAnimating(false)
+        setVideoEditing(false); writeJobList(ANIM_JOBS_KEY, []); setAnimating(false)
         return
       }
       const poster = await makePoster(data.videoUrl)
@@ -2503,7 +2532,7 @@ export default function Gallery() {
       alert('Error: ' + err.message)
     }
     setVideoEditing(false)
-    setAnimating(false)
+    writeJobList(ANIM_JOBS_KEY, []); setAnimating(false)
   }
 
   const openExtend = (item) => {
@@ -2804,7 +2833,7 @@ export default function Gallery() {
     if (!t2vPrompt.trim()) { alert('Describe the video you want'); return }
     setShowT2V(false)
     setT2vBusy(true)
-    setAnimating(true)
+    writeJobList(ANIM_JOBS_KEY, [{ id: "anim", startedAt: Date.now() }]); setAnimating(true)
     try {
       const isKlingT2V = t2vModel.startsWith('kwaivgi/kling')
       const isSeedance25 = String(t2vModel || '').includes('seedance-2.5')
@@ -2831,7 +2860,7 @@ export default function Gallery() {
       const data = await res.json()
       if (!data.videoUrl) {
         alert('Error: ' + (data.error || 'failed'))
-        setT2vBusy(false); setAnimating(false)
+        setT2vBusy(false); writeJobList(ANIM_JOBS_KEY, []); setAnimating(false)
         return
       }
       const poster = await makePoster(data.videoUrl)
@@ -2848,7 +2877,7 @@ export default function Gallery() {
       alert('Error: ' + err.message)
     }
     setT2vBusy(false)
-    setAnimating(false)
+    writeJobList(ANIM_JOBS_KEY, []); setAnimating(false)
   }
 
   const createFolder = () => setFolderModal({ mode: 'create', name: '' })
@@ -3872,8 +3901,16 @@ export default function Gallery() {
             ))}
             {sortedFolders.map(f => (
               <button key={f.id}
-                onClick={() => openFolder(f.id)}
-                onDoubleClick={() => renameFolder(f)}
+                onClick={() => { if (folderHoldFired.current) { folderHoldFired.current = false; return } openFolder(f.id) }}
+                onPointerDown={() => {
+                  folderHoldFired.current = false
+                  clearTimeout(folderHoldTimer.current)
+                  folderHoldTimer.current = setTimeout(() => { folderHoldFired.current = true; renameFolder(f) }, 500)
+                }}
+                onPointerUp={() => clearTimeout(folderHoldTimer.current)}
+                onPointerLeave={() => clearTimeout(folderHoldTimer.current)}
+                onPointerCancel={() => clearTimeout(folderHoldTimer.current)}
+                onContextMenu={e => e.preventDefault()}
                 className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold ${activeFolder === f.id ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400'}`}>
                 📁 {f.name}{folderSort === 'size' ? ` (${f._count || 0})` : ''}
               </button>
@@ -3901,8 +3938,20 @@ export default function Gallery() {
       )}
 
       {animating && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-sm text-gray-400">
-          Animating... (1-2 min)
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-sm text-gray-300 flex items-center justify-between gap-3">
+          <span>Animating… (1–2 min) — banner keeps after refresh</span>
+          <button type="button" className="text-[10px] text-gray-500 hover:text-white" onClick={() => { writeJobList(ANIM_JOBS_KEY, []); setAnimating(false) }}>Clear</button>
+        </div>
+      )}
+
+      {createJobs > 0 && (
+        <div className="bg-gray-900 border border-purple-800/50 rounded-xl p-3 mb-4 text-sm text-gray-300 flex items-center justify-between gap-3">
+          <span>
+            {createJobs === 1
+              ? 'Creating image… — survives refresh; you can start another'
+              : `${createJobs} images creating… (banner keeps after refresh)`}
+          </span>
+          <button type="button" className="text-[10px] text-gray-500 hover:text-white" onClick={() => { writeJobList(CREATE_JOBS_KEY, []); setCreateJobs(0) }}>Clear</button>
         </div>
       )}
 
@@ -3930,6 +3979,22 @@ export default function Gallery() {
       {extending && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-sm text-gray-400">
           {extendStatus || 'Extending...'}
+        </div>
+      )}
+
+      {fetchFail && (
+        <div className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-5" onClick={() => setFetchFail(null)}>
+          <div className="bg-gray-900 border border-pink-700 rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <p className="text-[10px] tracking-widest text-pink-400 mb-1">GODDESS ARENA</p>
+            <h3 className="font-bold text-lg mb-2">Couldn't finish</h3>
+            <p className="text-sm text-gray-300 mb-4">{fetchFail.message}</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => { const r = fetchFail.retry; setFetchFail(null); if (r) r() }}
+                className="flex-1 bg-pink-600 hover:bg-pink-700 rounded-lg py-2.5 font-semibold">Retry</button>
+              <button type="button" onClick={() => setFetchFail(null)}
+                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-2.5 font-semibold">Close</button>
+            </div>
+          </div>
         </div>
       )}
 
