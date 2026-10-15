@@ -677,6 +677,8 @@ export default function Gallery() {
   const [transformSize, setTransformSize] = useState(() => i2iDefaultSize('bytedance/seedream-v5.0-pro/edit'))
   const [transformJobs, setTransformJobs] = useState(0) // allow multiple edits at once
   const [pickRefSlot, setPickRefSlot] = useState(null) // index into transformRefs to fill, or 'next'
+  const [refPickFolder, setRefPickFolder] = useState('all')
+  const [refPickSearch, setRefPickSearch] = useState('')
   // Persist in-flight edits so the banner survives refresh / leaving Gallery
   const TRANSFORM_JOBS_KEY = 'ga_transform_jobs'
   const readTransformJobs = () => {
@@ -4472,28 +4474,31 @@ export default function Gallery() {
             <p className="text-[10px] text-gray-500 mb-2">
               Gallery, card fronts/backs, and chat images.
             </p>
-            <input
-              type="search"
-              placeholder="Search name or prompt…"
-              value={gSearch}
-              onChange={e => setGSearch(e.target.value)}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-pink-500"
-            />
+            <div className="flex gap-2 mb-2">
+              <select value={refPickFolder} onChange={e => setRefPickFolder(e.target.value)}
+                className="bg-black border border-gray-700 rounded-lg px-2 py-2 text-xs outline-none">
+                <option value="all">All</option>
+                <option value="unfiled">Unfiled</option>
+                {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+              <input
+                type="search"
+                placeholder="Search name or prompt…"
+                value={refPickSearch}
+                onChange={e => setRefPickSearch(e.target.value)}
+                className="flex-1 bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-pink-500"
+              />
+            </div>
             <div className="grid grid-cols-3 gap-2 max-h-[60vh] overflow-y-auto">
               {media
                 .filter(m => {
                   if (m.type !== 'image' || !m.url) return false
                   if (createRefs.some(r => r?.url === m.url)) return false
-                  const q = String(gSearch || '').trim().toLowerCase()
+                  if (refPickFolder === 'unfiled') { if (folderMap[m.key]) return false }
+                  else if (refPickFolder !== 'all') { if (folderMap[m.key] !== refPickFolder) return false }
+                  const q = String(refPickSearch || '').trim().toLowerCase()
                   if (!q) return true
-                  const hay = [
-                    m.prompt,
-                    m.cardLabel,
-                    m.cardSide,
-                    m.source,
-                    m.name,
-                    m.title,
-                  ].filter(Boolean).join(' ').toLowerCase()
+                  const hay = [m.prompt, m.cardLabel, m.cardSide, m.source, m.name, m.title].filter(Boolean).join(' ').toLowerCase()
                   return hay.includes(q)
                 })
                 .map(m => (
@@ -4813,7 +4818,12 @@ export default function Gallery() {
               Grayed sizes are locked for this model. Defaults to the image ratio when that model supports it.
             </p>
 
-            <label className="block text-xs text-gray-400 mb-1">What should change?</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs text-gray-400">What should change?</label>
+              <button type="button" onClick={() => copyUrl(transformPrompt)} className="text-[11px] text-purple-400 hover:text-purple-300 font-semibold">
+                {copiedUrl ? 'Copied' : 'Copy prompt'}
+              </button>
+            </div>
             <textarea value={transformPrompt} onChange={e => setTransformPrompt(e.target.value)} rows={4}
               placeholder="e.g. change the background to a sunlit beach; keep the person exactly the same"
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-purple-500" />
@@ -4898,29 +4908,31 @@ export default function Gallery() {
             <p className="text-[10px] text-gray-500 mb-2">
               Gallery, card fronts/backs, and chat images.
             </p>
-            <input
-              type="search"
-              placeholder="Search name or prompt…"
-              value={gSearch}
-              onChange={e => setGSearch(e.target.value)}
-              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-pink-500"
-            />
+            <div className="flex gap-2 mb-2">
+              <select value={refPickFolder} onChange={e => setRefPickFolder(e.target.value)}
+                className="bg-black border border-gray-700 rounded-lg px-2 py-2 text-xs outline-none">
+                <option value="all">All</option>
+                <option value="unfiled">Unfiled</option>
+                {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+              <input
+                type="search"
+                placeholder="Search name or prompt…"
+                value={refPickSearch}
+                onChange={e => setRefPickSearch(e.target.value)}
+                className="flex-1 bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-pink-500"
+              />
+            </div>
             <div className="grid grid-cols-3 gap-2 max-h-[60vh] overflow-y-auto">
               {media
                 .filter(m => {
                   if (m.type !== 'image' || !m.url) return false
-                  if (m.url === transformSource?.url) return false
                   if (transformRefs.some(r => r?.url === m.url)) return false
-                  const q = String(gSearch || '').trim().toLowerCase()
+                  if (refPickFolder === 'unfiled') { if (folderMap[m.key]) return false }
+                  else if (refPickFolder !== 'all') { if (folderMap[m.key] !== refPickFolder) return false }
+                  const q = String(refPickSearch || '').trim().toLowerCase()
                   if (!q) return true
-                  const hay = [
-                    m.prompt,
-                    m.cardLabel,
-                    m.cardSide,
-                    m.source,
-                    m.name,
-                    m.title,
-                  ].filter(Boolean).join(' ').toLowerCase()
+                  const hay = [m.prompt, m.cardLabel, m.cardSide, m.source, m.name, m.title].filter(Boolean).join(' ').toLowerCase()
                   return hay.includes(q)
                 })
                 .map(m => (
