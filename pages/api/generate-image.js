@@ -71,9 +71,39 @@ async function registerGalleryRow(row) {
   return null
 }
 
+const hits = new Map()
+function rateOk(ip) {
+  const now = Date.now()
+  const windowMs = 60 * 1000
+  const max = 20
+  const list = (hits.get(ip) || []).filter(t => now - t < windowMs)
+  if (list.length >= max) { hits.set(ip, list); return false }
+  list.push(now)
+  hits.set(ip, list)
+  return true
+}
+function allowedRef(url) {
+  if (!url) return false
+  try {
+    const u = new URL(url)
+    const host = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/^https?:\/\//, '')
+    return u.protocol === 'https:' && (u.host === host || u.host.endsWith('.supabase.co'))
+  } catch { return false }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  const origin = req.headers.origin || ''
+  const host = req.headers.host || ''
+  if (origin && host && !origin.includes(host)) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+  const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'local').toString().split(',')[0].trim()
+  if (!rateOk(ip)) {
+    return res.status(429).json({ error: 'Too many requests. Wait a minute.' })
   }
 
   const {
@@ -88,8 +118,11 @@ export default async function handler(req, res) {
     source_prompt,
   } = req.body
 
-  if (!prompt) {
+  if (!prompt || String(prompt).trim().length < 1) {
     return res.status(400).json({ error: 'No prompt provided' })
+  }
+  if (String(prompt).length > 4000) {
+    return res.status(400).json({ error: 'Prompt too long' })
   }
 
   const safeJson = async (response) => {
@@ -113,9 +146,10 @@ export default async function handler(req, res) {
     : (model && String(model).includes('seedream') && String(model).includes('edit'))
     ? 14
     : 4
-  const allRefs = primaryRef
-    ? [primaryRef, ...extraRefs.filter(u => u !== primaryRef)].slice(0, refCap)
+  const allRefs = (primaryRef
+    ? [primaryRef, ...extraRefs.filter(u => u !== primaryRef)]
     : []
+  ).filter(allowedRef).slice(0, refCap)
 
   // Never swap the model the user picked. Seedream text-to-image ids with a
   // reference become the matching Seedream edit id. Wan is only used when the
@@ -337,13 +371,13 @@ export default async function handler(req, res) {
 
     const submitParsed = await safeJson(submitRes)
     if (!submitParsed.ok) {
-      return res.status(500).json({ error: 'Atlas returned non-JSON', raw: submitParsed.raw?.slice(0, 300) })
+      return res.status(500).json({ error: 'Image service error' })
     }
 
     const predictionId = submitParsed.data.data?.id || submitParsed.data.id
     if (!predictionId) {
       const msg = submitParsed.data?.error?.message || submitParsed.data?.message || submitParsed.data?.error || 'No prediction ID'
-      return res.status(500).json({ error: String(msg), detail: submitParsed.data })
+      return res.status(500).json({ error: String(msg).slice(0, 180) })
     }
 
     let atlasUrl = null
@@ -455,6 +489,6 @@ export default async function handler(req, res) {
       count: uploadedUrls.length,
     })
   } catch (err) {
-    return res.status(500).json({ error: err.message })
+    return res.status(500).json({ error: 'Generation failed' })
   }
 }
