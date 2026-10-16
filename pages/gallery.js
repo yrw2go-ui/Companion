@@ -410,6 +410,15 @@ const I2I_MODELS = [
     sizes: [{ label: 'Original', value: 'auto' }],
     defaultSize: 'auto',
   },
+  {
+    id: 'midjourney/v8.2/upscale',
+    label: 'Midjourney V8.2 Upscale (HD 2K)',
+    price: 0.086,
+    maxRefs: 1,
+    sizeMode: 'pixel',
+    sizes: [{ label: 'HD 2K', value: 'hd' }],
+    defaultSize: 'hd',
+  },
 ]
 const i2iModelOf = (modelId) => I2I_MODELS.find(m => m.id === modelId) || I2I_MODELS[0]
 const i2iMaxRefs = (modelId) => i2iModelOf(modelId).maxRefs || 1
@@ -2766,7 +2775,7 @@ export default function Gallery() {
   }
 
   const runTransform = async () => {
-    if (!transformPrompt.trim() && transformModel !== 'midjourney/v8.2/remove-background') { alert('Describe the change you want'); return }
+    if (!transformPrompt.trim() && !String(transformModel).startsWith('midjourney/v8.2/')) { alert('Describe the change you want'); return }
     if (!transformSource?.url) { alert('No source image'); return }
 
     // Snapshot so another edit can start without overwriting this job's inputs
