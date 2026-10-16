@@ -24,6 +24,8 @@ export default function Admin() {
   const dirty = cfg && JSON.stringify(cfg) !== savedSnap
 
   const setPrompt = (key, value) => setCfg(c => ({ ...c, prompts: { ...c.prompts, [key]: value } }))
+  const setDesigner = (key, value) => setCfg(c => ({ ...c, designer: { ...c.designer, [key]: value } }))
+  const setCreator = (key, value) => setCfg(c => ({ ...c, creator: { ...c.creator, [key]: value } }))
   const setTab = (key, value) => setCfg(c => ({ ...c, tabs: { ...c.tabs, [key]: value } }))
   const setEdition = (key, value) => setCfg(c => ({ ...c, editions: { ...c.editions, [key]: Number(value) || 0 } }))
   const setPrice = (key, value) => setCfg(c => ({ ...c, prices: { ...c.prices, [key]: Number(value) || 0 } }))
@@ -111,6 +113,29 @@ export default function Admin() {
         <p className="text-xs text-gray-500">Edits apply to new creates and new shop actions after save. A warning shows before anything is written.</p>
 
         <section>
+          <h2 className="font-bold mb-1">Card designer</h2>
+          <p className="text-[11px] text-gray-500 mb-2">Sent with every card draft. This is the behind-the-scenes behavior for new cards.</p>
+          <p className={label}>Tone</p>
+          <textarea className={input + ' min-h-[70px] mb-3'} value={cfg.designer.tone} onChange={e => setDesigner('tone', e.target.value)} />
+          <p className={label}>Rarity behavior</p>
+          <textarea className={input + ' min-h-[70px] mb-3'} value={cfg.designer.rarity} onChange={e => setDesigner('rarity', e.target.value)} />
+          <p className={label}>Rules</p>
+          <textarea className={input + ' min-h-[70px] mb-3'} value={cfg.designer.rules} onChange={e => setDesigner('rules', e.target.value)} />
+          <p className={label}>Extra instructions</p>
+          <textarea className={input + ' min-h-[70px]'} value={cfg.designer.extra} onChange={e => setDesigner('extra', e.target.value)} />
+        </section>
+
+        <section>
+          <h2 className="font-bold mb-2">Creator wording</h2>
+          {Object.entries(cfg.creator).map(([key, value]) => (
+            <div key={key} className="mb-3">
+              <p className={label}>{key}</p>
+              <textarea className={input + ' min-h-[52px]'} value={value} onChange={e => setCreator(key, e.target.value)} />
+            </div>
+          ))}
+        </section>
+
+        <section>
           <h2 className="font-bold mb-2">Prompt defaults</h2>
           <p className={label}>Negative prompt</p>
           <textarea className={input + ' min-h-[90px] mb-3'} value={cfg.prompts.negative} onChange={e => setPrompt('negative', e.target.value)} />
@@ -119,7 +144,11 @@ export default function Admin() {
           <p className={label}>Card front hint</p>
           <input className={input + ' mb-3'} value={cfg.prompts.cardFrontHint} onChange={e => setPrompt('cardFrontHint', e.target.value)} />
           <p className={label}>Card back hint</p>
-          <input className={input} value={cfg.prompts.cardBackHint} onChange={e => setPrompt('cardBackHint', e.target.value)} />
+          <input className={input + ' mb-3'} value={cfg.prompts.cardBackHint} onChange={e => setPrompt('cardBackHint', e.target.value)} />
+          <p className={label}>Card back framing</p>
+          <textarea className={input + ' min-h-[60px] mb-3'} value={cfg.prompts.backFraming} onChange={e => setPrompt('backFraming', e.target.value)} />
+          <p className={label}>Animate default prompt</p>
+          <input className={input} value={cfg.prompts.animateDefault} onChange={e => setPrompt('animateDefault', e.target.value)} />
         </section>
 
         <section>

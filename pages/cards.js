@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabaseClient'
+import { loadAppConfig } from '../lib/appConfig'
 import { downloadCard } from '../lib/renderCard'
 import { buildDownloadName, triggerBlobDownload } from '../lib/downloadName'
 import { makePoster } from '../lib/posterFrame'
@@ -396,6 +397,7 @@ export default function Cards() {
   const [expanded, setExpanded] = useState(false)
 
   const [showCreate, setShowCreate] = useState(false)
+  const [appCfg, setAppCfg] = useState(null)
   const [concept, setConcept] = useState('')
   const [conceptRarity, setConceptRarity] = useState('random')
   const [drafting, setDrafting] = useState(false)
@@ -490,6 +492,8 @@ export default function Cards() {
     (IMAGE_MODELS.find(m => m.family === 'seedream') || IMAGE_MODELS[0]).id
   )
   const [cmEditModel, setCmEditModel] = useState(EDIT_IMAGE_MODELS[0].id)
+
+  useEffect(() => { loadAppConfig().then(({ config }) => setAppCfg(config)).catch(() => {}) }, [])
 
   useEffect(() => {
     loadCards()
@@ -930,7 +934,7 @@ export default function Cards() {
       const res = await fetch('/api/generate-card', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ concept, rarity: conceptRarity }),
+        body: JSON.stringify({ concept, rarity: conceptRarity, designer: appCfg?.designer || null, prompts: appCfg?.prompts || null }),
       })
       const data = await res.json()
       if (data.card) {
@@ -953,7 +957,7 @@ export default function Cards() {
   }
 
   const withStyle = (base, style) => (!style ? base : `${base}, ${style}`)
-  const BACK_FRAMING = 'subject in the upper two-thirds of the frame, head near the top, open empty space in the bottom third for text, do not place important details in the lower third'
+  const BACK_FRAMING = appCfg?.prompts?.backFraming || 'subject in the upper two-thirds of the frame, head near the top, open empty space in the bottom third for text, do not place important details in the lower third'
   const withBackFraming = (base) => `${base}, ${BACK_FRAMING}`
 
   const togglePromptExtra = (catId, optId) => {

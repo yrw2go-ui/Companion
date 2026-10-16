@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Script from 'next/script'
 import { supabase } from '../lib/supabaseClient'
+import { loadAppConfig } from '../lib/appConfig'
 import { makePoster } from '../lib/posterFrame'
 import { buildDownloadName, triggerBlobDownload } from '../lib/downloadName'
 
@@ -528,6 +529,7 @@ export default function Gallery() {
   }
   const [fetchFail, setFetchFail] = useState(null)
   const [holdDownload, setHoldDownload] = useState(null)
+  const [creatorCopy, setCreatorCopy] = useState(null)
   const [createRefs, setCreateRefs] = useState([]) // optional reference images
   const [pickCreateRef, setPickCreateRef] = useState(null) // 'next' | index
 
@@ -566,6 +568,8 @@ export default function Gallery() {
     { id: 24, name: 'qwen narrow hips', path: 'https://civitai.red/api/download/models/2438226?fileId=2328955', scale: 0.8, base: 'qwen', trigger: 'narrow hips, small hips, tiny hips, petite hips, shrink hips, woman' },
     { id: 25, name: 'qwen sex', path: 'https://civitai.red/api/download/models/2517095?fileId=2404838', scale: 0.8, base: 'qwen', trigger: '' },
   ]
+  useEffect(() => { loadAppConfig().then(({ config }) => setCreatorCopy(config?.creator || null)).catch(() => {}) }, [])
+
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('ga_saved_loras') || '[]')
@@ -3820,7 +3824,7 @@ export default function Gallery() {
             }}
           />
           <button onClick={openCreate} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">
-            + Create
+            {creatorCopy?.createButton || '+ Create'}
           </button>
         </div>
       </div>
@@ -3989,8 +3993,8 @@ export default function Gallery() {
         <div className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-5" onClick={() => setHoldDownload(null)}>
           <div className="bg-gray-900 border border-pink-700 rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <p className="text-[10px] tracking-widest text-pink-400 mb-1">GODDESS ARENA</p>
-            <h3 className="font-bold text-lg mb-2">Download</h3>
-            <p className="text-sm text-gray-300 mb-4">Save this {holdDownload.type === 'video' ? 'video' : 'image'} to your device.</p>
+            <h3 className="font-bold text-lg mb-2">{creatorCopy?.downloadTitle || 'Download'}</h3>
+            <p className="text-sm text-gray-300 mb-4">{creatorCopy?.downloadBody || `Save this ${holdDownload.type === 'video' ? 'video' : 'image'} to your device.`}</p>
             <div className="flex gap-2">
               <button type="button" onClick={() => { const item = holdDownload; setHoldDownload(null); downloadItem(item) }}
                 className="flex-1 bg-pink-600 hover:bg-pink-700 rounded-lg py-2.5 font-semibold">Download</button>
@@ -4005,7 +4009,7 @@ export default function Gallery() {
         <div className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-5" onClick={() => setFetchFail(null)}>
           <div className="bg-gray-900 border border-pink-700 rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <p className="text-[10px] tracking-widest text-pink-400 mb-1">GODDESS ARENA</p>
-            <h3 className="font-bold text-lg mb-2">Couldn't finish</h3>
+            <h3 className="font-bold text-lg mb-2">{creatorCopy?.failTitle || "Couldn't finish"}</h3>
             <p className="text-sm text-gray-300 mb-4">{fetchFail.message}</p>
             <div className="flex gap-2">
               <button type="button" onClick={() => { const r = fetchFail.retry; setFetchFail(null); if (r) r() }}
@@ -4020,7 +4024,7 @@ export default function Gallery() {
       {loading ? (
         <p className="text-gray-500">Loading...</p>
       ) : shown.length === 0 ? (
-        <p className="text-gray-500 text-sm">Nothing here yet. Tap "+ Create" to make something.</p>
+        <p className="text-gray-500 text-sm">{creatorCopy?.galleryEmpty || 'Nothing here yet. Tap "+ Create" to make something.'}</p>
       ) : (
         <>
         {pickMode && (
@@ -4840,10 +4844,9 @@ export default function Gallery() {
         return (
         <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-[60] overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
-            <h2 className="font-bold text-lg mb-2">Transform Image</h2>
+            <h2 className="font-bold text-lg mb-2">{creatorCopy?.transformTitle || 'Transform Image'}</h2>
             <p className="text-xs text-gray-500 mb-3">
-              Feeds this image into an edit model and changes it by your instruction, keeping the
-              subject and composition. Good for tweaks and for keeping a face consistent. Saves as a new image.
+              {creatorCopy?.transformBody || 'Feeds this image into an edit model and changes it by your instruction, keeping the subject and composition. Good for tweaks and for keeping a face consistent. Saves as a new image.'}
             </p>
 
             <div className="flex gap-2 mb-3 items-start flex-wrap">
