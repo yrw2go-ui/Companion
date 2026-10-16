@@ -118,7 +118,7 @@ export default async function handler(req, res) {
     source_prompt,
   } = req.body
 
-  const isBgRemove = String(model || '').startsWith('midjourney/v8.2/')
+  const isBgRemove = /remove-background|background-remover/.test(String(model || ''))
   if ((!prompt || String(prompt).trim().length < 1) && !isBgRemove) {
     return res.status(400).json({ error: 'No prompt provided' })
   }
@@ -245,12 +245,11 @@ export default async function handler(req, res) {
     }
     // Pro edit supports thinking. v4 and Lite schemas do not.
     if (!isSeedreamLite && !/seedream-v4/.test(useModel)) body.thinking = thinking || 'disabled'
-  } else if (isEdit && useModel === 'midjourney/v8.2/remove-background') {
-    const clean = String(allRefs[0] || '').split('?')[0]
+  } else if (isEdit && (useModel === 'atlascloud/image-background-remover' || useModel === 'midjourney/v8.2/remove-background')) {
     body = {
-      model: useModel,
-      image: clean,
-      enable_base64_output: false,
+      model: 'atlascloud/image-background-remover',
+      image: allRefs[0],
+      output_format: 'png',
     }
     usedSize = 'auto'
   } else if (isEdit && useModel === 'midjourney/v8.2/upscale') {
@@ -418,15 +417,8 @@ export default async function handler(req, res) {
         break
       }
       if (status === 'failed' || status === 'error') {
-        const errMsg = pollBody.error || 'Generation failed'
-        if (/origin service/i.test(String(errMsg)) && !req._retried) {
-          req._retried = true
-          await new Promise(r => setTimeout(r, 2000))
-          return handler(req, res)
-        }
-        return res.status(500).json({ error: /origin service/i.test(String(errMsg))
-          ? 'Cutout service is busy. Try again in a minute.'
-          : String(errMsg).slice(0, 180) })
+        const errMsg = String(pollBody.error || 'Generation failed')
+        return res.status(500).json({ error: errMsg.slice(0, 220) })
       }
     }
 
