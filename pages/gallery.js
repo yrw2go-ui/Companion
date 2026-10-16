@@ -705,32 +705,22 @@ export default function Gallery() {
   // Extra refs beyond the main image (slots 2–4). Length capped by model maxRefs − 1.
   const [transformRefs, setTransformRefs] = useState([]) // array of gallery items or { url }
   const [transformPrompt, setTransformPrompt] = useState('')
-  const DEFAULT_TF_CHIPS = [
-    { label: 'stand', text: 'standing' },
-    { label: 'kneel', text: 'kneeling' },
-    { label: 'butt out', text: 'butt out' },
-    { label: 'sultry', text: 'sultry look' },
-    { label: 'pose', text: 'sultry pose' },
-    { label: 'closeup', text: 'closeup' },
-    { label: 'semi-close', text: 'semi-closeup' },
-    { label: 'upper body', text: 'upper body view' },
-    { label: 'high angle', text: 'high camera angle' },
-    { label: 'low angle', text: 'low camera angle' },
-    { label: 'pussy', text: 'pussy focus' },
-    { label: 'booty', text: 'booty focus' },
-    { label: 'unattired', text: 'Unattired' },
-    { label: 'barefoot', text: 'barefoot' },
-    { label: 'braces', text: 'braces' },
-    { label: 'makeup', text: 'makeup' },
-    { label: 'eyeliner', text: 'eyeliner' },
-    { label: 'mascara', text: 'mascara' },
-    { label: 'areolas', text: 'perky areolas' },
-    { label: 'film grain', text: 'film grain' },
-    { label: 'soft focus', text: 'soft focus' },
-    { label: 'Converse', text: 'Converse' },
-    { label: 'Nikes', text: 'Nikes' },
-    { label: 'no jewelry', text: 'remove jewelry/accessories' },
-  ]
+  const shortChip = (raw) => {
+    const words = String(raw || '').trim().replace(/\s+/g, ' ').split(' ').filter(Boolean).slice(0, 3)
+    const v = words.join(' ')
+    return v ? { label: v, text: v } : null
+  }
+  const sortChips = (list) => list
+    .map(c => shortChip(c?.text || c?.label || c))
+    .filter(Boolean)
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+  const DEFAULT_TF_CHIPS = sortChips([
+    'standing', 'kneeling', 'butt out', 'sultry look', 'sultry pose',
+    'closeup', 'semi-closeup', 'upper body', 'high angle', 'low angle',
+    'pussy focus', 'booty focus', 'unattired', 'barefoot', 'braces',
+    'makeup', 'eyeliner', 'mascara', 'perky areolas', 'film grain',
+    'soft focus', 'Converse', 'Nikes', 'no jewelry',
+  ])
   const [tfChips, setTfChips] = useState(DEFAULT_TF_CHIPS)
   const [tfPicked, setTfPicked] = useState([])
   const [tfChipEdit, setTfChipEdit] = useState(null)
@@ -2740,12 +2730,13 @@ export default function Gallery() {
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('tf_quick_chips') || 'null')
-      if (Array.isArray(saved) && saved.length && saved[0] && typeof saved[0] === 'object') setTfChips(saved)
+      if (Array.isArray(saved) && saved.length) setTfChips(sortChips(saved))
     } catch {}
   }, [])
   const saveTfChips = (next) => {
-    setTfChips(next)
-    try { localStorage.setItem('tf_quick_chips', JSON.stringify(next)) } catch {}
+    const clean = sortChips(next)
+    setTfChips(clean)
+    try { localStorage.setItem('tf_quick_chips', JSON.stringify(clean)) } catch {}
   }
   const toggleTfChip = (chip) => {
     const key = chip.text
