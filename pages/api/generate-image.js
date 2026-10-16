@@ -118,7 +118,8 @@ export default async function handler(req, res) {
     source_prompt,
   } = req.body
 
-  if (!prompt || String(prompt).trim().length < 1) {
+  const isBgRemove = String(model || '') === 'midjourney/v8.2/remove-background'
+  if ((!prompt || String(prompt).trim().length < 1) && !isBgRemove) {
     return res.status(400).json({ error: 'No prompt provided' })
   }
   if (String(prompt).length > 4000) {
@@ -244,6 +245,12 @@ export default async function handler(req, res) {
     }
     // Pro edit supports thinking. v4 and Lite schemas do not.
     if (!isSeedreamLite && !/seedream-v4/.test(useModel)) body.thinking = thinking || 'disabled'
+  } else if (isEdit && useModel === 'midjourney/v8.2/remove-background') {
+    body = {
+      model: useModel,
+      image: allRefs[0],
+    }
+    usedSize = 'auto'
   } else if (isEdit && useModel.startsWith('xai/grok-imagine')) {
     // Grok Imagine edit: image_urls[]
     body = {
