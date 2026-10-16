@@ -2444,7 +2444,11 @@ const buildCardTextFragment = () => {
           <button onClick={() => router.push('/media')} className="text-pink-400 hover:text-pink-300 text-sm font-semibold">Media</button>
           <button onClick={() => router.push('/gallery')} className="text-gray-400 hover:text-white text-sm">Gallery</button>
         </div>
-        <h1 className="text-xl font-bold tracking-wide">Cards</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold tracking-wide">Cards</h1>
+          <button type="button" onClick={() => window.location.reload()} title="Refresh app"
+            className="text-gray-400 hover:text-white text-lg leading-none px-1">↻</button>
+        </div>
         <button onClick={() => {
           setCreateArtSource('generate')
           setDraftFrontUrl('')
