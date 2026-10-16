@@ -118,7 +118,7 @@ export default async function handler(req, res) {
     source_prompt,
   } = req.body
 
-  const isBgRemove = String(model || '') === 'midjourney/v8.2/remove-background'
+  const isBgRemove = String(model || '').startsWith('midjourney/v8.2/')
   if ((!prompt || String(prompt).trim().length < 1) && !isBgRemove) {
     return res.status(400).json({ error: 'No prompt provided' })
   }
@@ -246,11 +246,21 @@ export default async function handler(req, res) {
     // Pro edit supports thinking. v4 and Lite schemas do not.
     if (!isSeedreamLite && !/seedream-v4/.test(useModel)) body.thinking = thinking || 'disabled'
   } else if (isEdit && useModel === 'midjourney/v8.2/remove-background') {
+    const clean = String(allRefs[0] || '').split('?')[0]
     body = {
       model: useModel,
-      image: allRefs[0],
+      image: clean,
+      enable_base64_output: false,
     }
     usedSize = 'auto'
+  } else if (isEdit && useModel === 'midjourney/v8.2/upscale') {
+    body = {
+      model: 'midjourney/v8.2/image-to-image',
+      image: allRefs[0],
+      prompt: String(prompt || 'same image, higher detail, sharper, upscale').slice(0, 1000),
+      hd: true,
+    }
+    usedSize = 'hd'
   } else if (isEdit && useModel.startsWith('xai/grok-imagine')) {
     // Grok Imagine edit: image_urls[]
     body = {
@@ -408,7 +418,15 @@ export default async function handler(req, res) {
         break
       }
       if (status === 'failed' || status === 'error') {
-        return res.status(500).json({ error: pollBody.error || 'Generation failed' })
+        const errMsg = pollBody.error || 'Generation failed'
+        if (/origin service/i.test(String(errMsg)) && !req._retried) {
+          req._retried = true
+          await new Promise(r => setTimeout(r, 2000))
+          return handler(req, res)
+        }
+        return res.status(500).json({ error: /origin service/i.test(String(errMsg))
+          ? 'Cutout service is busy. Try again in a minute.'
+          : String(errMsg).slice(0, 180) })
       }
     }
 
