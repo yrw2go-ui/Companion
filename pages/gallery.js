@@ -401,6 +401,15 @@ const I2I_MODELS = [
     sizes: I2I_SIZES_GROK,
     defaultSize: '2:3|2k',
   },
+  {
+    id: 'midjourney/v8.2/remove-background',
+    label: 'Midjourney V8.2 Remove Background',
+    price: 0.086,
+    maxRefs: 1,
+    sizeMode: 'pixel',
+    sizes: [{ label: 'Original', value: 'auto' }],
+    defaultSize: 'auto',
+  },
 ]
 const i2iModelOf = (modelId) => I2I_MODELS.find(m => m.id === modelId) || I2I_MODELS[0]
 const i2iMaxRefs = (modelId) => i2iModelOf(modelId).maxRefs || 1
@@ -2757,7 +2766,7 @@ export default function Gallery() {
   }
 
   const runTransform = async () => {
-    if (!transformPrompt.trim()) { alert('Describe the change you want'); return }
+    if (!transformPrompt.trim() && transformModel !== 'midjourney/v8.2/remove-background') { alert('Describe the change you want'); return }
     if (!transformSource?.url) { alert('No source image'); return }
 
     // Snapshot so another edit can start without overwriting this job's inputs
