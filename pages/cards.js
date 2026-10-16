@@ -38,7 +38,7 @@ const EDIT_IMAGE_MODELS = [
   { id: 'bytedance/seedream-v5.0-pro/edit', label: 'Seedream 5 Pro Edit' },
   { id: 'bytedance/seedream-v5.0-lite/edit', label: 'Seedream 5 Lite Edit' },
   { id: 'xai/grok-imagine-image-quality/edit', label: 'Grok Imagine Edit' },
-  { id: 'midjourney/v8.2/remove-background', label: 'Midjourney V8.2 Remove Background' },
+  { id: 'atlascloud/image-background-remover', label: 'Remove Background (cutout)' },
   { id: 'midjourney/v8.2/upscale', label: 'Midjourney V8.2 Upscale (HD 2K)' },
 ]
 

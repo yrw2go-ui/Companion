@@ -402,9 +402,9 @@ const I2I_MODELS = [
     defaultSize: '2:3|2k',
   },
   {
-    id: 'midjourney/v8.2/remove-background',
-    label: 'Midjourney V8.2 Remove Background',
-    price: 0.086,
+    id: 'atlascloud/image-background-remover',
+    label: 'Remove Background (cutout)',
+    price: 0.004,
     maxRefs: 1,
     sizeMode: 'pixel',
     sizes: [{ label: 'Original', value: 'auto' }],
@@ -2775,7 +2775,7 @@ export default function Gallery() {
   }
 
   const runTransform = async () => {
-    if (!transformPrompt.trim() && !String(transformModel).startsWith('midjourney/v8.2/')) { alert('Describe the change you want'); return }
+    if (!transformPrompt.trim() && !/background-remover|midjourney\/v8\.2\//.test(transformModel)) { alert('Describe the change you want'); return }
     if (!transformSource?.url) { alert('No source image'); return }
 
     // Snapshot so another edit can start without overwriting this job's inputs
