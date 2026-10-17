@@ -272,8 +272,8 @@ const PROMPT_EXTRA_CATEGORIES = [
   },
 ]
 
-const MULTI_CATEGORIES = new Set(['female','girl','pose','attire','scene','lighting','nationality','expression','expressions'])
-const MULTI_LIMIT = { nationality: 3 }
+const MULTI_CATEGORIES = new Set(['female','girl','pose','attire','scene','lighting','nationality','expression','expressions','hair_style'])
+const MULTI_LIMIT = { nationality: 3, hair_style: 4 }
 const PROMPT_EXTRA_ORDER = [
   'female', 'skin', 'hair_color', 'hair_style', 'eye_color', 'body_type', 'breast_size', 'hips', 'attire', 'nationality', 'expression', 'card_design', 'pose', 'scene', 'lighting',
 ]
@@ -2662,6 +2662,16 @@ const buildCardTextFragment = () => {
       {/* CREATE */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/85 flex items-start justify-center p-5 z-50 overflow-y-auto">
+          <button
+            type="button"
+            onClick={(e) => {
+              const now = Date.now()
+              if (now - (e.currentTarget._tap || 0) < 350) setShowCreate(false)
+              e.currentTarget._tap = now
+            }}
+            className="fixed bottom-5 right-5 z-[60] w-14 h-14 rounded-full bg-black/80 border border-white/30 text-white text-2xl font-bold shadow-lg"
+            title="Double tap to close"
+          >✕</button>
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg my-8">
             <h2 className="font-bold text-lg mb-3">New Card</h2>
 
