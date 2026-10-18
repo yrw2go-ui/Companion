@@ -546,6 +546,8 @@ export default function Gallery() {
     return list
   }
   const [fetchFail, setFetchFail] = useState(null)
+  const [faceSwapTarget, setFaceSwapTarget] = useState(null)
+  const [faceSwapBusy, setFaceSwapBusy] = useState(false)
   const [holdDownload, setHoldDownload] = useState(null)
   const [creatorCopy, setCreatorCopy] = useState(null)
   const [createRefs, setCreateRefs] = useState([]) // optional reference images
@@ -1949,8 +1951,11 @@ export default function Gallery() {
     return parts.join(', ')
   }
 
-  const openCreate = () => {
+  const openCreate = (refItem) => {
     const defModel = (IMAGE_MODELS.find(m => m.family === 'seedream') || IMAGE_MODELS[0]).id
+    userPromptRef.current = ''
+    suffixPromptRef.current = ''
+    chipPrefixRef.current = ''
     setPrompt('')
     setNegative(DEFAULT_NEGATIVE)
     setSeed('')
@@ -1960,9 +1965,11 @@ export default function Gallery() {
     setGuidance(3.5)
     setSteps(28)
     setCreateModel(defModel)
-    setCreateRefs([])
+    const ref = refItem && refItem.url ? refItem : null
+    setCreateRefs(ref ? [{ url: ref.url, key: ref.key || 'ref' }] : [])
     setPickCreateRef(null)
     clearPromptExtras()
+    setSelected(null)
     setShowCreate(true)
   }
 
@@ -1975,7 +1982,11 @@ export default function Gallery() {
     let nextSize = item.size || (fam === 'seedream' ? '1152*2048' : '768*1024')
     if (fam === 'seedream' && !seedreamAllowed.includes(nextSize)) nextSize = '1152*2048'
     if (fam !== 'seedream' && !fluxAllowed.includes(nextSize)) nextSize = '768*1024'
-    setPrompt(item.prompt || '')
+    const fresh = item.prompt || ''
+    userPromptRef.current = fresh
+    suffixPromptRef.current = ''
+    chipPrefixRef.current = ''
+    setPrompt(fresh)
     setNegative(item.negative_prompt || DEFAULT_NEGATIVE)
     setSeed(keepSeed && item.seed ? String(item.seed) : '')
     setSize(nextSize)
@@ -1999,7 +2010,9 @@ export default function Gallery() {
     if (cardTextOn && cardTextContent.trim()) n += 1
     return n
   }
+  const createBusyRef = useRef(false)
   const createImage = async () => {
+    if (createBusyRef.current) return
     const composedNow = composePromptWithExtras(prompt.trim())
     if (!composedNow.trim()) return
     if (!prompt.trim() && selectedExtraCount() < 2) {
@@ -2021,6 +2034,7 @@ export default function Gallery() {
       steps,
       loras: createLoras,
     }
+    createBusyRef.current = true
     const jobId = `cr_${Date.now()}`
     const jobs = readJobList(CREATE_JOBS_KEY)
     jobs.push({ id: jobId, startedAt: Date.now() })
@@ -2106,6 +2120,7 @@ export default function Gallery() {
       const msg = /failed to fetch/i.test(err.message) ? 'Could not reach the server' : (err.message || 'Something went wrong')
       fail(msg, () => createImage())
     } finally {
+      createBusyRef.current = false
       const left = readJobList(CREATE_JOBS_KEY).filter(j => j.id !== jobId)
       writeJobList(CREATE_JOBS_KEY, left)
       setCreateJobs(left.length)
@@ -3832,7 +3847,7 @@ export default function Gallery() {
               if (files?.length) uploadFilesToGallery(files)
             }}
           />
-          <button onClick={openCreate} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">
+          <button onClick={() => openCreate()} className="bg-purple-600 hover:bg-purple-700 rounded-full px-4 py-2 text-sm font-semibold">
             {creatorCopy?.createButton || '+ Create'}
           </button>
         </div>
@@ -4267,7 +4282,12 @@ export default function Gallery() {
               </>
             )}
 
-            <label className="block text-xs text-gray-400 mb-1">Prompt</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs text-gray-400">Prompt</label>
+              <button type="button" onClick={() => copyUrl(prompt)} className="text-[11px] text-purple-400 hover:text-purple-300 font-semibold">
+                {copiedUrl ? 'Copied' : 'Copy prompt'}
+              </button>
+            </div>
             <textarea value={prompt} onChange={e => {
               const v = e.target.value
               const chips = chipPrefixRef.current
@@ -4595,7 +4615,7 @@ export default function Gallery() {
               >
                 {createJobs ? 'Close (keep running)' : 'Close'}
               </button>
-              <button onClick={createImage} disabled={!composePromptWithExtras(prompt.trim()).trim() || (!prompt.trim() && selectedExtraCount() < 2)} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
+              <button onClick={createImage} disabled={createBusyRef.current || !composePromptWithExtras(prompt.trim()).trim() || (!prompt.trim() && selectedExtraCount() < 2)} className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-lg py-3 font-semibold">
                 {createJobs ? `Generate (${createJobs} running)` : 'Generate'}
               </button>
             </div>
@@ -5039,6 +5059,63 @@ export default function Gallery() {
       })()}
 
       {/* Pick extra reference — gallery + cards + chat */}
+      {faceSwapTarget && (
+        <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-4 z-[70] overflow-y-auto">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-lg my-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-bold">Pick the face to use</h3>
+              <button type="button" onClick={() => setFaceSwapTarget(null)} className="text-gray-400 text-lg px-2">✕</button>
+            </div>
+            <p className="text-[10px] text-gray-500 mb-2">
+              This face replaces the face in the image you opened. Pose, body, clothes, and background stay.
+            </p>
+            <div className="grid grid-cols-3 gap-2 max-h-[60vh] overflow-y-auto">
+              {media.filter(m => m.type === 'image' && m.url && m.url !== faceSwapTarget.url).map(m => (
+                <button
+                  key={m.key || m.id || m.url}
+                  type="button"
+                  disabled={faceSwapBusy}
+                  onClick={async () => {
+                    if (faceSwapBusy) return
+                    setFaceSwapBusy(true)
+                    try {
+                      const res = await fetch('/api/generate-image', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          model: 'atlascloud/face-swap-image',
+                          faceUrl: m.url,
+                          targetUrl: faceSwapTarget.url,
+                        }),
+                      })
+                      const data = await res.json()
+                      if (!data.imageUrl) { alert(data.error || 'Face swap failed'); return }
+                      await saveWithRetry({
+                        type: 'image',
+                        url: data.imageUrl,
+                        prompt: 'face swap',
+                        model: 'atlascloud/face-swap-image',
+                        source_prompt: faceSwapTarget.prompt || null,
+                      }, 'Face swap')
+                      setFaceSwapTarget(null)
+                      load()
+                    } catch (err) {
+                      alert(err.message || 'Face swap failed')
+                    } finally {
+                      setFaceSwapBusy(false)
+                    }
+                  }}
+                  className="relative rounded-lg overflow-hidden border border-gray-800 hover:border-pink-500 aspect-[3/4] bg-gray-800"
+                >
+                  <img src={m.thumbnail_url || m.poster_url || m.url} alt="" className="w-full h-full object-cover object-top" />
+                </button>
+              ))}
+            </div>
+            {faceSwapBusy && <p className="text-xs text-pink-300 mt-2">Swapping face…</p>}
+          </div>
+        </div>
+      )}
+
       {pickRefSlot != null && (
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-4 z-[70] overflow-y-auto">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-lg my-6">
@@ -5559,6 +5636,20 @@ export default function Gallery() {
                   Rerun new seed
                 </button>
               </div>
+            )}
+
+            {selected.type === 'image' && (
+              <button onClick={() => openCreate(selected)}
+                className="w-full bg-pink-700 hover:bg-pink-600 rounded-lg py-2 text-sm font-semibold mt-2">
+                Use as reference
+              </button>
+            )}
+
+            {selected.type === 'image' && (
+              <button onClick={() => { setFaceSwapTarget(selected); setSelected(null) }}
+                className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-2">
+                Face swap
+              </button>
             )}
 
             {selected.type === 'image' && (
