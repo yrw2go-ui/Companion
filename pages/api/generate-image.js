@@ -116,9 +116,11 @@ export default async function handler(req, res) {
     skipGalleryRegister,
     character_id,
     source_prompt,
+    faceUrl,
+    targetUrl,
   } = req.body
 
-  const isBgRemove = /remove-background|background-remover/.test(String(model || ''))
+  const isBgRemove = /remove-background|background-remover|face-swap-image/.test(String(model || ''))
   if ((!prompt || String(prompt).trim().length < 1) && !isBgRemove) {
     return res.status(400).json({ error: 'No prompt provided' })
   }
@@ -245,6 +247,18 @@ export default async function handler(req, res) {
     }
     // Pro edit supports thinking. v4 and Lite schemas do not.
     if (!isSeedreamLite && !/seedream-v4/.test(useModel)) body.thinking = thinking || 'disabled'
+  } else if (useModel === 'atlascloud/face-swap-image') {
+    const face = faceUrl || allRefs[0]
+    const target = targetUrl || allRefs[1]
+    if (!face || !target) return res.status(400).json({ error: 'Need a face and a target image' })
+    body = {
+      model: useModel,
+      image: face,
+      Image: target,
+      output_format: 'jpeg',
+      size: 'auto',
+    }
+    usedSize = 'auto'
   } else if (isEdit && (useModel === 'atlascloud/image-background-remover' || useModel === 'midjourney/v8.2/remove-background')) {
     body = {
       model: 'atlascloud/image-background-remover',
