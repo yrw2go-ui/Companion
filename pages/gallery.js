@@ -508,6 +508,7 @@ export default function Gallery() {
   const downloadCounter = useRef(0)
   // Prefetch blob when detail opens so Download stays in a real user-gesture (Android)
   const prefetchBlobRef = useRef(null) // { url, blob, mime }
+  const prefetchErrRef = useRef(null) // { url, msg } — debug
   const [gSort, setGSort] = useState('date_desc')
   const [gSearch, setGSearch] = useState('')
   const [favOnly, setFavOnly] = useState(false)
@@ -914,11 +915,12 @@ export default function Gallery() {
   useEffect(() => {
     let cancelled = false
     prefetchBlobRef.current = null
+    prefetchErrRef.current = null
     const url = selected?.url
     if (!url) return undefined
     ;(async () => {
       try {
-        const res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' })
+        const res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'reload' })
         if (!res.ok) throw new Error('HTTP ' + res.status)
         const buf = await res.arrayBuffer()
         if (cancelled) return
@@ -937,6 +939,7 @@ export default function Gallery() {
         prefetchBlobRef.current = { url, blob: new Blob([buf], { type: mime }), mime }
       } catch (err) {
         console.warn('prefetch download blob', err)
+        prefetchErrRef.current = { url, msg: String(err?.message || err) }
       }
     })()
     return () => { cancelled = true }
@@ -3381,44 +3384,46 @@ export default function Gallery() {
     }, 450)
   }
   const cancelHold = () => clearTimeout(holdTimer.current)
-  const startDetailHold = () => {
-    clearTimeout(detailHoldTimer.current)
-    detailHoldTimer.current = setTimeout(() => {
-      if (navigator.vibrate) navigator.vibrate(20)
-      setDetailDlArmed(true)
-    }, 450)
+  // Long-press no longer arms anything — download is a single tap now.
+  const startDetailHold = () => {}
+  const cancelDetailHold = () => {}
+  const saveBlobNow = (blob, fileName) => {
+    const file = new File([blob], fileName, { type: 'application/octet-stream' })
+    const href = URL.createObjectURL(file)
+    const a = document.createElement('a')
+    a.href = href
+    a.download = fileName
+    a.rel = 'noopener'
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => { try { a.remove() } catch {}; try { URL.revokeObjectURL(href) } catch {} }, 60000)
   }
-  const cancelDetailHold = () => clearTimeout(detailHoldTimer.current)
-  const confirmDetailDownload = () => {
+  // ONE tap. Uses the blob prefetched when the popup opened so the click is still a
+  // real user gesture (required on Android). Falls back to fetch-then-save.
+  const confirmDetailDownload = async () => {
     const item = selected
     if (!item?.url) return
-    setDetailDlArmed(false)
-    // Prefer prefetched blob so this click is a real user-gesture download (no top toast)
     const pref = prefetchBlobRef.current
     if (pref?.blob && pref.url === item.url) {
-      const fileName = buildDownloadName(item, { mime: pref.mime })
-      const file = new File([pref.blob], fileName, { type: 'application/octet-stream' })
-      const href = URL.createObjectURL(file)
-      const a = document.createElement('a')
-      a.href = href
-      a.download = fileName
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      setTimeout(() => URL.revokeObjectURL(href), 2000)
+      saveBlobNow(pref.blob, buildDownloadName(item, { mime: pref.mime }))
+      showToast('DBG saved via prefetch (' + Math.round(pref.blob.size / 1024) + 'KB)', 'ok', 4000)
       return
     }
-    const ready = dlReady[item.key]
-    if (ready?.href) {
-      const a = document.createElement('a')
-      a.href = ready.href
-      a.download = ready.name
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      return
+    showToast('DBG no prefetch: ' + (prefetchErrRef.current?.msg || 'not ready yet'), 'info', 0)
+    try {
+      const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'reload' })
+      if (!res.ok) throw new Error('HTTP ' + res.status)
+      const blob = await res.blob()
+      if (!blob.size) throw new Error('Empty file')
+      saveBlobNow(blob, buildDownloadName(item, { mime: blob.type }))
+      showToast('DBG saved via fallback', 'ok', 4000)
+    } catch (err) {
+      console.warn('detail download failed', err)
+      // last resort: let the browser open/save the file directly
+      window.open(item.url, '_blank', 'noopener')
+      showToast('DBG fetch failed: ' + String(err?.message || err), 'err', 6000)
     }
-    downloadItem(item)
   }
   const onTileClick = (item) => {
     if (suppressClick.current) { suppressClick.current = false; return }
@@ -5511,16 +5516,6 @@ export default function Gallery() {
                 >×</button>
                 <button type="button" onClick={() => stepSelected(-1)} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white text-2xl">‹</button>
                 <button type="button" onClick={() => stepSelected(1)} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white text-2xl">›</button>
-                {detailDlArmed && (
-                  <button
-                    type="button"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); confirmDetailDownload() }}
-                    className="absolute bottom-6 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full bg-pink-600 text-white text-sm font-semibold shadow-lg"
-                  >
-                    ✓ Confirm download
-                  </button>
-                )}
               </div>
             )}
 
@@ -5580,9 +5575,9 @@ export default function Gallery() {
                   </button>
                 </div>
                 <p className="hidden">{selected.url}</p>
-                <button onClick={() => detailDlArmed ? confirmDetailDownload() : downloadItem(selected)}
-                  className={`w-full rounded-lg py-2 text-sm font-semibold mt-3 ${detailDlArmed ? 'bg-pink-600 hover:bg-pink-500' : 'bg-gray-800 hover:bg-gray-700'}`}>
-                  {detailDlArmed ? '✓ Confirm download' : `⬇ Download ${selected.type === 'video' ? 'video' : 'image'}`}
+                <button onClick={confirmDetailDownload}
+                  className="w-full rounded-lg py-2 text-sm font-semibold mt-3 bg-gray-800 hover:bg-gray-700">
+                  {`⬇ Download ${selected.type === 'video' ? 'video' : 'image'}`}
                 </button>
               </div>
               {selected.source === 'cards' && (
