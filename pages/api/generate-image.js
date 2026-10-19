@@ -120,7 +120,7 @@ export default async function handler(req, res) {
     targetUrl,
   } = req.body
 
-  const isBgRemove = /remove-background|background-remover|face-swap-image/.test(String(model || ''))
+  const isBgRemove = /remove-background|background-remover|face-swap-image|image-face-swap/.test(String(model || ''))
   if ((!prompt || String(prompt).trim().length < 1) && !isBgRemove) {
     return res.status(400).json({ error: 'No prompt provided' })
   }
