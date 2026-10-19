@@ -5456,12 +5456,6 @@ export default function Gallery() {
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
           <div className="w-full max-w-md my-8" onClick={e => e.stopPropagation()}>
             <div className="relative" onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}
-              onPointerDown={startDetailHold}
-              onPointerUp={cancelDetailHold}
-              onPointerLeave={cancelDetailHold}
-              onPointerCancel={cancelDetailHold}
-              onContextMenu={(e) => e.preventDefault()}
-              style={{ WebkitTouchCallout: 'none' }}
               onDoubleClick={() => setDetailFull(true)}
               onClick={(e) => {
                 if (e.target.closest('button')) return
@@ -5519,12 +5513,6 @@ export default function Gallery() {
                 className="fixed inset-0 z-[70] bg-black flex items-center justify-center"
                 onTouchStart={onSwipeStart}
                 onTouchEnd={onSwipeEnd}
-                onPointerDown={startDetailHold}
-                onPointerUp={cancelDetailHold}
-                onPointerLeave={cancelDetailHold}
-                onPointerCancel={cancelDetailHold}
-                onContextMenu={(e) => e.preventDefault()}
-                style={{ WebkitTouchCallout: 'none' }}
                 onClick={onFullTap}
                 onDoubleClick={() => setDetailFull(false)}
               >
