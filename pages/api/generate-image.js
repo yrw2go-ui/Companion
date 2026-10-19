@@ -251,19 +251,20 @@ export default async function handler(req, res) {
     const face = faceUrl || allRefs[1] || allRefs[0]
     const target = targetUrl || allRefs[0]
     if (!face || !target) return res.status(400).json({ error: 'Need a face and a target image' })
-    // Dedicated atlascloud face-swap models are gone (404 / not found).
-    // Route through Seedream v5.0 Pro Edit, which supports multi-image refs.
-    // Image 1 = target (keep pose/body/clothes/bg), Image 2 = donor face.
+    // Dedicated atlascloud face-swap models are gone. Use Nano Banana 2 Edit,
+    // which Atlas's own guides recommend for face fusion / identity transfer.
+    // images[0] = target scene (keep everything), images[1] = donor face.
     body = {
-      model: 'bytedance/seedream-v5.0-pro/edit',
-      prompt: 'Replace the face of the person in image 1 with the face from image 2. Keep the exact pose, body, clothing, background, lighting, framing, and expression of image 1. Only change the face identity. Seamless blend, photorealistic.',
+      model: 'google/nano-banana-2/edit',
+      prompt: 'FACE SWAP ONLY. The first image is the TARGET photo. The second image is the DONOR face. Replace the face of the person in the first image with the exact facial identity from the second image. Transfer the donor face shape, eyes, nose, mouth, and identity. Keep the first image completely unchanged otherwise: same pose, expression, hairstyle, head angle, body, clothing, background, lighting, framing, and composition. Do not redesign the person. Do not change the scene. Seamless photorealistic blend.',
       images: [target, face],
-      size: '2048*2048',
+      aspect_ratio: '3:4',
+      resolution: '1k',
       output_format: 'jpeg',
       enable_base64_output: false,
-      thinking: 'disabled',
+      thinking_level: 'high',
     }
-    usedSize = '2048*2048'
+    usedSize = '3:4'
   } else if (isEdit && (useModel === 'atlascloud/image-background-remover' || useModel === 'midjourney/v8.2/remove-background')) {
     body = {
       model: 'atlascloud/image-background-remover',
