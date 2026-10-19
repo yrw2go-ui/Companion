@@ -3387,7 +3387,10 @@ export default function Gallery() {
   // Long-press no longer arms anything — download is a single tap now.
   const startDetailHold = () => {}
   const cancelDetailHold = () => {}
-  const saveBlobNow = (blob, fileName) => {
+  // Android Chrome silently blocks repeat <a download> clicks until the page reloads.
+  // So on phones use the native share sheet ("Save to device / Photos") which has no such limit,
+  // and only fall back to the anchor download if share isn't available.
+  const anchorSave = (blob, fileName) => {
     const file = new File([blob], fileName, { type: 'application/octet-stream' })
     const href = URL.createObjectURL(file)
     const a = document.createElement('a')
@@ -3399,6 +3402,20 @@ export default function Gallery() {
     a.click()
     setTimeout(() => { try { a.remove() } catch {}; try { URL.revokeObjectURL(href) } catch {} }, 60000)
   }
+  const saveBlobNow = async (blob, fileName) => {
+    try {
+      const typed = new File([blob], fileName, { type: blob.type || 'image/jpeg' })
+      if (navigator.canShare && navigator.canShare({ files: [typed] })) {
+        await navigator.share({ files: [typed] })
+        return 'share'
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') return 'cancelled'
+      console.warn('share failed, using anchor', err)
+    }
+    anchorSave(blob, fileName)
+    return 'anchor'
+  }
   // ONE tap. Uses the blob prefetched when the popup opened so the click is still a
   // real user gesture (required on Android). Falls back to fetch-then-save.
   const confirmDetailDownload = async () => {
@@ -3406,8 +3423,8 @@ export default function Gallery() {
     if (!item?.url) return
     const pref = prefetchBlobRef.current
     if (pref?.blob && pref.url === item.url) {
-      saveBlobNow(pref.blob, buildDownloadName(item, { mime: pref.mime }))
-      showToast('DBG saved via prefetch (' + Math.round(pref.blob.size / 1024) + 'KB)', 'ok', 4000)
+      const how = await saveBlobNow(pref.blob, buildDownloadName(item, { mime: pref.mime }))
+      showToast('DBG ' + how + ' via prefetch (' + Math.round(pref.blob.size / 1024) + 'KB)', 'ok', 4000)
       return
     }
     showToast('DBG no prefetch: ' + (prefetchErrRef.current?.msg || 'not ready yet'), 'info', 0)
@@ -3416,8 +3433,8 @@ export default function Gallery() {
       if (!res.ok) throw new Error('HTTP ' + res.status)
       const blob = await res.blob()
       if (!blob.size) throw new Error('Empty file')
-      saveBlobNow(blob, buildDownloadName(item, { mime: blob.type }))
-      showToast('DBG saved via fallback', 'ok', 4000)
+      const how = await saveBlobNow(blob, buildDownloadName(item, { mime: blob.type }))
+      showToast('DBG ' + how + ' via fallback', 'ok', 4000)
     } catch (err) {
       console.warn('detail download failed', err)
       // last resort: let the browser open/save the file directly
