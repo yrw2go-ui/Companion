@@ -3403,24 +3403,34 @@ export default function Gallery() {
     setTimeout(() => { try { a.remove() } catch {}; try { URL.revokeObjectURL(href) } catch {} }, 60000)
   }
   const saveBlobNow = async (blob, fileName) => {
-    try {
-      const typed = new File([blob], fileName, { type: blob.type || 'image/jpeg' })
-      if (navigator.canShare && navigator.canShare({ files: [typed] })) {
-        await navigator.share({ files: [typed] })
-        return 'share'
-      }
-    } catch (err) {
-      if (err && err.name === 'AbortError') return 'cancelled'
-      console.warn('share failed, using anchor', err)
-    }
     anchorSave(blob, fileName)
     return 'anchor'
+  }
+  // Supabase public URLs support ?download=<name> -> server sends Content-Disposition: attachment,
+  // so a plain link click is a real browser download (no blob, no repeat-download block).
+  const serverDownloadUrl = (url, fileName) => {
+    if (!/\/storage\/v1\/object\/public\//.test(url)) return null
+    const clean = String(url).replace(/([?&])download=[^&]*&?/, '$1').replace(/[?&]$/, '')
+    return clean + (clean.includes('?') ? '&' : '?') + 'download=' + encodeURIComponent(fileName)
   }
   // ONE tap. Uses the blob prefetched when the popup opened so the click is still a
   // real user gesture (required on Android). Falls back to fetch-then-save.
   const confirmDetailDownload = async () => {
     const item = selected
     if (!item?.url) return
+    const direct = serverDownloadUrl(item.url, buildDownloadName(item))
+    if (direct) {
+      const a = document.createElement('a')
+      a.href = direct
+      a.download = ''
+      a.rel = 'noopener'
+      a.style.display = 'none'
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => { try { a.remove() } catch {} }, 1000)
+      showToast('DBG direct download', 'ok', 3000)
+      return
+    }
     const pref = prefetchBlobRef.current
     if (pref?.blob && pref.url === item.url) {
       const how = await saveBlobNow(pref.blob, buildDownloadName(item, { mime: pref.mime }))
