@@ -247,14 +247,19 @@ export default async function handler(req, res) {
     }
     // Pro edit supports thinking. v4 and Lite schemas do not.
     if (!isSeedreamLite && !/seedream-v4/.test(useModel)) body.thinking = thinking || 'disabled'
-  } else if (useModel === 'atlascloud/face-swap-image') {
+  } else if (useModel === 'atlascloud/face-swap-image' || useModel === 'atlascloud/image-face-swap') {
     const face = faceUrl || allRefs[0]
     const target = targetUrl || allRefs[1]
     if (!face || !target) return res.status(400).json({ error: 'Need a face and a target image' })
+    // atlascloud/face-swap-image page is now 404. Live model is image-face-swap.
+    // Send both the legacy image/Image pair and the common source/target names so either schema works.
     body = {
-      model: useModel,
+      model: 'atlascloud/image-face-swap',
       image: face,
       Image: target,
+      face_image: face,
+      source_image: face,
+      target_image: target,
       output_format: 'jpeg',
       size: 'auto',
     }
@@ -404,10 +409,12 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Image service error' })
     }
 
-    const predictionId = submitParsed.data.data?.id || submitParsed.data.id
+    const d = submitParsed.data || {}
+    const predictionId = d.data?.id || d.id || d.prediction_id || d.data?.prediction_id || d.task_id || d.data?.task_id
     if (!predictionId) {
-      const msg = submitParsed.data?.error?.message || submitParsed.data?.message || submitParsed.data?.error || 'No prediction ID'
-      return res.status(500).json({ error: String(msg).slice(0, 180) })
+      const raw = typeof d === 'object' ? JSON.stringify(d) : String(d)
+      const msg = d.error?.message || d.message || d.error || d.detail || ('No prediction ID: ' + raw.slice(0, 160))
+      return res.status(500).json({ error: String(msg).slice(0, 300), raw: raw.slice(0, 400) })
     }
 
     let atlasUrl = null
