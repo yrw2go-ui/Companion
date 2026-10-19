@@ -247,23 +247,23 @@ export default async function handler(req, res) {
     }
     // Pro edit supports thinking. v4 and Lite schemas do not.
     if (!isSeedreamLite && !/seedream-v4/.test(useModel)) body.thinking = thinking || 'disabled'
-  } else if (useModel === 'atlascloud/face-swap-image' || useModel === 'atlascloud/image-face-swap') {
-    const face = faceUrl || allRefs[0]
-    const target = targetUrl || allRefs[1]
+  } else if (useModel === 'atlascloud/face-swap-image' || useModel === 'atlascloud/image-face-swap' || useModel === 'bytedance/seedream-v5.0-pro/edit-face-swap') {
+    const face = faceUrl || allRefs[1] || allRefs[0]
+    const target = targetUrl || allRefs[0]
     if (!face || !target) return res.status(400).json({ error: 'Need a face and a target image' })
-    // atlascloud/face-swap-image page is now 404. Live model is image-face-swap.
-    // Send both the legacy image/Image pair and the common source/target names so either schema works.
+    // Dedicated atlascloud face-swap models are gone (404 / not found).
+    // Route through Seedream v5.0 Pro Edit, which supports multi-image refs.
+    // Image 1 = target (keep pose/body/clothes/bg), Image 2 = donor face.
     body = {
-      model: 'atlascloud/image-face-swap',
-      image: face,
-      Image: target,
-      face_image: face,
-      source_image: face,
-      target_image: target,
+      model: 'bytedance/seedream-v5.0-pro/edit',
+      prompt: 'Replace the face of the person in image 1 with the face from image 2. Keep the exact pose, body, clothing, background, lighting, framing, and expression of image 1. Only change the face identity. Seamless blend, photorealistic.',
+      images: [target, face],
+      size: '2048*2048',
       output_format: 'jpeg',
-      size: 'auto',
+      enable_base64_output: false,
+      thinking: 'disabled',
     }
-    usedSize = 'auto'
+    usedSize = '2048*2048'
   } else if (isEdit && (useModel === 'atlascloud/image-background-remover' || useModel === 'midjourney/v8.2/remove-background')) {
     body = {
       model: 'atlascloud/image-background-remover',
