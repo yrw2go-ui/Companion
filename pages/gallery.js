@@ -549,6 +549,8 @@ export default function Gallery() {
   const [faceSwapTarget, setFaceSwapTarget] = useState(null)
   const [faceSwapBusy, setFaceSwapBusy] = useState(false)
   const [holdDownload, setHoldDownload] = useState(null)
+  const [detailDlArmed, setDetailDlArmed] = useState(false)
+  const detailHoldTimer = useRef(null)
   const [creatorCopy, setCreatorCopy] = useState(null)
   const [createRefs, setCreateRefs] = useState([]) // optional reference images
   const [pickCreateRef, setPickCreateRef] = useState(null) // 'next' | index
@@ -899,6 +901,7 @@ export default function Gallery() {
 
   // Keep editPrompt in sync when opening a detail item
   useEffect(() => {
+    setDetailDlArmed(false)
     if (selected?.source === 'gallery_media') {
       setEditPrompt(selected.prompt || '')
     } else {
@@ -3372,10 +3375,51 @@ export default function Gallery() {
     holdTimer.current = setTimeout(() => {
       suppressClick.current = true
       if (navigator.vibrate) navigator.vibrate(20)
-      setHoldDownload(item)
+      // Long-press on a gallery tile starts multi-select (not download)
+      setPickMode(true)
+      setPicked(prev => ({ ...prev, [item.key]: true }))
     }, 450)
   }
   const cancelHold = () => clearTimeout(holdTimer.current)
+  const startDetailHold = () => {
+    clearTimeout(detailHoldTimer.current)
+    detailHoldTimer.current = setTimeout(() => {
+      if (navigator.vibrate) navigator.vibrate(20)
+      setDetailDlArmed(true)
+    }, 450)
+  }
+  const cancelDetailHold = () => clearTimeout(detailHoldTimer.current)
+  const confirmDetailDownload = () => {
+    const item = selected
+    if (!item?.url) return
+    setDetailDlArmed(false)
+    // Prefer prefetched blob so this click is a real user-gesture download (no top toast)
+    const pref = prefetchBlobRef.current
+    if (pref?.blob && pref.url === item.url) {
+      const fileName = buildDownloadName(item, { mime: pref.mime })
+      const file = new File([pref.blob], fileName, { type: 'application/octet-stream' })
+      const href = URL.createObjectURL(file)
+      const a = document.createElement('a')
+      a.href = href
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(href), 2000)
+      return
+    }
+    const ready = dlReady[item.key]
+    if (ready?.href) {
+      const a = document.createElement('a')
+      a.href = ready.href
+      a.download = ready.name
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      return
+    }
+    downloadItem(item)
+  }
   const onTileClick = (item) => {
     if (suppressClick.current) { suppressClick.current = false; return }
     if (pickMode) {
@@ -4013,21 +4057,7 @@ export default function Gallery() {
         </div>
       )}
 
-      {holdDownload && (
-        <div className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-5" onClick={() => setHoldDownload(null)}>
-          <div className="bg-gray-900 border border-pink-700 rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <p className="text-[10px] tracking-widest text-pink-400 mb-1">GODDESS ARENA</p>
-            <h3 className="font-bold text-lg mb-2">{creatorCopy?.downloadTitle || 'Download'}</h3>
-            <p className="text-sm text-gray-300 mb-4">{creatorCopy?.downloadBody || `Save this ${holdDownload.type === 'video' ? 'video' : 'image'} to your device.`}</p>
-            <div className="flex gap-2">
-              <button type="button" onClick={() => { const item = holdDownload; setHoldDownload(null); downloadItem(item) }}
-                className="flex-1 bg-pink-600 hover:bg-pink-700 rounded-lg py-2.5 font-semibold">Download</button>
-              <button type="button" onClick={() => setHoldDownload(null)}
-                className="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-2.5 font-semibold">Close</button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {fetchFail && (
         <div className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-5" onClick={() => setFetchFail(null)}>
@@ -5394,6 +5424,12 @@ export default function Gallery() {
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
           <div className="w-full max-w-md my-8" onClick={e => e.stopPropagation()}>
             <div className="relative" onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}
+              onPointerDown={startDetailHold}
+              onPointerUp={cancelDetailHold}
+              onPointerLeave={cancelDetailHold}
+              onPointerCancel={cancelDetailHold}
+              onContextMenu={(e) => e.preventDefault()}
+              style={{ WebkitTouchCallout: 'none' }}
               onDoubleClick={() => setDetailFull(true)}
               onClick={(e) => {
                 if (e.target.closest('button')) return
@@ -5451,6 +5487,12 @@ export default function Gallery() {
                 className="fixed inset-0 z-[70] bg-black flex items-center justify-center"
                 onTouchStart={onSwipeStart}
                 onTouchEnd={onSwipeEnd}
+                onPointerDown={startDetailHold}
+                onPointerUp={cancelDetailHold}
+                onPointerLeave={cancelDetailHold}
+                onPointerCancel={cancelDetailHold}
+                onContextMenu={(e) => e.preventDefault()}
+                style={{ WebkitTouchCallout: 'none' }}
                 onClick={onFullTap}
                 onDoubleClick={() => setDetailFull(false)}
               >
@@ -5469,6 +5511,16 @@ export default function Gallery() {
                 >×</button>
                 <button type="button" onClick={() => stepSelected(-1)} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white text-2xl">‹</button>
                 <button type="button" onClick={() => stepSelected(1)} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white text-2xl">›</button>
+                {detailDlArmed && (
+                  <button
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); confirmDetailDownload() }}
+                    className="absolute bottom-6 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full bg-pink-600 text-white text-sm font-semibold shadow-lg"
+                  >
+                    ✓ Confirm download
+                  </button>
+                )}
               </div>
             )}
 
@@ -5528,9 +5580,9 @@ export default function Gallery() {
                   </button>
                 </div>
                 <p className="hidden">{selected.url}</p>
-                <button onClick={() => downloadItem(selected)}
-                  className="w-full bg-gray-800 hover:bg-gray-700 rounded-lg py-2 text-sm font-semibold mt-3">
-                  ⬇ Download {selected.type === 'video' ? 'video' : 'image'}
+                <button onClick={() => detailDlArmed ? confirmDetailDownload() : downloadItem(selected)}
+                  className={`w-full rounded-lg py-2 text-sm font-semibold mt-3 ${detailDlArmed ? 'bg-pink-600 hover:bg-pink-500' : 'bg-gray-800 hover:bg-gray-700'}`}>
+                  {detailDlArmed ? '✓ Confirm download' : `⬇ Download ${selected.type === 'video' ? 'video' : 'image'}`}
                 </button>
               </div>
               {selected.source === 'cards' && (
