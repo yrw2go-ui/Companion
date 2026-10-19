@@ -5083,7 +5083,7 @@ export default function Gallery() {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                          model: 'atlascloud/face-swap-image',
+                          model: 'atlascloud/image-face-swap',
                           faceUrl: m.url,
                           targetUrl: faceSwapTarget.url,
                         }),
@@ -5094,7 +5094,7 @@ export default function Gallery() {
                         type: 'image',
                         url: data.imageUrl,
                         prompt: 'face swap',
-                        model: 'atlascloud/face-swap-image',
+                        model: 'atlascloud/image-face-swap',
                         source_prompt: faceSwapTarget.prompt || null,
                       }, 'Face swap')
                       setFaceSwapTarget(null)
