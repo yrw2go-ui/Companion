@@ -508,6 +508,14 @@ export default function Gallery() {
   const downloadCounter = useRef(0)
   // Prefetch blob when detail opens so Download stays in a real user-gesture (Android)
   const prefetchBlobRef = useRef(null) // { url, blob, mime }
+
+  // Route every media fetch through our server so the file host never sees the user IP.
+  const privateFetch = (url, opts = {}) => {
+    const nonce = Math.random().toString(36).slice(2, 12)
+    const proxied = `/api/download-media?u=${encodeURIComponent(url)}&n=${nonce}`
+    return fetch(proxied, { ...opts, credentials: 'same-origin' })
+  }
+
   const prefetchErrRef = useRef(null) // { url, msg } — debug
   const [gSort, setGSort] = useState('date_desc')
   const [gSearch, setGSearch] = useState('')
@@ -920,7 +928,7 @@ export default function Gallery() {
     if (!url) return undefined
     ;(async () => {
       try {
-        const res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'reload' })
+        const res = await privateFetch(url, { cache: 'reload' })
         if (!res.ok) throw new Error('HTTP ' + res.status)
         const buf = await res.arrayBuffer()
         if (cancelled) return
@@ -3403,34 +3411,24 @@ export default function Gallery() {
     setTimeout(() => { try { a.remove() } catch {}; try { URL.revokeObjectURL(href) } catch {} }, 60000)
   }
   const saveBlobNow = async (blob, fileName) => {
+    try {
+      const typed = new File([blob], fileName, { type: blob.type || 'image/jpeg' })
+      if (navigator.canShare && navigator.canShare({ files: [typed] })) {
+        await navigator.share({ files: [typed] })
+        return 'share'
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') return 'cancelled'
+      console.warn('share failed, using anchor', err)
+    }
     anchorSave(blob, fileName)
     return 'anchor'
-  }
-  // Supabase public URLs support ?download=<name> -> server sends Content-Disposition: attachment,
-  // so a plain link click is a real browser download (no blob, no repeat-download block).
-  const serverDownloadUrl = (url, fileName) => {
-    if (!/\/storage\/v1\/object\/public\//.test(url)) return null
-    const clean = String(url).replace(/([?&])download=[^&]*&?/, '$1').replace(/[?&]$/, '')
-    return clean + (clean.includes('?') ? '&' : '?') + 'download=' + encodeURIComponent(fileName)
   }
   // ONE tap. Uses the blob prefetched when the popup opened so the click is still a
   // real user gesture (required on Android). Falls back to fetch-then-save.
   const confirmDetailDownload = async () => {
     const item = selected
     if (!item?.url) return
-    const direct = serverDownloadUrl(item.url, buildDownloadName(item))
-    if (direct) {
-      const a = document.createElement('a')
-      a.href = direct
-      a.download = ''
-      a.rel = 'noopener'
-      a.style.display = 'none'
-      document.body.appendChild(a)
-      a.click()
-      setTimeout(() => { try { a.remove() } catch {} }, 1000)
-      showToast('DBG direct download', 'ok', 3000)
-      return
-    }
     const pref = prefetchBlobRef.current
     if (pref?.blob && pref.url === item.url) {
       const how = await saveBlobNow(pref.blob, buildDownloadName(item, { mime: pref.mime }))
@@ -3439,7 +3437,7 @@ export default function Gallery() {
     }
     showToast('DBG no prefetch: ' + (prefetchErrRef.current?.msg || 'not ready yet'), 'info', 0)
     try {
-      const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'reload' })
+      const res = await privateFetch(item.url, { cache: 'reload' })
       if (!res.ok) throw new Error('HTTP ' + res.status)
       const blob = await res.blob()
       if (!blob.size) throw new Error('Empty file')
@@ -3637,7 +3635,7 @@ export default function Gallery() {
 
   const prepareDownload = async (item) => {
     const fileName = buildDownloadName(item)
-    const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' })
+    const res = await privateFetch(item.url, { cache: 'no-store' })
     if (!res.ok) throw new Error('HTTP ' + res.status)
     const blob = await res.blob()
     if (!blob || blob.size === 0) throw new Error('Empty file')
@@ -3727,7 +3725,7 @@ export default function Gallery() {
       showToast(`Downloading ${i + 1}/${list.length}…`, 'info', 0)
       setBulkStatus(`Downloading ${i + 1}/${list.length}...`)
       try {
-        const res = await fetch(item.url, { mode: 'cors', credentials: 'omit', cache: 'no-cache' })
+        const res = await privateFetch(item.url, { cache: 'no-store' })
         if (!res.ok) throw new Error('HTTP ' + res.status)
         const buf = await res.arrayBuffer()
         const mime = res.headers.get('content-type') || (item.type === 'video' ? 'video/mp4' : 'image/jpeg')
@@ -5456,6 +5454,12 @@ export default function Gallery() {
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
           <div className="w-full max-w-md my-8" onClick={e => e.stopPropagation()}>
             <div className="relative" onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}
+              onPointerDown={startDetailHold}
+              onPointerUp={cancelDetailHold}
+              onPointerLeave={cancelDetailHold}
+              onPointerCancel={cancelDetailHold}
+              onContextMenu={(e) => e.preventDefault()}
+              style={{ WebkitTouchCallout: 'none' }}
               onDoubleClick={() => setDetailFull(true)}
               onClick={(e) => {
                 if (e.target.closest('button')) return
@@ -5513,6 +5517,12 @@ export default function Gallery() {
                 className="fixed inset-0 z-[70] bg-black flex items-center justify-center"
                 onTouchStart={onSwipeStart}
                 onTouchEnd={onSwipeEnd}
+                onPointerDown={startDetailHold}
+                onPointerUp={cancelDetailHold}
+                onPointerLeave={cancelDetailHold}
+                onPointerCancel={cancelDetailHold}
+                onContextMenu={(e) => e.preventDefault()}
+                style={{ WebkitTouchCallout: 'none' }}
                 onClick={onFullTap}
                 onDoubleClick={() => setDetailFull(false)}
               >

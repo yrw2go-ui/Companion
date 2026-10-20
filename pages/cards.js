@@ -1949,7 +1949,8 @@ const buildCardTextFragment = () => {
   const handleDownloadVideo = async (card) => {
     if (!card.video_url) return
     try {
-      const resp = await fetch(card.video_url)
+      const nonce = Math.random().toString(36).slice(2, 12)
+      const resp = await fetch(`/api/download-media?u=${encodeURIComponent(card.video_url)}&n=${nonce}`, { credentials: 'same-origin' })
       const blob = await resp.blob()
       const url = URL.createObjectURL(blob)
       const safeName = String(card.name || 'card').replace(/[^a-z0-9]+/gi, '_').toLowerCase()
