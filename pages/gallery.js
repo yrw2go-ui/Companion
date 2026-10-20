@@ -5461,12 +5461,6 @@ export default function Gallery() {
         <div className="fixed inset-0 bg-black/90 flex items-start justify-center p-5 z-50 overflow-y-auto" onClick={() => setSelected(null)}>
           <div className="w-full max-w-md my-8" onClick={e => e.stopPropagation()}>
             <div className="relative" onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}
-              onPointerDown={startDetailHold}
-              onPointerUp={cancelDetailHold}
-              onPointerLeave={cancelDetailHold}
-              onPointerCancel={cancelDetailHold}
-              onContextMenu={(e) => e.preventDefault()}
-              style={{ WebkitTouchCallout: 'none' }}
               onDoubleClick={() => setDetailFull(true)}
               onClick={(e) => {
                 if (e.target.closest('button')) return
@@ -5524,12 +5518,6 @@ export default function Gallery() {
                 className="fixed inset-0 z-[70] bg-black flex items-center justify-center"
                 onTouchStart={onSwipeStart}
                 onTouchEnd={onSwipeEnd}
-                onPointerDown={startDetailHold}
-                onPointerUp={cancelDetailHold}
-                onPointerLeave={cancelDetailHold}
-                onPointerCancel={cancelDetailHold}
-                onContextMenu={(e) => e.preventDefault()}
-                style={{ WebkitTouchCallout: 'none' }}
                 onClick={onFullTap}
                 onDoubleClick={() => setDetailFull(false)}
               >
@@ -5548,16 +5536,6 @@ export default function Gallery() {
                 >×</button>
                 <button type="button" onClick={() => stepSelected(-1)} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white text-2xl">‹</button>
                 <button type="button" onClick={() => stepSelected(1)} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white text-2xl">›</button>
-                {detailDlArmed && (
-                  <button
-                    type="button"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); confirmDetailDownload() }}
-                    className="absolute bottom-6 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full bg-pink-600 text-white text-sm font-semibold shadow-lg"
-                  >
-                    ✓ Confirm download
-                  </button>
-                )}
               </div>
             )}
 
@@ -5619,10 +5597,10 @@ export default function Gallery() {
                 <p className="hidden">{selected.url}</p>
                 <button
                   type="button"
-                  onClick={() => { if (detailDlArmed) confirmDetailDownload() }}
-                  className={`w-full rounded-lg py-2 text-sm font-semibold mt-3 ${detailDlArmed ? 'bg-pink-600 hover:bg-pink-500' : 'bg-gray-800'}`}
+                  onClick={confirmDetailDownload}
+                  className="w-full rounded-lg py-2 text-sm font-semibold mt-3 bg-gray-800 hover:bg-gray-700"
                 >
-                  {detailDlArmed ? '✓ Confirm download' : '⬇ Hold image to download'}
+                  {`⬇ Download ${selected.type === 'video' ? 'video' : 'image'}`}
                 </button>
               </div>
               {selected.source === 'cards' && (
