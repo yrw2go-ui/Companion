@@ -3392,9 +3392,15 @@ export default function Gallery() {
     }, 450)
   }
   const cancelHold = () => clearTimeout(holdTimer.current)
-  // Long-press no longer arms anything — download is a single tap now.
-  const startDetailHold = () => {}
-  const cancelDetailHold = () => {}
+  // Long-press inside an open image arms the Download button to Confirm.
+  const startDetailHold = () => {
+    clearTimeout(detailHoldTimer.current)
+    detailHoldTimer.current = setTimeout(() => {
+      if (navigator.vibrate) navigator.vibrate(20)
+      setDetailDlArmed(true)
+    }, 450)
+  }
+  const cancelDetailHold = () => clearTimeout(detailHoldTimer.current)
   // Android Chrome silently blocks repeat <a download> clicks until the page reloads.
   // So on phones use the native share sheet ("Save to device / Photos") which has no such limit,
   // and only fall back to the anchor download if share isn't available.
@@ -3429,6 +3435,7 @@ export default function Gallery() {
   const confirmDetailDownload = async () => {
     const item = selected
     if (!item?.url) return
+    setDetailDlArmed(false)
     const pref = prefetchBlobRef.current
     if (pref?.blob && pref.url === item.url) {
       const how = await saveBlobNow(pref.blob, buildDownloadName(item, { mime: pref.mime }))
@@ -5541,6 +5548,16 @@ export default function Gallery() {
                 >×</button>
                 <button type="button" onClick={() => stepSelected(-1)} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white text-2xl">‹</button>
                 <button type="button" onClick={() => stepSelected(1)} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white text-2xl">›</button>
+                {detailDlArmed && (
+                  <button
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); confirmDetailDownload() }}
+                    className="absolute bottom-6 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full bg-pink-600 text-white text-sm font-semibold shadow-lg"
+                  >
+                    ✓ Confirm download
+                  </button>
+                )}
               </div>
             )}
 
@@ -5600,9 +5617,12 @@ export default function Gallery() {
                   </button>
                 </div>
                 <p className="hidden">{selected.url}</p>
-                <button onClick={confirmDetailDownload}
-                  className="w-full rounded-lg py-2 text-sm font-semibold mt-3 bg-gray-800 hover:bg-gray-700">
-                  {`⬇ Download ${selected.type === 'video' ? 'video' : 'image'}`}
+                <button
+                  type="button"
+                  onClick={() => { if (detailDlArmed) confirmDetailDownload() }}
+                  className={`w-full rounded-lg py-2 text-sm font-semibold mt-3 ${detailDlArmed ? 'bg-pink-600 hover:bg-pink-500' : 'bg-gray-800'}`}
+                >
+                  {detailDlArmed ? '✓ Confirm download' : '⬇ Hold image to download'}
                 </button>
               </div>
               {selected.source === 'cards' && (
