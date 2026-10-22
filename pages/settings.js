@@ -34,9 +34,15 @@ export default function Settings() {
 
   const [posterizing, setPosterizing] = useState(false)
   const [posterStatus, setPosterStatus] = useState('')
+  const [pinStatus, setPinStatus] = useState(null)
+  const [pin, setPin] = useState('')
+  const [currentPin, setCurrentPin] = useState('')
+  const [pinMsg, setPinMsg] = useState('')
+  const [pinBusy, setPinBusy] = useState(false)
 
   useEffect(() => {
     load()
+    fetch('/api/pin-lock').then(r => r.json()).then(setPinStatus).catch(() => {})
   }, [])
 
   const load = async () => {
@@ -451,6 +457,74 @@ export default function Settings() {
         <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white text-sm">← Back</button>
         <h1 className="text-xl font-bold">Settings</h1>
         <span className="w-12"></span>
+      </div>
+
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-5">
+        <div className="flex items-center justify-between mb-2">
+          <p className="font-semibold">PIN lock</p>
+          <button
+            type="button"
+            disabled={!pinStatus?.hasPin || pinBusy}
+            onClick={async () => {
+              setPinBusy(true)
+              setPinMsg('')
+              const res = await fetch('/api/pin-lock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: pinStatus?.locked ? 'unlock' : 'lock', pin: currentPin, tzOffset: new Date().getTimezoneOffset() }),
+              })
+              const data = await res.json()
+              setPinBusy(false)
+              if (!res.ok) { setPinMsg(data.error || 'Failed'); return }
+              setPinMsg(data.locked ? 'Locked' : 'Unlocked until the hour')
+              const fresh = await fetch('/api/pin-lock').then(r => r.json())
+              setPinStatus(fresh)
+            }}
+            className={`text-xs px-3 py-1 rounded-full border ${pinStatus?.locked ? 'border-pink-500 text-pink-300' : 'border-gray-600 text-gray-300'}`}
+          >{pinStatus?.locked ? 'Locked' : 'Lock now'}</button>
+        </div>
+        <p className="text-xs text-gray-500 mb-3">Locks on the hour. Use the lock icon or this toggle to lock immediately.</p>
+        {pinStatus?.setupSql && (
+          <pre className="text-[10px] text-amber-300 bg-black rounded p-2 mb-3 overflow-x-auto">{pinStatus.setupSql}</pre>
+        )}
+        <input
+          value={pin}
+          onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          inputMode="numeric"
+          placeholder={pinStatus?.hasPin ? 'New PIN (4–6 digits)' : 'Set PIN (4–6 digits)'}
+          className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-purple-500"
+        />
+        {pinStatus?.hasPin && (
+          <input
+            value={currentPin}
+            onChange={e => setCurrentPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            inputMode="numeric"
+            placeholder="Current PIN"
+            className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-purple-500"
+          />
+        )}
+        <button
+          type="button"
+          disabled={pinBusy || pin.length < 4}
+          onClick={async () => {
+            setPinBusy(true)
+            setPinMsg('')
+            const res = await fetch('/api/pin-lock', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'set', pin, currentPin, tzOffset: new Date().getTimezoneOffset() }),
+            })
+            const data = await res.json()
+            setPinBusy(false)
+            if (!res.ok) { setPinMsg(data.error || 'Failed'); if (data.setupSql) setPinStatus(s => ({ ...s, setupSql: data.setupSql })); return }
+            setPin('')
+            setCurrentPin('')
+            setPinMsg('PIN saved. Locks on the hour.')
+            setPinStatus(await fetch('/api/pin-lock').then(r => r.json()))
+          }}
+          className="w-full bg-purple-700 hover:bg-purple-600 disabled:opacity-40 rounded-lg py-2 text-sm font-semibold"
+        >{pinBusy ? 'Saving…' : (pinStatus?.hasPin ? 'Change PIN' : 'Set PIN')}</button>
+        {pinMsg && <p className="text-xs text-gray-400 mt-2">{pinMsg}</p>}
       </div>
 
       <label className="block text-sm text-gray-400 mb-1">How I Appear</label>
