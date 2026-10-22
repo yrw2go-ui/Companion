@@ -1,1 +1,173 @@
-hhh
+// pages/api/pin-lock.js
+// Server-side PIN lock. State lives in Supabase; unlock is an httpOnly cookie
+// that expires at the next hour. Manual lock clears the cookie immediately.
+import crypto from 'crypto'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
+
+const SECRET = process.env.PIN_LOCK_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'pin-lock'
+const COOKIE = 'app_unlock'
+const PIN_ON = 'pin_on'
+
+const SETUP_SQL = `alter table user_settings add column if not exists pin_hash text;
+alter table user_settings add column if not exists pin_salt text;
+alter table user_settings add column if not exists pin_enabled boolean default false;
+alter table user_settings add column if not exists unlocked_until timestamptz;`
+
+function hmac(payload) {
+  return crypto.createHmac('sha256', SECRET).update(payload).digest('hex')
+}
+function sign(exp) {
+  const payload = `exp=${exp}`
+  return `${payload}.${hmac(payload)}`
+}
+function verifyToken(token) {
+  if (!token || typeof token !== 'string' || !token.includes('.')) return 0
+  const [payload, sig] = token.split('.')
+  const expected = hmac(payload)
+  const a = Buffer.from(sig || '')
+  const b = Buffer.from(expected)
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return 0
+  const exp = Number(String(payload).replace(/^exp=/, ''))
+  return Number.isFinite(exp) && exp > Date.now() ? exp : 0
+}
+function readCookie(req, name) {
+  const raw = req.headers.cookie || ''
+  const hit = raw.split(';').map(s => s.trim()).find(s => s.startsWith(name + '='))
+  return hit ? decodeURIComponent(hit.slice(name.length + 1)) : ''
+}
+function hashPin(pin, salt) {
+  return crypto.scryptSync(String(pin), salt, 32).toString('hex')
+}
+function nextHourUtc(tzOffsetMin) {
+  const offset = Number.isFinite(Number(tzOffsetMin)) ? Number(tzOffsetMin) : 0
+  const now = Date.now()
+  const localNow = now - offset * 60 * 1000
+  const hour = 60 * 60 * 1000
+  const localNext = Math.floor(localNow / hour) * hour + hour
+  return localNext + offset * 60 * 1000
+}
+function setUnlockCookie(res, exp) {
+  const token = sign(exp)
+  const parts = [
+    `${COOKIE}=${encodeURIComponent(token)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Expires=${new Date(exp).toUTCString()}`,
+  ]
+  if (process.env.NODE_ENV === 'production') parts.push('Secure')
+  res.setHeader('Set-Cookie', [
+    parts.join('; '),
+    `${PIN_ON}=1; Path=/; SameSite=Lax; Max-Age=31536000${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`,
+  ])
+}
+function clearUnlockCookie(res) {
+  res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`)
+}
+
+async function loadLock() {
+  const { data, error } = await supabaseAdmin
+    .from('user_settings')
+    .select('pin_hash, pin_salt, pin_enabled, unlocked_until')
+    .eq('id', 1)
+    .maybeSingle()
+  if (error) {
+    const missing = /pin_hash|pin_enabled|column/i.test(error.message || '')
+    return { error: missing ? 'setup' : error.message, setupSql: missing ? SETUP_SQL : undefined }
+  }
+  return { row: data || {} }
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  const loaded = await loadLock()
+  if (loaded.error) {
+    return res.status(loaded.error === 'setup' ? 409 : 500).json({
+      error: loaded.error === 'setup' ? 'PIN lock columns missing. Run the setup SQL in Supabase.' : loaded.error,
+      setupSql: loaded.setupSql,
+    })
+  }
+  const row = loaded.row
+  const hasPin = !!(row.pin_hash && row.pin_salt)
+  const enabled = !!row.pin_enabled && hasPin
+  const cookieExp = verifyToken(readCookie(req, COOKIE))
+  const until = row.unlocked_until ? new Date(row.unlocked_until).getTime() : 0
+  const unlockExp = Math.min(cookieExp || Infinity, until || Infinity)
+  const locked = enabled && !(unlockExp && unlockExp > Date.now() && unlockExp !== Infinity)
+
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      hasPin,
+      enabled,
+      locked,
+      unlocksAt: locked ? null : (unlockExp && unlockExp !== Infinity ? unlockExp : null),
+    })
+  }
+
+  const { action, pin, currentPin, tzOffset } = req.body || {}
+
+  if (action === 'set') {
+    const next = String(pin || '').replace(/\D/g, '')
+    if (next.length < 4 || next.length > 6) {
+      return res.status(400).json({ error: 'PIN must be 4 to 6 digits' })
+    }
+    if (hasPin) {
+      const cur = String(currentPin || '').replace(/\D/g, '')
+      if (hashPin(cur, row.pin_salt) !== row.pin_hash) {
+        return res.status(401).json({ error: 'Current PIN is wrong' })
+      }
+    }
+    const salt = crypto.randomBytes(16).toString('hex')
+    const exp = nextHourUtc(tzOffset)
+    const { error } = await supabaseAdmin.from('user_settings').upsert({
+      id: 1,
+      pin_hash: hashPin(next, salt),
+      pin_salt: salt,
+      pin_enabled: true,
+      unlocked_until: new Date(exp).toISOString(),
+    })
+    if (error) return res.status(500).json({ error: error.message, setupSql: SETUP_SQL })
+    setUnlockCookie(res, exp)
+    return res.status(200).json({ ok: true, locked: false, unlocksAt: exp })
+  }
+
+  if (action === 'unlock') {
+    if (!hasPin) return res.status(400).json({ error: 'No PIN set' })
+    const attempt = String(pin || '').replace(/\D/g, '')
+    if (hashPin(attempt, row.pin_salt) !== row.pin_hash) {
+      return res.status(401).json({ error: 'Wrong PIN' })
+    }
+    const exp = nextHourUtc(tzOffset)
+    await supabaseAdmin.from('user_settings').upsert({
+      id: 1,
+      pin_enabled: true,
+      unlocked_until: new Date(exp).toISOString(),
+    })
+    setUnlockCookie(res, exp)
+    return res.status(200).json({ ok: true, locked: false, unlocksAt: exp })
+  }
+
+  if (action === 'lock' || action === 'toggle') {
+    if (!hasPin) return res.status(400).json({ error: 'Set a PIN first' })
+    if (action === 'toggle' && locked) {
+      return res.status(200).json({ locked: true, needsPin: true })
+    }
+    await supabaseAdmin.from('user_settings').upsert({
+      id: 1,
+      pin_enabled: true,
+      unlocked_until: new Date(Date.now() - 1000).toISOString(),
+    })
+    clearUnlockCookie(res)
+    return res.status(200).json({ ok: true, locked: true })
+  }
+
+  return res.status(400).json({ error: 'Unknown action' })
+}
