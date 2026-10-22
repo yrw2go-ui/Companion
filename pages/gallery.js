@@ -96,6 +96,34 @@ const isStylizedArt = (style) =>
   /fortnite|stylized|anime|comic book|not photorealistic|cel-?shad/i.test(String(style || ''))
 
 // Same prompt extras as card creation — click chips to add/remove in fixed order
+
+function mergePromptExtras(saved, defaults) {
+  const base = JSON.parse(JSON.stringify(defaults || []))
+  const byId = new Map(base.map(c => [c.id, c]))
+  for (const cat of saved || []) {
+    if (!cat || !cat.id) continue
+    const existing = byId.get(cat.id)
+    if (!existing) {
+      base.push({ ...cat, options: [...(cat.options || [])] })
+      byId.set(cat.id, base[base.length - 1])
+      continue
+    }
+    if (cat.label) existing.label = cat.label
+    const have = new Set((existing.options || []).map(o => o.id))
+    for (const opt of cat.options || []) {
+      if (!opt || !opt.id) continue
+      if (have.has(opt.id)) {
+        const cur = existing.options.find(o => o.id === opt.id)
+        if (cur && opt.label) cur.label = opt.label
+        if (cur && opt.text) cur.text = opt.text
+      } else {
+        existing.options.push(opt)
+        have.add(opt.id)
+      }
+    }
+  }
+  return base
+}
 const PROMPT_EXTRA_CATEGORIES = [
   {
     id: 'female',
@@ -693,7 +721,7 @@ export default function Gallery() {
         setArtStylesList(styles)
       }
       if (saved.prompts?.negative) setNegative(saved.prompts.negative)
-      if (saved.promptExtras?.length) setPromptExtraCategories(saved.promptExtras)
+      if (saved.promptExtras?.length) setPromptExtraCategories(prev => mergePromptExtras(saved.promptExtras, prev?.length ? prev : PROMPT_EXTRA_CATEGORIES))
     })
   }, [])
 
@@ -894,13 +922,11 @@ export default function Gallery() {
         if (def != null && styles.some(s => s.value === def)) setCreateArtStyle(def)
         else setCreateArtStyle('')
         if (Array.isArray(data?.prompt_extra_categories) && data.prompt_extra_categories.length) {
-          const have = new Set(data.prompt_extra_categories.map(c => c.id))
-          const merged = [...data.prompt_extra_categories, ...PROMPT_EXTRA_CATEGORIES.filter(c => !have.has(c.id))]
+          const merged = mergePromptExtras(data.prompt_extra_categories, PROMPT_EXTRA_CATEGORIES)
           const norm = normalizeCategories(merged)
           setPromptExtraCategories(norm)
-          if (JSON.stringify(norm) !== JSON.stringify(merged)) {
-            supabase.from('user_settings').upsert({ id: 1, prompt_extra_categories: norm }).then(() => {})
-          }
+        } else {
+          setPromptExtraCategories(PROMPT_EXTRA_CATEGORIES)
         }
       } catch (e) {
         console.warn('art styles load', e)
