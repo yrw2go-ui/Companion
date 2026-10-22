@@ -471,19 +471,19 @@ export default function Settings() {
               const res = await fetch('/api/pin-lock', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: pinStatus?.locked ? 'unlock' : 'lock', pin: currentPin, tzOffset: new Date().getTimezoneOffset() }),
+                body: JSON.stringify({ action: pinStatus?.locked ? 'unlock' : 'lock', pin: currentPin }),
               })
               const data = await res.json()
               setPinBusy(false)
               if (!res.ok) { setPinMsg(data.error || 'Failed'); return }
-              setPinMsg(data.locked ? 'Locked' : 'Unlocked until the hour')
+              setPinMsg(data.locked ? 'Locked' : 'Unlocked')
               const fresh = await fetch('/api/pin-lock').then(r => r.json())
               setPinStatus(fresh)
             }}
             className={`text-xs px-3 py-1 rounded-full border ${pinStatus?.locked ? 'border-pink-500 text-pink-300' : 'border-gray-600 text-gray-300'}`}
           >{pinStatus?.locked ? 'Locked' : 'Lock now'}</button>
         </div>
-        <p className="text-xs text-gray-500 mb-3">Locks on the hour. Use the lock icon or this toggle to lock immediately.</p>
+        <p className="text-xs text-gray-500 mb-3">Locks 5 minutes after you leave the app. Use the lock icon or this toggle to lock immediately.</p>
         {pinStatus?.setupSql && (
           <pre className="text-[10px] text-amber-300 bg-black rounded p-2 mb-3 overflow-x-auto">{pinStatus.setupSql}</pre>
         )}
@@ -512,14 +512,14 @@ export default function Settings() {
             const res = await fetch('/api/pin-lock', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'set', pin, currentPin, tzOffset: new Date().getTimezoneOffset() }),
+              body: JSON.stringify({ action: 'set', pin, currentPin }),
             })
             const data = await res.json()
             setPinBusy(false)
             if (!res.ok) { setPinMsg(data.error || 'Failed'); if (data.setupSql) setPinStatus(s => ({ ...s, setupSql: data.setupSql })); return }
             setPin('')
             setCurrentPin('')
-            setPinMsg('PIN saved. Locks on the hour.')
+            setPinMsg('PIN saved. Locks 5 minutes after you leave the app.')
             setPinStatus(await fetch('/api/pin-lock').then(r => r.json()))
           }}
           className="w-full bg-purple-700 hover:bg-purple-600 disabled:opacity-40 rounded-lg py-2 text-sm font-semibold"

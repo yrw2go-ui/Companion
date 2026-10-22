@@ -137,7 +137,7 @@ function PinLock({ status, onUnlocked, onLock }) {
       const res = await fetch('/api/pin-lock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'unlock', pin: value, tzOffset: new Date().getTimezoneOffset() }),
+        body: JSON.stringify({ action: 'unlock', pin: value }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -202,9 +202,17 @@ export default function App({ Component, pageProps }) {
   usePinchZoom()
   const [lock, setLock] = useState(null) // null = loading
 
+  // While the app is on screen, 'touch' pushes the 5-minute auto-lock back.
   const refresh = async () => {
     try {
-      const res = await fetch('/api/pin-lock')
+      const visible = typeof document === 'undefined' || document.visibilityState === 'visible'
+      const res = visible
+        ? await fetch('/api/pin-lock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'touch' }),
+          })
+        : await fetch('/api/pin-lock')
       const data = await res.json()
       setLock(data)
     } catch {
@@ -218,7 +226,12 @@ export default function App({ Component, pageProps }) {
     }
     refresh()
     const id = setInterval(refresh, 20000)
-    return () => clearInterval(id)
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
 
   const lockNow = async () => {
