@@ -1,6 +1,7 @@
 // pages/api/pin-lock.js
 // Server-side PIN lock. State lives in Supabase; unlock is an httpOnly cookie
-// that expires at the next hour. Manual lock clears the cookie immediately.
+// that expires 5 minutes after the app was last open on screen (the client
+// sends 'touch' while visible). Manual lock clears the cookie immediately.
 import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 
@@ -43,13 +44,9 @@ function readCookie(req, name) {
 function hashPin(pin, salt) {
   return crypto.scryptSync(String(pin), salt, 32).toString('hex')
 }
-function nextHourUtc(tzOffsetMin) {
-  const offset = Number.isFinite(Number(tzOffsetMin)) ? Number(tzOffsetMin) : 0
-  const now = Date.now()
-  const localNow = now - offset * 60 * 1000
-  const hour = 60 * 60 * 1000
-  const localNext = Math.floor(localNow / hour) * hour + hour
-  return localNext + offset * 60 * 1000
+const IDLE_MS = 5 * 60 * 1000
+function unlockWindow() {
+  return Date.now() + IDLE_MS
 }
 function setUnlockCookie(res, exp) {
   const token = sign(exp)
@@ -100,19 +97,20 @@ export default async function handler(req, res) {
   const enabled = !!row.pin_enabled && hasPin
   const cookieExp = verifyToken(readCookie(req, COOKIE))
   const until = row.unlocked_until ? new Date(row.unlocked_until).getTime() : 0
-  const unlockExp = Math.min(cookieExp || Infinity, until || Infinity)
-  const locked = enabled && !(unlockExp && unlockExp > Date.now() && unlockExp !== Infinity)
+  // Unlocked only with BOTH a valid cookie on this device and an open window in the DB.
+  const unlockExp = cookieExp && until ? Math.min(cookieExp, until) : 0
+  const locked = enabled && !(unlockExp > Date.now())
 
   if (req.method === 'GET') {
     return res.status(200).json({
       hasPin,
       enabled,
       locked,
-      unlocksAt: locked ? null : (unlockExp && unlockExp !== Infinity ? unlockExp : null),
+      unlocksAt: locked ? null : (unlockExp || null),
     })
   }
 
-  const { action, pin, currentPin, tzOffset } = req.body || {}
+  const { action, pin, currentPin } = req.body || {}
 
   if (action === 'set') {
     const next = String(pin || '').replace(/\D/g, '')
@@ -126,7 +124,7 @@ export default async function handler(req, res) {
       }
     }
     const salt = crypto.randomBytes(16).toString('hex')
-    const exp = nextHourUtc(tzOffset)
+    const exp = unlockWindow()
     const { error } = await supabaseAdmin.from('user_settings').upsert({
       id: 1,
       pin_hash: hashPin(next, salt),
@@ -145,7 +143,7 @@ export default async function handler(req, res) {
     if (hashPin(attempt, row.pin_salt) !== row.pin_hash) {
       return res.status(401).json({ error: 'Wrong PIN' })
     }
-    const exp = nextHourUtc(tzOffset)
+    const exp = unlockWindow()
     await supabaseAdmin.from('user_settings').upsert({
       id: 1,
       pin_enabled: true,
@@ -153,6 +151,15 @@ export default async function handler(req, res) {
     })
     setUnlockCookie(res, exp)
     return res.status(200).json({ ok: true, locked: false, unlocksAt: exp })
+  }
+
+  if (action === 'touch') {
+    // Keep an already-unlocked app unlocked while it is on screen. Never unlocks.
+    if (!enabled || locked) return res.status(200).json({ hasPin, enabled, locked, unlocksAt: null })
+    const exp = unlockWindow()
+    await supabaseAdmin.from('user_settings').upsert({ id: 1, unlocked_until: new Date(exp).toISOString() })
+    setUnlockCookie(res, exp)
+    return res.status(200).json({ hasPin, enabled, locked: false, unlocksAt: exp })
   }
 
   if (action === 'lock' || action === 'toggle') {
