@@ -5469,7 +5469,7 @@ export default function Gallery() {
                 else lastFullTapRef.current = now
               }}>
               {selected.type === 'image' ? (
-                <img src={selected.url} alt="" className="w-full rounded-2xl" />
+                <img src={selected.url} alt="" className="w-full rounded-2xl pinch-zoom" />
               ) : selected.type === 'model' ? (
                 /* eslint-disable-next-line react/no-unknown-property */
                 <model-viewer
@@ -5480,7 +5480,7 @@ export default function Gallery() {
                   style={{ width: '100%', height: '360px', borderRadius: '1rem', background: '#111' }}
                 />
               ) : (
-                <video src={selected.url} controls loop preload="none" playsInline poster={selected.poster_url || undefined} className="w-full rounded-2xl" />
+                <video src={selected.url} controls loop preload="none" playsInline poster={selected.poster_url || undefined} className="w-full rounded-2xl pinch-zoom" />
               )}
               <button
                 type="button"
@@ -5522,11 +5522,11 @@ export default function Gallery() {
                 onDoubleClick={() => setDetailFull(false)}
               >
                 {selected.type === 'image' ? (
-                  <img src={selected.url} alt="" className="max-w-full max-h-full object-contain" />
+                  <img src={selected.url} alt="" className="max-w-full max-h-full object-contain pinch-zoom" />
                 ) : selected.type === 'video' ? (
-                  <video src={selected.url} controls autoPlay loop playsInline className="max-w-full max-h-full" />
+                  <video src={selected.url} controls autoPlay loop playsInline className="max-w-full max-h-full pinch-zoom" />
                 ) : (
-                  <img src={selected.url} alt="" className="max-w-full max-h-full object-contain" />
+                  <img src={selected.url} alt="" className="max-w-full max-h-full object-contain pinch-zoom" />
                 )}
                 <button
                   type="button"
