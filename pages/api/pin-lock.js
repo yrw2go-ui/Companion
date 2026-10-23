@@ -17,7 +17,13 @@ const PIN_ON = 'pin_on'
 const SETUP_SQL = `alter table user_settings add column if not exists pin_hash text;
 alter table user_settings add column if not exists pin_salt text;
 alter table user_settings add column if not exists pin_enabled boolean default false;
-alter table user_settings add column if not exists unlocked_until timestamptz;`
+alter table user_settings add column if not exists unlocked_until timestamptz;
+alter table user_settings add column if not exists pin_fail_count integer not null default 0;
+alter table user_settings add column if not exists pin_retry_at timestamptz;`
+
+// Wrong-PIN limit: after MAX_TRIES misses, PIN entry is blocked for LOCKOUT_MS.
+const MAX_TRIES = 5
+const LOCKOUT_MS = 15 * 60 * 1000
 
 function hmac(payload) {
   return crypto.createHmac('sha256', SECRET).update(payload).digest('hex')
@@ -70,7 +76,7 @@ function clearUnlockCookie(res) {
 async function loadLock() {
   const { data, error } = await supabaseAdmin
     .from('user_settings')
-    .select('pin_hash, pin_salt, pin_enabled, unlocked_until')
+    .select('pin_hash, pin_salt, pin_enabled, unlocked_until, pin_fail_count, pin_retry_at')
     .eq('id', 1)
     .maybeSingle()
   if (error) {
@@ -78,6 +84,40 @@ async function loadLock() {
     return { error: missing ? 'setup' : error.message, setupSql: missing ? SETUP_SQL : undefined }
   }
   return { row: data || {} }
+}
+
+// Claims one PIN try before the PIN is checked. The update only succeeds if the
+// counter is unchanged, so parallel guesses can't all slip past the limit.
+async function claimTry(row) {
+  const retryAt = row.pin_retry_at ? new Date(row.pin_retry_at).getTime() : 0
+  if (retryAt > Date.now()) return { blocked: retryAt }
+  const count = row.pin_fail_count || 0
+  const { data, error } = await supabaseAdmin
+    .from('user_settings')
+    .update({ pin_fail_count: count + 1 })
+    .eq('id', 1)
+    .eq('pin_fail_count', count)
+    .select('id')
+  if (error || !data || data.length === 0) return { busy: true }
+  return { tryNo: count + 1 }
+}
+
+async function pinMiss(tryNo) {
+  if (tryNo < MAX_TRIES) return { left: MAX_TRIES - tryNo }
+  const until = Date.now() + LOCKOUT_MS
+  await supabaseAdmin.from('user_settings')
+    .update({ pin_fail_count: 0, pin_retry_at: new Date(until).toISOString() })
+    .eq('id', 1)
+  return { blocked: until }
+}
+
+function sendTryError(res, t, label) {
+  if (t.busy) return res.status(429).json({ error: 'Too many tries at once. Wait a moment.' })
+  if (t.blocked) {
+    const mins = Math.max(1, Math.ceil((t.blocked - Date.now()) / 60000))
+    return res.status(429).json({ error: `Too many wrong PINs. Try again in ${mins} min.`, retryAt: t.blocked })
+  }
+  return res.status(401).json({ error: `${label}. ${t.left} ${t.left === 1 ? 'try' : 'tries'} left.` })
 }
 
 export default async function handler(req, res) {
@@ -118,9 +158,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'PIN must be 4 to 6 digits' })
     }
     if (hasPin) {
+      const t = await claimTry(row)
+      if (!t.tryNo) return sendTryError(res, t)
       const cur = String(currentPin || '').replace(/\D/g, '')
       if (hashPin(cur, row.pin_salt) !== row.pin_hash) {
-        return res.status(401).json({ error: 'Current PIN is wrong' })
+        return sendTryError(res, await pinMiss(t.tryNo), 'Current PIN is wrong')
       }
     }
     const salt = crypto.randomBytes(16).toString('hex')
@@ -131,6 +173,8 @@ export default async function handler(req, res) {
       pin_salt: salt,
       pin_enabled: true,
       unlocked_until: new Date(exp).toISOString(),
+      pin_fail_count: 0,
+      pin_retry_at: null,
     })
     if (error) return res.status(500).json({ error: error.message, setupSql: SETUP_SQL })
     setUnlockCookie(res, exp)
@@ -139,15 +183,19 @@ export default async function handler(req, res) {
 
   if (action === 'unlock') {
     if (!hasPin) return res.status(400).json({ error: 'No PIN set' })
+    const t = await claimTry(row)
+    if (!t.tryNo) return sendTryError(res, t)
     const attempt = String(pin || '').replace(/\D/g, '')
     if (hashPin(attempt, row.pin_salt) !== row.pin_hash) {
-      return res.status(401).json({ error: 'Wrong PIN' })
+      return sendTryError(res, await pinMiss(t.tryNo), 'Wrong PIN')
     }
     const exp = unlockWindow()
     await supabaseAdmin.from('user_settings').upsert({
       id: 1,
       pin_enabled: true,
       unlocked_until: new Date(exp).toISOString(),
+      pin_fail_count: 0,
+      pin_retry_at: null,
     })
     setUnlockCookie(res, exp)
     return res.status(200).json({ ok: true, locked: false, unlocksAt: exp })
