@@ -8,16 +8,19 @@
     "start": "next start"
   },
   "dependencies": {
-    "next": "15.5.18",
+    "next": "15.5.28",
     "react": "^18",
     "react-dom": "^18",
     "@supabase/supabase-js": "^2",
     "openai": "^4",
-    "adm-zip": "^0.5.10"
+    "adm-zip": "^0.6.1"
   },
   "devDependencies": {
     "tailwindcss": "^3",
     "autoprefixer": "^10",
-    "postcss": "^8"
+    "postcss": "^8.5.31"
+  },
+  "overrides": {
+    "postcss": "$postcss"
   }
 }
