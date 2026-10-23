@@ -5624,7 +5624,7 @@ export default function Gallery() {
                 <button
                   type="button"
                   onClick={confirmDetailDownload}
-                  className="w-full rounded-lg py-2 text-sm font-semibold mt-3 bg-gray-800 hover:bg-gray-700"
+                  className="hidden w-full rounded-lg py-2 text-sm font-semibold mt-3 bg-gray-800 hover:bg-gray-700"
                 >
                   {`⬇ Download ${selected.type === 'video' ? 'video' : 'image'}`}
                 </button>
